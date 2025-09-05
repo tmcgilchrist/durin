@@ -1,0 +1,50 @@
+name: Build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          # - ubuntu-latest
+          # - ubuntu-24.04-arm
+          - macos-latest
+          # - macos-13
+
+        ocaml-compiler:
+          - "5.3.0"
+
+    runs-on: ${{ matrix.os }}
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Use OCaml ${{ matrix.ocaml-compiler }}
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
+          opam-repositories: |
+             default: https://github.com/ocaml/opam-repository.git
+
+      - name: Install dependencies
+        run: |
+          opam install . --deps-only --with-test --with-dev-setup
+
+      - name: Build
+        run: |
+          opam exec -- dune build @all
+
+      - name: Tests
+        run: |
+          opam exec -- dune build @runtest
+
+      - name: Format
+        run: |
+          opam exec -- dune build @fmt
