@@ -16,7 +16,7 @@ DWARF 5 specifies the following set of sections for ELF:
  * .debug_pubnames - Lookup table for global objects and functions; Legacy and essentially unused.
  * .debug_pubtypes - Lookup table for global types; Legacy and essentially unused.
 
-DWARF 5 used the following sections for Mach-O:
+DWARF 5 uses the following sections for Mach-O:
 
  * __debug_info - The core section with DWARF information entries (DIEs)
  * __debug_abbrev - Abbreviations used to simplify the `__debug_info` section
@@ -31,7 +31,7 @@ DWARF 5 used the following sections for Mach-O:
  * __debug_str_offs - The string offsets table for the strings in `__debug_str`.
  * __debug_names - Lookup table by name for global objects, types and functions. Replaces the .debug_pubnames and .debug_pubtypes from DWARF 4.
 
-Initally GCC and Clang both emit DWARF 5 32 bit format so we will support that first.
+Initially GCC and Clang both emit DWARF 5 32 bit format so we will support that first.
 
 ## MacOS commands
 

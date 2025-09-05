@@ -1,0 +1,16 @@
+(executables
+ (public_names
+  dwprod
+  dwarfdump
+  addr2line
+  dwarf_validate
+  simple_debug_info
+  simple_debug_line)
+ (names
+  dwprod
+  dwarfdump
+  addr2line
+  dwarf_validate
+  simple_debug_info
+  simple_debug_line)
+ (libraries durin object integers cmdliner))

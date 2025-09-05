@@ -1,0 +1,48 @@
+; (test
+;  (name test_macho_arm64)
+;  (deps hello_world)
+;  (build_if
+;   (and
+;    (= %{system} "macosx")
+;    (= %{architecture} "arm64")))
+;  (libraries object integers alcotest cmdliner)
+;  (action
+;   (run %{exe:test_macho_arm64.exe} --binary %{dep:hello_world})))
+
+; Generate source-level debug information with dwarf version 5
+
+(rule
+ (alias build-c)
+ (deps hello_world.c)
+ (target hello_world)
+ (action
+  ; (run cc -gdwarf-5 %{deps} -o %{target})
+  (system "cc -gdwarf-5 %{deps} -o %{target}")))
+
+(rule
+ (alias build-cpp)
+ (deps hello_world.cpp)
+ (target hello_world_cpp)
+ (action
+  ; (run clang++ -std=c++17 -gdwarf-5 %{deps} -o %{target})
+  (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o %{target}")))
+
+(test
+ (name test_line_program_header)
+ (deps hello_world hello_world_cpp)
+ (libraries durin object alcotest cmdliner)
+   (build_if
+    (and
+     (= %{system} "macosx")
+     (= %{architecture} "arm64")))
+ (action
+  (run %{exe:test_line_program_header.exe} --binary %{dep:hello_world})))
+
+; Cram test to compare our dwarfdump with real dwarfdump
+
+(cram
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (deps %{bin:dwarfdump} %{dep:hello_world}))

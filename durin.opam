@@ -2,12 +2,20 @@
 opam-version: "2.0"
 synopsis: "A library for reading and writing the DWARF debugging format."
 description: "A library for reading and writing the DWARF debugging format."
+maintainer: ["Tim McGilchrist <timmcgil@gmail.com>"]
+authors: ["Tim McGilchrist <timmcgil@gmail.com>"]
 license: "BSD3"
+tags: ["dwarf" "debug"]
+homepage: "https://github.com/tmcgilchrist/durin"
+bug-reports: "https://github.com/tmcgilchrist/durin/issues"
 depends: [
-  "dune" {>= "3.0"}
+  "dune" {>= "3.9"}
   "ocaml" {>= "4.14"}
   "object"
+  "integers"
   "cmdliner" {with-test}
+  "alcotest" {with-test}
+  "ocamlformat" {with-dev-setup & = "0.27.0"}
   "odoc" {with-doc}
 ]
 build: [
@@ -23,4 +31,9 @@ build: [
     "@runtest" {with-test}
     "@doc" {with-doc}
   ]
+]
+dev-repo: "git+https://github.com/tmcgilchrist/durin.git"
+pin-depends: [
+  ["integers.dev" "git+https://github.com/tmcgilchrist/ocaml-integers.git#small-signed-integers-fixes"]
+  ["object.dev" "git+https://github.com/tmcgilchrist/object.git#master"]
 ]
