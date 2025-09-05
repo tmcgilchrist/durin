@@ -1047,8 +1047,8 @@ val create : Object.Buffer.t -> t
 (** Create a new DWARF context from an object file *)
 
 val parse_compile_unit : Object.Buffer.cursor -> CompileUnit.t
-(** Parse an individual compile unit from a cursor positioned at the start of
-    a compile unit header *)
+(** Parse an individual compile unit from a cursor positioned at the start of a
+    compile unit header *)
 
 val parse_compile_units : t -> CompileUnit.t list
 (** Parse all compile units from the [Debug_info] section of a Mach-O object

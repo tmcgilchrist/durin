@@ -1528,12 +1528,12 @@ type span = { start : size_t; size : size_t }
 
 module CompileUnit = struct
   type header = {
-      unit_length : u32
-    ; version : u16
-    ; unit_type : u8
-    ; debug_abbrev_offset : u32
-    ; address_size : u8
-    }
+    unit_length : u32;
+    version : u16;
+    unit_type : u8;
+    debug_abbrev_offset : u32;
+    address_size : u8;
+  }
 
   type t = {
     parent_ : int;
@@ -1623,8 +1623,7 @@ let lazy_parse_compile_unit_data (cur : Object.Buffer.cursor) :
   in
   (span, { unit_length; version; unit_type; debug_abbrev_offset; address_size })
 
-let parse_compile_unit (cur : Object.Buffer.cursor) : CompileUnit.t
-    =
+let parse_compile_unit (cur : Object.Buffer.cursor) : CompileUnit.t =
   (* Start by parsing just the header to get size *)
   let start = cur.position in
 
