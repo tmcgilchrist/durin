@@ -24,6 +24,15 @@ val unit_type_of_u8 : Unsigned.UInt8.t -> unit_type
 val string_of_unit_type : unit_type -> string
 (** Convert a unit_type to its string representation *)
 
+val string_of_tag : u64 -> string
+(** Convert a numeric DWARF tag code to its string representation *)
+
+val string_of_attr : u64 -> string
+(** Convert a numeric DWARF attribute code to its string representation *)
+
+val string_of_form : u64 -> string
+(** Convert a numeric DWARF form code to its string representation *)
+
 (** Abbreviation tag encoding.
 
     The abbreviations table for a single compilation unit consists of a series

@@ -26,6 +26,9 @@ Test help flag:
          -a, --all
              Dump all available debug information
   
+         --debug-abbrev
+             Dump debug abbreviation information (.debug_abbrev section)
+  
          --debug-info
              Dump debug info information (.debug_info section)
   
