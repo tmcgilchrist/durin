@@ -16,6 +16,46 @@ type dwarf_section =
 
 type object_format = MachO | ELF
 
+let string_of_object_format = function MachO -> "Mach-O" | ELF -> "ELF"
+
+(* TODO Move some of this into "object" library *)
+
+(** Detect file format from buffer using magic numbers *)
+let detect_format (buf : Object.Buffer.t) : object_format =
+  let cursor = Object.Buffer.cursor buf in
+  let magic = Object.Buffer.Read.u32 cursor in
+  let magic_int = Unsigned.UInt32.to_int magic in
+  match magic_int with
+  | 0x7f454c46 -> ELF (* ELF magic: \x7fELF big-endian *)
+  | 0x464c457f -> ELF (* ELF magic: \x7fELF little-endian *)
+  | 0xFEEDFACE | 0xFEEDFACF | 0xCEFAEDFE | 0xCFFAEDFE ->
+      MachO (* Mach-O magics *)
+  | _ -> failwith "Unsupported file format"
+
+(** Convert Mach-O cpu_type to architecture string *)
+let string_of_cpu_type = function
+  | `X86 -> "i386"
+  | `X86_64 -> "x86_64"
+  | `ARM -> "arm"
+  | `ARM64 -> "arm64"
+  | `ARM64_32 -> "arm64_32"
+  | `POWERPC -> "ppc"
+  | `POWERPC64 -> "ppc64"
+  | `Unknown x -> Printf.sprintf "unknown_%d" x
+
+(** Detect file format and architecture from buffer *)
+let detect_format_and_arch (buf : Object.Buffer.t) : string =
+  let format = detect_format buf in
+  match format with
+  | ELF ->
+      (* For ELF, we would need to read the e_machine field from the ELF header
+         For now, we'll default to a generic ELF string *)
+      "ELF"
+  | MachO ->
+      let header, _commands = Object.Macho.read buf in
+      let arch_str = string_of_cpu_type header.cpu_type in
+      Printf.sprintf "Mach-O %s" arch_str
+
 type unit_type =
   | DW_UT_compile
   | DW_UT_type
@@ -260,7 +300,7 @@ let string_of_attr attr_code =
   | 0x3fef -> "DW_AT_APPLE_sdk"
   | code -> Printf.sprintf "DW_AT_<0x%04x>" code
 
-let string_of_form form_code =
+let string_of_attribute_form_encoding form_code =
   match Unsigned.UInt64.to_int form_code with
   | 0x01 -> "DW_FORM_addr"
   | 0x02 -> "DW_FORM_reserved_02"
@@ -408,7 +448,7 @@ type abbreviation_tag =
   | DW_TAG_lo_user
   | DW_TAG_hi_user
 
-let tag_encodings = function
+let abbreviation_tag_of_int = function
   | 0x01 -> DW_TAG_array_type
   | 0x02 -> DW_TAG_class_type
   | 0x03 -> DW_TAG_entry_point
@@ -480,6 +520,58 @@ let tag_encodings = function
   | 0x4080 -> DW_TAG_lo_user
   | 0xffff -> DW_TAG_hi_user
   | n -> failwith (Printf.sprintf "Unknown tag encoding: 0x%02x" n)
+
+(* TODO Move this to dwarf.ml and rename various conversion functions
+   consistently. *)
+let u64_of_abbreviation_tag = function
+  | DW_TAG_array_type -> Unsigned.UInt64.of_int 0x01
+  | DW_TAG_class_type -> Unsigned.UInt64.of_int 0x02
+  | DW_TAG_entry_point -> Unsigned.UInt64.of_int 0x03
+  | DW_TAG_enumeration_type -> Unsigned.UInt64.of_int 0x04
+  | DW_TAG_formal_parameter -> Unsigned.UInt64.of_int 0x05
+  | DW_TAG_imported_declaration -> Unsigned.UInt64.of_int 0x08
+  | DW_TAG_label -> Unsigned.UInt64.of_int 0x0a
+  | DW_TAG_lexical_block -> Unsigned.UInt64.of_int 0x0b
+  | DW_TAG_member -> Unsigned.UInt64.of_int 0x0d
+  | DW_TAG_pointer_type -> Unsigned.UInt64.of_int 0x0f
+  | DW_TAG_reference_type -> Unsigned.UInt64.of_int 0x10
+  | DW_TAG_compile_unit -> Unsigned.UInt64.of_int 0x11
+  | DW_TAG_string_type -> Unsigned.UInt64.of_int 0x12
+  | DW_TAG_structure_type -> Unsigned.UInt64.of_int 0x13
+  | DW_TAG_subroutine_type -> Unsigned.UInt64.of_int 0x15
+  | DW_TAG_typedef -> Unsigned.UInt64.of_int 0x16
+  | DW_TAG_union_type -> Unsigned.UInt64.of_int 0x17
+  | DW_TAG_unspecified_parameters -> Unsigned.UInt64.of_int 0x18
+  | DW_TAG_variant -> Unsigned.UInt64.of_int 0x19
+  | DW_TAG_common_block -> Unsigned.UInt64.of_int 0x1a
+  | DW_TAG_common_inclusion -> Unsigned.UInt64.of_int 0x1b
+  | DW_TAG_inheritance -> Unsigned.UInt64.of_int 0x1c
+  | DW_TAG_inlined_subroutine -> Unsigned.UInt64.of_int 0x1d
+  | DW_TAG_module -> Unsigned.UInt64.of_int 0x1e
+  | DW_TAG_ptr_to_member_type -> Unsigned.UInt64.of_int 0x1f
+  | DW_TAG_set_type -> Unsigned.UInt64.of_int 0x20
+  | DW_TAG_subrange_type -> Unsigned.UInt64.of_int 0x21
+  | DW_TAG_with_stmt -> Unsigned.UInt64.of_int 0x22
+  | DW_TAG_access_declaration -> Unsigned.UInt64.of_int 0x23
+  | DW_TAG_base_type -> Unsigned.UInt64.of_int 0x24
+  | DW_TAG_catch_block -> Unsigned.UInt64.of_int 0x25
+  | DW_TAG_const_type -> Unsigned.UInt64.of_int 0x26
+  | DW_TAG_constant -> Unsigned.UInt64.of_int 0x27
+  | DW_TAG_enumerator -> Unsigned.UInt64.of_int 0x28
+  | DW_TAG_file_type -> Unsigned.UInt64.of_int 0x29
+  | DW_TAG_friend -> Unsigned.UInt64.of_int 0x2a
+  | DW_TAG_namelist -> Unsigned.UInt64.of_int 0x2b
+  | DW_TAG_namelist_item -> Unsigned.UInt64.of_int 0x2c
+  | DW_TAG_packed_type -> Unsigned.UInt64.of_int 0x2d
+  | DW_TAG_subprogram -> Unsigned.UInt64.of_int 0x2e
+  | DW_TAG_template_type_parameter -> Unsigned.UInt64.of_int 0x2f
+  | DW_TAG_template_value_parameter -> Unsigned.UInt64.of_int 0x30
+  | DW_TAG_thrown_type -> Unsigned.UInt64.of_int 0x31
+  | DW_TAG_try_block -> Unsigned.UInt64.of_int 0x32
+  | DW_TAG_variant_part -> Unsigned.UInt64.of_int 0x33
+  | DW_TAG_variable -> Unsigned.UInt64.of_int 0x34
+  | DW_TAG_volatile_type -> Unsigned.UInt64.of_int 0x35
+  | _ -> Unsigned.UInt64.of_int 0 (* Unknown tag *)
 
 type children_determination = DW_CHILDREN_no | DW_CHILDREN_yes
 
@@ -610,6 +702,10 @@ type attribute_encoding =
   | DW_AT_loclists_base
   | DW_AT_lo_user
   | DW_AT_hi_user
+  (* LLVM and Apple extensions *)
+  | DW_AT_LLVM_sysroot
+  | DW_AT_APPLE_omit_frame_ptr
+  | DW_AT_APPLE_sdk
 
 let attribute_encoding = function
   | 0x01 -> DW_AT_sibling
@@ -733,7 +829,138 @@ let attribute_encoding = function
   | 0x8c -> DW_AT_loclists_base
   | 0x2000 -> DW_AT_lo_user
   | 0x3fff -> DW_AT_hi_user
-  | n -> failwith (Printf.sprintf "Unknown attribute_encoding: 0x%02x" n)
+  (* LLVM and Apple extensions *)
+  | 0x3e02 -> DW_AT_LLVM_sysroot
+  | 0x3fe7 -> DW_AT_APPLE_omit_frame_ptr
+  | 0x3fef -> DW_AT_APPLE_sdk
+  | n -> failwith (Printf.sprintf "Unknown attribute_encoding: 0x%04x" n)
+
+let string_of_attribute_encoding = function
+  | DW_AT_sibling -> "DW_AT_sibling"
+  | DW_AT_location -> "DW_AT_location"
+  | DW_AT_name -> "DW_AT_name"
+  | DW_AT_ordering -> "DW_AT_ordering"
+  | DW_AT_byte_size -> "DW_AT_byte_size"
+  | DW_AT_bit_size -> "DW_AT_bit_size"
+  | DW_AT_stmt_list -> "DW_AT_stmt_list"
+  | DW_AT_low_pc -> "DW_AT_low_pc"
+  | DW_AT_high_pc -> "DW_AT_high_pc"
+  | DW_AT_language -> "DW_AT_language"
+  | DW_AT_discr -> "DW_AT_discr"
+  | DW_AT_discr_value -> "DW_AT_discr_value"
+  | DW_AT_visibility -> "DW_AT_visibility"
+  | DW_AT_import -> "DW_AT_import"
+  | DW_AT_string_length -> "DW_AT_string_length"
+  | DW_AT_common_reference -> "DW_AT_common_reference"
+  | DW_AT_comp_dir -> "DW_AT_comp_dir"
+  | DW_AT_const_value -> "DW_AT_const_value"
+  | DW_AT_containing_type -> "DW_AT_containing_type"
+  | DW_AT_default_value -> "DW_AT_default_value"
+  | DW_AT_inline -> "DW_AT_inline"
+  | DW_AT_is_optional -> "DW_AT_is_optional"
+  | DW_AT_lower_bound -> "DW_AT_lower_bound"
+  | DW_AT_producer -> "DW_AT_producer"
+  | DW_AT_prototyped -> "DW_AT_prototyped"
+  | DW_AT_return_addr -> "DW_AT_return_addr"
+  | DW_AT_start_scope -> "DW_AT_start_scope"
+  | DW_AT_bit_stride -> "DW_AT_bit_stride"
+  | DW_AT_upper_bound -> "DW_AT_upper_bound"
+  | DW_AT_abstract_origin -> "DW_AT_abstract_origin"
+  | DW_AT_accessibility -> "DW_AT_accessibility"
+  | DW_AT_address_class -> "DW_AT_address_class"
+  | DW_AT_artificial -> "DW_AT_artificial"
+  | DW_AT_base_types -> "DW_AT_base_types"
+  | DW_AT_calling_convention -> "DW_AT_calling_convention"
+  | DW_AT_count -> "DW_AT_count"
+  | DW_AT_data_member_location -> "DW_AT_data_member_location"
+  | DW_AT_decl_column -> "DW_AT_decl_column"
+  | DW_AT_decl_file -> "DW_AT_decl_file"
+  | DW_AT_decl_line -> "DW_AT_decl_line"
+  | DW_AT_declaration -> "DW_AT_declaration"
+  | DW_AT_discr_list -> "DW_AT_discr_list"
+  | DW_AT_encoding -> "DW_AT_encoding"
+  | DW_AT_external -> "DW_AT_external"
+  | DW_AT_frame_base -> "DW_AT_frame_base"
+  | DW_AT_friend -> "DW_AT_friend"
+  | DW_AT_identifier_case -> "DW_AT_identifier_case"
+  | DW_AT_namelist_item -> "DW_AT_namelist_item"
+  | DW_AT_priority -> "DW_AT_priority"
+  | DW_AT_segment -> "DW_AT_segment"
+  | DW_AT_specification -> "DW_AT_specification"
+  | DW_AT_static_link -> "DW_AT_static_link"
+  | DW_AT_type -> "DW_AT_type"
+  | DW_AT_use_location -> "DW_AT_use_location"
+  | DW_AT_variable_parameter -> "DW_AT_variable_parameter"
+  | DW_AT_virtuality -> "DW_AT_virtuality"
+  | DW_AT_vtable_elem_location -> "DW_AT_vtable_elem_location"
+  | DW_AT_allocated -> "DW_AT_allocated"
+  | DW_AT_associated -> "DW_AT_associated"
+  | DW_AT_data_location -> "DW_AT_data_location"
+  | DW_AT_byte_stride -> "DW_AT_byte_stride"
+  | DW_AT_entry_pc -> "DW_AT_entry_pc"
+  | DW_AT_use_UTF8 -> "DW_AT_use_UTF8"
+  | DW_AT_extension -> "DW_AT_extension"
+  | DW_AT_ranges -> "DW_AT_ranges"
+  | DW_AT_trampoline -> "DW_AT_trampoline"
+  | DW_AT_call_column -> "DW_AT_call_column"
+  | DW_AT_call_file -> "DW_AT_call_file"
+  | DW_AT_call_line -> "DW_AT_call_line"
+  | DW_AT_description -> "DW_AT_description"
+  | DW_AT_binary_scale -> "DW_AT_binary_scale"
+  | DW_AT_decimal_scale -> "DW_AT_decimal_scale"
+  | DW_AT_small -> "DW_AT_small"
+  | DW_AT_decimal_sign -> "DW_AT_decimal_sign"
+  | DW_AT_digit_count -> "DW_AT_digit_count"
+  | DW_AT_picture_string -> "DW_AT_picture_string"
+  | DW_AT_mutable -> "DW_AT_mutable"
+  | DW_AT_threads_scaled -> "DW_AT_threads_scaled"
+  | DW_AT_explicit -> "DW_AT_explicit"
+  | DW_AT_object_pointer -> "DW_AT_object_pointer"
+  | DW_AT_endianity -> "DW_AT_endianity"
+  | DW_AT_elemental -> "DW_AT_elemental"
+  | DW_AT_pure -> "DW_AT_pure"
+  | DW_AT_recursive -> "DW_AT_recursive"
+  | DW_AT_signature -> "DW_AT_signature"
+  | DW_AT_main_subprogram -> "DW_AT_main_subprogram"
+  | DW_AT_data_bit_offset -> "DW_AT_data_bit_offset"
+  | DW_AT_const_expr -> "DW_AT_const_expr"
+  | DW_AT_enum_class -> "DW_AT_enum_class"
+  | DW_AT_linkage_name -> "DW_AT_linkage_name"
+  | DW_AT_string_length_bit_size -> "DW_AT_string_length_bit_size"
+  | DW_AT_string_length_byte_size -> "DW_AT_string_length_byte_size"
+  | DW_AT_rank -> "DW_AT_rank"
+  | DW_AT_str_offsets_base -> "DW_AT_str_offsets_base"
+  | DW_AT_addr_base -> "DW_AT_addr_base"
+  | DW_AT_rnglists_base -> "DW_AT_rnglists_base"
+  | DW_AT_dwo_name -> "DW_AT_dwo_name"
+  | DW_AT_reference -> "DW_AT_reference"
+  | DW_AT_rvalue_reference -> "DW_AT_rvalue_reference"
+  | DW_AT_macros -> "DW_AT_macros"
+  | DW_AT_call_all_calls -> "DW_AT_call_all_calls"
+  | DW_AT_call_all_source_calls -> "DW_AT_call_all_source_calls"
+  | DW_AT_call_all_tail_calls -> "DW_AT_call_all_tail_calls"
+  | DW_AT_call_return_pc -> "DW_AT_call_return_pc"
+  | DW_AT_call_value -> "DW_AT_call_value"
+  | DW_AT_call_origin -> "DW_AT_call_origin"
+  | DW_AT_call_parameter -> "DW_AT_call_parameter"
+  | DW_AT_call_pc -> "DW_AT_call_pc"
+  | DW_AT_call_tail_call -> "DW_AT_call_tail_call"
+  | DW_AT_call_target -> "DW_AT_call_target"
+  | DW_AT_call_target_clobbered -> "DW_AT_call_target_clobbered"
+  | DW_AT_call_data_location -> "DW_AT_call_data_location"
+  | DW_AT_call_data_value -> "DW_AT_call_data_value"
+  | DW_AT_noreturn -> "DW_AT_noreturn"
+  | DW_AT_alignment -> "DW_AT_alignment"
+  | DW_AT_export_symbols -> "DW_AT_export_symbols"
+  | DW_AT_deleted -> "DW_AT_deleted"
+  | DW_AT_defaulted -> "DW_AT_defaulted"
+  | DW_AT_loclists_base -> "DW_AT_loclists_base"
+  | DW_AT_lo_user -> "DW_AT_lo_user"
+  | DW_AT_hi_user -> "DW_AT_hi_user"
+  (* LLVM and Apple extensions *)
+  | DW_AT_LLVM_sysroot -> "DW_AT_LLVM_sysroot"
+  | DW_AT_APPLE_omit_frame_ptr -> "DW_AT_APPLE_omit_frame_ptr"
+  | DW_AT_APPLE_sdk -> "DW_AT_APPLE_sdk"
 
 type attribute_form_encoding =
   | DW_FORM_addr
@@ -1345,6 +1572,47 @@ let dwarf_language = function
   | 0xffff -> DW_LANG_hi_user
   | n -> failwith (Printf.sprintf "Unknown dwarf_language: 0x%04x" n)
 
+let string_of_dwarf_language = function
+  | DW_LANG_C89 -> "DW_LANG_C89"
+  | DW_LANG_C -> "DW_LANG_C"
+  | DW_LANG_Ada83 -> "DW_LANG_Ada83"
+  | DW_LANG_C_plus_plus -> "DW_LANG_C_plus_plus"
+  | DW_LANG_Cobol74 -> "DW_LANG_Cobol74"
+  | DW_LANG_Cobol85 -> "DW_LANG_Cobol85"
+  | DW_LANG_Fortran77 -> "DW_LANG_Fortran77"
+  | DW_LANG_Fortran90 -> "DW_LANG_Fortran90"
+  | DW_LANG_Pascal83 -> "DW_LANG_Pascal83"
+  | DW_LANG_Modula2 -> "DW_LANG_Modula2"
+  | DW_LANG_Java -> "DW_LANG_Java"
+  | DW_LANG_C99 -> "DW_LANG_C99"
+  | DW_LANG_Ada95 -> "DW_LANG_Ada95"
+  | DW_LANG_Fortran95 -> "DW_LANG_Fortran95"
+  | DW_LANG_PLI -> "DW_LANG_PLI"
+  | DW_LANG_ObjC -> "DW_LANG_ObjC"
+  | DW_LANG_ObjC_plus_plus -> "DW_LANG_ObjC_plus_plus"
+  | DW_LANG_UPC -> "DW_LANG_UPC"
+  | DW_LANG_D -> "DW_LANG_D"
+  | DW_LANG_Python -> "DW_LANG_Python"
+  | DW_LANG_OpenCL -> "DW_LANG_OpenCL"
+  | DW_LANG_Go -> "DW_LANG_Go"
+  | DW_LANG_Modula3 -> "DW_LANG_Modula3"
+  | DW_LANG_Haskell -> "DW_LANG_Haskell"
+  | DW_LANG_C_plus_plus_03 -> "DW_LANG_C_plus_plus_03"
+  | DW_LANG_C_plus_plus_11 -> "DW_LANG_C_plus_plus_11"
+  | DW_LANG_OCaml -> "DW_LANG_OCaml"
+  | DW_LANG_Rust -> "DW_LANG_Rust"
+  | DW_LANG_C11 -> "DW_LANG_C11"
+  | DW_LANG_Swift -> "DW_LANG_Swift"
+  | DW_LANG_Julia -> "DW_LANG_Julia"
+  | DW_LANG_Dylan -> "DW_LANG_Dylan"
+  | DW_LANG_C_plus_plus_14 -> "DW_LANG_C_plus_plus_14"
+  | DW_LANG_Fortran03 -> "DW_LANG_Fortran03"
+  | DW_LANG_Fortran08 -> "DW_LANG_Fortran08"
+  | DW_LANG_RenderScript -> "DW_LANG_RenderScript"
+  | DW_LANG_BLISS -> "DW_LANG_BLISS"
+  | DW_LANG_lo_user -> "DW_LANG_lo_user"
+  | DW_LANG_hi_user -> "DW_LANG_hi_user"
+
 type identifier =
   | DW_ID_case_sensitive
   | DW_ID_up_case
@@ -1680,6 +1948,96 @@ let parse_abbrev_table (elf : Object_file.t) (offset : u32) :
   parse_abbrevs ();
   table
 
+let attribute_form_encoding code =
+  match code with
+  | 0x01 -> DW_FORM_addr
+  | 0x05 -> DW_FORM_data2
+  | 0x06 -> DW_FORM_data4
+  | 0x08 -> DW_FORM_string
+  | 0x0b -> DW_FORM_data1
+  | 0x0e -> DW_FORM_strp
+  | 0x17 -> DW_FORM_sec_offset
+  | 0x18 -> DW_FORM_exprloc
+  | 0x19 -> DW_FORM_flag_present
+  | 0x1a -> DW_FORM_strx
+  | 0x1b -> DW_FORM_addrx
+  | _ -> DW_FORM_data4 (* Default fallback *)
+
+let abbreviation_tag_of_u64 code =
+  match Unsigned.UInt64.to_int code with
+  | 0x01 -> DW_TAG_array_type
+  | 0x02 -> DW_TAG_class_type
+  | 0x11 -> DW_TAG_compile_unit
+  | 0x24 -> DW_TAG_base_type
+  | 0x2e -> DW_TAG_subprogram
+  | 0x05 -> DW_TAG_formal_parameter
+  | 0x34 -> DW_TAG_variable
+  | _ -> DW_TAG_compile_unit (* Default fallback *)
+
+(* String table helper functions *)
+let find_debug_section buffer section_name =
+  try
+    let open Object.Macho in
+    let _header, commands = read buffer in
+
+    (* Look for __DWARF segment *)
+    let dwarf_segment_opt =
+      List.find_map
+        (function
+          | LC_SEGMENT_64 (lazy seg) when seg.seg_segname = "__DWARF" ->
+              Some seg
+          | _ -> None)
+        commands
+    in
+
+    match dwarf_segment_opt with
+    | None -> None
+    | Some dwarf_segment ->
+        (* Find the specified section within __DWARF segment *)
+        Array.find_map
+          (fun section ->
+            if section.sec_sectname = section_name then
+              Some (section.sec_offset, section.sec_size)
+            else None)
+          dwarf_segment.seg_sections
+  with _ -> None
+
+let read_string_from_section buffer offset section_offset : string option =
+  try
+    let actual_offset = section_offset + offset in
+    let cursor = Object.Buffer.cursor buffer ~at:actual_offset in
+    Object.Buffer.Read.zero_string cursor ()
+  with _ -> None
+
+let resolve_string_index (buffer : Object.Buffer.t) (index : int) : string =
+  (* Try to resolve string index using debug_str_offs and debug_str sections *)
+  match
+    ( find_debug_section buffer "__debug_str_offs",
+      find_debug_section buffer "__debug_str" )
+  with
+  | Some (str_offs_offset, _), Some (str_offset, _) -> (
+      try
+        (* Read offset from string offsets table *)
+        let str_offs_cursor =
+          Object.Buffer.cursor buffer
+            ~at:(Unsigned.UInt32.to_int str_offs_offset + (index * 4))
+        in
+        let string_offset =
+          Object.Buffer.Read.u32 str_offs_cursor |> Unsigned.UInt32.to_int
+        in
+
+        (* Read actual string from debug_str section *)
+        match
+          read_string_from_section buffer string_offset
+            (Unsigned.UInt32.to_int str_offset)
+        with
+        | Some s -> s
+        | None -> Printf.sprintf "<strx_error:%d>" index
+      with _ -> Printf.sprintf "<strx_error:%d>" index)
+  | Some (_, _), None -> Printf.sprintf "<strx_no_str:%d>" index
+  | None, Some (_, _) -> Printf.sprintf "<strx_no_offs:%d>" index
+  | None, None -> Printf.sprintf "<strx_no_sections:%d>" index
+
 module DIE = struct
   type attribute_value =
     | String of string
@@ -1689,6 +2047,7 @@ module DIE = struct
     | Flag of bool
     | Reference of u64
     | Block of string
+    | Language of dwarf_language
 
   type attribute = { attr : attribute_encoding; value : attribute_value }
 
@@ -1739,6 +2098,11 @@ module DIE = struct
     | DW_FORM_data8 ->
         let value = Object.Buffer.Read.u64 cur in
         UData value
+    | DW_FORM_strx ->
+        (* String index form - reads ULEB128 index into string offsets table *)
+        let index = Object.Buffer.Read.uleb128 cur in
+        let resolved_string = resolve_string_index _elf index in
+        String resolved_string
     | _ ->
         (* For unsupported forms, skip and return placeholder *)
         String "<unsupported_form>"
@@ -1755,11 +2119,7 @@ module DIE = struct
         | None -> None (* Invalid abbreviation code *)
         | Some abbrev ->
             (* Convert tag from u64 to abbreviation_tag *)
-            let tag =
-              match Unsigned.UInt64.to_int abbrev.tag with
-              | 0x11 -> DW_TAG_compile_unit
-              | _ -> DW_TAG_compile_unit (* Default for unknown tags *)
-            in
+            let tag = abbreviation_tag_of_u64 abbrev.tag in
 
             (* Parse attributes according to abbreviation specification *)
             let attributes =
@@ -1771,7 +2131,27 @@ module DIE = struct
                   let form_encoding =
                     attribute_form_encoding (Unsigned.UInt64.to_int spec.form)
                   in
-                  let value = parse_attribute_value cur form_encoding elf in
+                  let raw_value = parse_attribute_value cur form_encoding elf in
+                  let value =
+                    (* Convert UData to Language for DW_AT_language attributes *)
+                    if attr_encoding = DW_AT_language then
+                      match raw_value with
+                      | UData lang_code -> (
+                          let lang_int = Unsigned.UInt64.to_int lang_code in
+                          (* Handle potential endianness issue - swap bytes if needed *)
+                          let corrected_lang_int =
+                            if lang_int > 0x00ff then
+                              (* If the value is > 255, it might be byte-swapped *)
+                              let low_byte = lang_int land 0xff in
+                              let high_byte = (lang_int lsr 8) land 0xff in
+                              (low_byte lsl 8) lor high_byte
+                            else lang_int
+                          in
+                          try Language (dwarf_language corrected_lang_int)
+                          with _ -> raw_value)
+                      | _ -> raw_value
+                    else raw_value
+                  in
                   { attr = attr_encoding; value })
                 abbrev.attr_specs
             in
@@ -2367,3 +2747,63 @@ let create object_ =
 let get_compile_units t =
   let compile_units = parse_compile_units t |> Array.of_list in
   { t with compile_units_ = compile_units }
+
+module DebugStrOffsets = struct
+  type header = { unit_length : u32; version : u16; padding : u16 }
+  type offset_entry = { offset : u32; resolved_string : string option }
+  type t = { header : header; offsets : offset_entry array }
+
+  let parse_header (cursor : Object.Buffer.cursor) : header =
+    let unit_length = Object.Buffer.Read.u32 cursor in
+    let version = Object.Buffer.Read.u16 cursor in
+    let padding = Object.Buffer.Read.u16 cursor in
+
+    (* Validate DWARF version 5 *)
+    if Unsigned.UInt16.to_int version != 5 then
+      failwith
+        (Printf.sprintf "Expected DWARF version 5, got %d"
+           (Unsigned.UInt16.to_int version));
+
+    { unit_length; version; padding }
+
+  let parse_offsets (cursor : Object.Buffer.cursor) (header : header)
+      (debug_str_section : (u32 * u64) option) (buffer : Object.Buffer.t) :
+      offset_entry array =
+    let _header_size = 8 in
+    (* unit_length(4) + version(2) + padding(2) *)
+    let offset_size = 4 in
+    (* 4-byte offsets for DWARF32 *)
+    let data_size = Unsigned.UInt32.to_int header.unit_length - 4 in
+    (* unit_length excludes itself *)
+    let num_offsets = data_size / offset_size in
+
+    Array.init num_offsets (fun _i ->
+        let offset = Object.Buffer.Read.u32 cursor in
+        let resolved_string =
+          match debug_str_section with
+          | Some (str_section_offset, _) -> (
+              try
+                let str_cursor =
+                  Object.Buffer.cursor buffer
+                    ~at:
+                      (Unsigned.UInt32.to_int str_section_offset
+                      + Unsigned.UInt32.to_int offset)
+                in
+                Object.Buffer.Read.zero_string str_cursor ()
+              with _ -> None)
+          | None -> None
+        in
+        { offset; resolved_string })
+
+  let parse (buffer : Object.Buffer.t) (section_offset : u32) : t =
+    let cursor =
+      Object.Buffer.cursor buffer ~at:(Unsigned.UInt32.to_int section_offset)
+    in
+    let header = parse_header cursor in
+
+    (* Find debug_str section for string resolution *)
+    let debug_str_section = find_debug_section buffer "__debug_str" in
+
+    let offsets = parse_offsets cursor header debug_str_section buffer in
+    { header; offsets }
+end

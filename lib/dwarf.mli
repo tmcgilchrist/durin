@@ -30,7 +30,7 @@ val string_of_tag : u64 -> string
 val string_of_attr : u64 -> string
 (** Convert a numeric DWARF attribute code to its string representation *)
 
-val string_of_form : u64 -> string
+val string_of_attribute_form_encoding : u64 -> string
 (** Convert a numeric DWARF form code to its string representation *)
 
 (** Abbreviation tag encoding.
@@ -112,6 +112,8 @@ type abbreviation_tag =
   | DW_TAG_immutable_type
   | DW_TAG_lo_user
   | DW_TAG_hi_user
+
+val u64_of_abbreviation_tag : abbreviation_tag -> u64
 
 (** The encodings for the child determination byte. Table 7.4: Child
     determination encodings *)
@@ -244,6 +246,13 @@ type attribute_encoding =
   | DW_AT_loclists_base
   | DW_AT_lo_user
   | DW_AT_hi_user
+  (* LLVM and Apple extensions *)
+  | DW_AT_LLVM_sysroot
+  | DW_AT_APPLE_omit_frame_ptr
+  | DW_AT_APPLE_sdk
+
+val string_of_attribute_encoding : attribute_encoding -> string
+(** Convert an attribute_encoding type to its string representation *)
 
 (** Attribute form encoding. Table 7.6: Attribute form encodings *)
 type attribute_form_encoding =
@@ -584,6 +593,9 @@ type dwarf_language =
   | DW_LANG_lo_user
   | DW_LANG_hi_user
 
+val string_of_dwarf_language : dwarf_language -> string
+(** Convert a dwarf_language to its string representation *)
+
 (** Identifier case. The encodings of the constants used in the
     [DW_AT_identifier_case] attribute. Table 7.18: Identifier case encodings *)
 type identifier =
@@ -767,6 +779,9 @@ type object_format =
           Primarily used to derive the correct section name for different
           formats. *)
 
+val string_of_object_format : object_format -> string
+(** Human readable string for [object_format] type *)
+
 type span = { start : size_t; size : size_t }
 type attr_spec = { attr : u64; form : u64 }
 
@@ -779,6 +794,13 @@ type abbrev = {
 
 val object_format_to_section_name : object_format -> dwarf_section -> string
 (** Returns the dwarf_section name specific for the object_format. *)
+
+val detect_format : Object.Buffer.t -> object_format
+(** Detect file format from buffer using magic numbers *)
+
+val detect_format_and_arch : Object.Buffer.t -> string
+(** Detect file format and architecture from buffer, returning a string like
+    "Mach-O arm64" *)
 
 (** Object module as a wrapper around a buffer for an object file. *)
 module Object_file : sig
@@ -800,6 +822,7 @@ module DIE : sig
     | Flag of bool  (** Boolean from DW_FORM_flag or DW_FORM_flag_present *)
     | Reference of u64  (** Reference from DW_FORM_ref* *)
     | Block of string  (** Block of data from DW_FORM_block* *)
+    | Language of dwarf_language  (** Language from DW_AT_language attribute *)
 
   type attribute = { attr : attribute_encoding; value : attribute_value }
   (** A DWARF attribute consisting of name and value *)
@@ -1065,3 +1088,23 @@ val parse_compile_units : t -> CompileUnit.t list
 
 val get_abbrev_table : t -> size_t -> t * (u64, abbrev) Hashtbl.t
 (** Retrieve the abbreviation table at offset [size_t]. *)
+
+module DebugStrOffsets : sig
+  type header = { unit_length : u32; version : u16; padding : u16 }
+  type offset_entry = { offset : u32; resolved_string : string option }
+  type t = { header : header; offsets : offset_entry array }
+
+  val parse_header : Object.Buffer.cursor -> header
+  (** Parse the header of a debug_str_offsets section *)
+
+  val parse_offsets :
+    Object.Buffer.cursor ->
+    header ->
+    (u32 * u64) option ->
+    Object.Buffer.t ->
+    offset_entry array
+  (** Parse the offset array with optional string resolution *)
+
+  val parse : Object.Buffer.t -> u32 -> t
+  (** Parse a complete debug_str_offsets section from buffer at given offset *)
+end

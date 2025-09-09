@@ -113,13 +113,12 @@ let dump_line_program_header header =
 let dump_debug_line filename =
   try
     let actual_filename, is_dsym = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+    let format_str = Dwarf.detect_format_and_arch buffer in
 
     (* Output header similar to dwarfdump *)
-    (* TODO Derive format from file input rather than hardcoding them. *)
-    Printf.printf "%s:\tfile format Mach-O arm64\n\n" actual_filename;
+    Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
     Printf.printf ".debug_line contents:\n";
-
-    let buffer = Object.Buffer.parse actual_filename in
 
     (* Try to find and parse the debug_line section *)
     match find_debug_line_section buffer with
@@ -158,15 +157,50 @@ let dump_debug_line filename =
         (Printexc.to_string exn);
       exit 1
 
+let string_of_abbreviation_tag tag =
+  Dwarf.(u64_of_abbreviation_tag tag |> string_of_tag)
+
+let rec print_die die depth offset =
+  let indent = String.make (depth * 2) ' ' in
+  Printf.printf "%s0x%08x: %s [%d]\n" indent offset
+    (string_of_abbreviation_tag die.Dwarf.DIE.tag)
+    depth;
+
+  (* Print attributes *)
+  List.iter
+    (fun attr ->
+      let attr_name = Dwarf.string_of_attribute_encoding attr.Dwarf.DIE.attr in
+      let attr_value =
+        match attr.Dwarf.DIE.value with
+        | Dwarf.DIE.String s -> Printf.sprintf "\"%s\"" s
+        | Dwarf.DIE.UData u ->
+            Printf.sprintf "0x%Lx" (Unsigned.UInt64.to_int64 u)
+        | Dwarf.DIE.SData i -> Printf.sprintf "%Ld" i
+        | Dwarf.DIE.Address a ->
+            Printf.sprintf "0x%Lx" (Unsigned.UInt64.to_int64 a)
+        | Dwarf.DIE.Flag b -> if b then "true" else "false"
+        | Dwarf.DIE.Reference r ->
+            Printf.sprintf "0x%Lx" (Unsigned.UInt64.to_int64 r)
+        | Dwarf.DIE.Block b -> Printf.sprintf "<%d bytes>" (String.length b)
+        | Dwarf.DIE.Language lang -> Dwarf.string_of_dwarf_language lang
+      in
+      Printf.printf "%s  %s\t(%s)\n" indent attr_name attr_value)
+    die.Dwarf.DIE.attributes;
+
+  (* Print children *)
+  List.iteri
+    (fun i child -> print_die child (depth + 1) (offset + i + 1))
+    die.Dwarf.DIE.children
+
 let dump_debug_info filename =
   try
     let actual_filename, is_dsym = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+    let format_str = Dwarf.detect_format_and_arch buffer in
 
     (* Output header similar to dwarfdump *)
-    Printf.printf "%s:\tfile format Mach-O arm64\n\n" actual_filename;
+    Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
     Printf.printf ".debug_info contents:\n";
-
-    let buffer = Object.Buffer.parse actual_filename in
 
     (* Try to find the debug_info section *)
     match find_debug_section buffer "__debug_info" with
@@ -210,7 +244,20 @@ let dump_debug_info filename =
               (Dwarf.string_of_unit_type unit_type)
               (Unsigned.UInt32.to_int parsed.debug_abbrev_offset)
               (Unsigned.UInt8.to_int parsed.address_size)
-              next_unit_offset)
+              next_unit_offset;
+
+            (* Get the abbreviation table for this compilation unit *)
+            let abbrev_offset =
+              Unsigned.UInt64.of_uint32 parsed.debug_abbrev_offset
+            in
+            let _, abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
+
+            (* Get the root DIE for this compilation unit *)
+            match Dwarf.CompileUnit.root_die unit abbrev_table with
+            | None ->
+                Printf.printf "  No root DIE found for this compilation unit\n"
+            | Some root_die -> print_die root_die 1 (unit_offset_in_section + 11))
+            (* +11 for CU header size *)
           compile_units
   with
   | Sys_error msg ->
@@ -228,9 +275,11 @@ let dump_all filename =
 let dump_debug_names filename =
   try
     let actual_filename, is_dsym = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+    let format_str = Dwarf.detect_format_and_arch buffer in
 
     (* Output header similar to dwarfdump *)
-    Printf.printf "%s:\tfile format Mach-O arm64\n\n" actual_filename;
+    Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
     Printf.printf ".debug_names contents:\n";
 
     (* For now, just show that the parsing infrastructure is in place *)
@@ -264,12 +313,12 @@ let dump_debug_names filename =
 let dump_debug_abbrev filename =
   try
     let actual_filename, is_dsym = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+    let format_str = Dwarf.detect_format_and_arch buffer in
 
     (* Output header similar to dwarfdump *)
-    Printf.printf "%s:\tfile format Mach-O arm64\n\n" actual_filename;
+    Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
     Printf.printf ".debug_abbrev contents:\n";
-
-    let buffer = Object.Buffer.parse actual_filename in
 
     (* Try to find the debug_abbrev section *)
     match find_debug_section buffer "__debug_abbrev" with
@@ -319,7 +368,7 @@ let dump_debug_abbrev filename =
               (fun attr_spec ->
                 Printf.printf "\t%s\t%s\n"
                   (Dwarf.string_of_attr attr_spec.Dwarf.attr)
-                  (Dwarf.string_of_form attr_spec.Dwarf.form))
+                  (Dwarf.string_of_attribute_form_encoding attr_spec.Dwarf.form))
               abbrev.Dwarf.attr_specs;
 
             Printf.printf "\n")
@@ -333,7 +382,142 @@ let dump_debug_abbrev filename =
         (Printexc.to_string exn);
       exit 1
 
+let dump_debug_str_offsets filename =
+  try
+    let actual_filename, is_dsym = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+    let format_str = Dwarf.detect_format_and_arch buffer in
+
+    (* Output header similar to dwarfdump *)
+    Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
+    Printf.printf ".debug_str_offsets contents:\n";
+
+    (* Try to find the debug_str_offs section *)
+    match find_debug_section buffer "__debug_str_offs" with
+    | None ->
+        Printf.printf "No __debug_str_offs section found in file\n";
+        if not is_dsym then (
+          Printf.printf
+            "Note: For MachO binaries, debug info is typically in .dSYM bundles\n";
+          let dsym_path =
+            filename ^ ".dSYM/Contents/Resources/DWARF/"
+            ^ Filename.basename filename
+          in
+          if Sys.file_exists dsym_path then Printf.printf "Try: %s\n" dsym_path)
+    | Some (section_offset, _section_size) ->
+        (* Use the new parsing functions from DWARF library *)
+        let parsed_str_offsets =
+          Dwarf.DebugStrOffsets.parse buffer section_offset
+        in
+
+        (* Print header information *)
+        let header = parsed_str_offsets.header in
+        Printf.printf
+          "0x%08x: Contribution size = %d, Format = %s, Version = %d\n" 0
+          (Unsigned.UInt32.to_int header.unit_length)
+          "DWARF32"
+          (Unsigned.UInt16.to_int header.version);
+
+        (* Print each offset with its resolved string *)
+        let header_size = 8 in
+        let offset_size = 4 in
+        Array.iteri
+          (fun i offset_entry ->
+            let relative_pos = header_size + (i * offset_size) in
+            let offset_value =
+              Unsigned.UInt32.to_int offset_entry.Dwarf.DebugStrOffsets.offset
+            in
+            let string_part =
+              match offset_entry.Dwarf.DebugStrOffsets.resolved_string with
+              | Some s -> Printf.sprintf " \"%s\"" s
+              | None -> ""
+            in
+            Printf.printf "0x%08x: %08x%s\n" relative_pos offset_value
+              string_part)
+          parsed_str_offsets.offsets
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF str_offsets information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
+let dump_debug_str filename =
+  try
+    let actual_filename, is_dsym = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+    let format_str = Dwarf.detect_format_and_arch buffer in
+
+    (* Output header similar to dwarfdump *)
+    Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
+    Printf.printf ".debug_str contents:\n";
+
+    (* Try to find the debug_str section *)
+    match find_debug_section buffer "__debug_str" with
+    | None ->
+        Printf.printf "No __debug_str section found in file\n";
+        if not is_dsym then (
+          Printf.printf
+            "Note: For MachO binaries, debug info is typically in .dSYM bundles\n";
+          let dsym_path =
+            filename ^ ".dSYM/Contents/Resources/DWARF/"
+            ^ Filename.basename filename
+          in
+          if Sys.file_exists dsym_path then Printf.printf "Try: %s\n" dsym_path)
+    | Some (section_offset, section_size) ->
+        (* Create cursor at the debug_str section offset *)
+        let cursor =
+          Object.Buffer.cursor buffer
+            ~at:(Unsigned.UInt32.to_int section_offset)
+        in
+
+        (* Parse strings from the section *)
+        let section_end =
+          Unsigned.UInt32.to_int section_offset
+          + Unsigned.UInt64.to_int section_size
+        in
+        let current_pos = ref (Unsigned.UInt32.to_int section_offset) in
+        let string_offset = ref 0 in
+
+        while !current_pos < section_end do
+          (* Read null-terminated string *)
+          let start_pos = !current_pos in
+          let str_buffer = Stdlib.Buffer.create 256 in
+          let rec read_string () =
+            if !current_pos >= section_end then ()
+            else
+              let byte = Object.Buffer.Read.u8 cursor in
+              if Unsigned.UInt8.to_int byte = 0 then incr current_pos
+              else (
+                Stdlib.Buffer.add_char str_buffer
+                  (char_of_int (Unsigned.UInt8.to_int byte));
+                incr current_pos;
+                read_string ())
+          in
+          read_string ();
+
+          let str_content = Stdlib.Buffer.contents str_buffer in
+          if String.length str_content > 0 then
+            Printf.printf "0x%08x: \"%s\"\n" !string_offset str_content
+          else if !current_pos < section_end then
+            (* Empty string, but not at end of section *)
+            Printf.printf "0x%08x: \"\"\n" !string_offset;
+
+          string_offset := !string_offset + (!current_pos - start_pos)
+        done
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF string information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
 (* Command line interface *)
+(* TODO Use platform agnostic names for sections. *)
 let filename =
   let doc = "Binary file to analyze for DWARF debug information" in
   Cmdliner.Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
@@ -354,18 +538,37 @@ let debug_abbrev_flag =
   let doc = "Dump debug abbreviation information (.debug_abbrev section)" in
   Cmdliner.Arg.(value & flag & info [ "debug-abbrev" ] ~doc)
 
+let debug_str_offsets_flag =
+  let doc = "Dump debug string offsets information (.debug_str_offs section)" in
+  Cmdliner.Arg.(value & flag & info [ "debug-str-offsets" ] ~doc)
+
+let debug_str_flag =
+  let doc = "Dump debug string information (.debug_str section)" in
+  Cmdliner.Arg.(value & flag & info [ "debug-str" ] ~doc)
+
 let all_flag =
   let doc = "Dump all available debug information" in
   Cmdliner.Arg.(value & flag & info [ "all"; "a" ] ~doc)
 
-let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev all filename =
-  match (debug_line, debug_info, debug_names, debug_abbrev, all) with
-  | true, _, _, _, _ -> dump_debug_line filename
-  | _, true, _, _, _ -> dump_debug_info filename
-  | _, _, true, _, _ -> dump_debug_names filename
-  | _, _, _, true, _ -> dump_debug_abbrev filename
-  | _, _, _, _, true -> dump_all filename
-  | false, false, false, false, false ->
+let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev
+    debug_str_offsets debug_str all filename =
+  match
+    ( debug_line,
+      debug_info,
+      debug_names,
+      debug_abbrev,
+      debug_str_offsets,
+      debug_str,
+      all )
+  with
+  | true, _, _, _, _, _, _ -> dump_debug_line filename
+  | _, true, _, _, _, _, _ -> dump_debug_info filename
+  | _, _, true, _, _, _, _ -> dump_debug_names filename
+  | _, _, _, true, _, _, _ -> dump_debug_abbrev filename
+  | _, _, _, _, true, _, _ -> dump_debug_str_offsets filename
+  | _, _, _, _, _, true, _ -> dump_debug_str filename
+  | _, _, _, _, _, _, true -> dump_all filename
+  | false, false, false, false, false, false, false ->
       (* Default behavior - dump debug line information *)
       dump_debug_line filename
 
@@ -375,6 +578,7 @@ let cmd =
   Cmdliner.Cmd.v info
     Cmdliner.Term.(
       const dwarfdump_cmd $ debug_line_flag $ debug_info_flag $ debug_names_flag
-      $ debug_abbrev_flag $ all_flag $ filename)
+      $ debug_abbrev_flag $ debug_str_offsets_flag $ debug_str_flag $ all_flag
+      $ filename)
 
 let () = exit (Cmdliner.Cmd.eval cmd)
