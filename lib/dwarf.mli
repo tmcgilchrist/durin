@@ -855,7 +855,7 @@ module DIE : sig
   }
   (** A Debug Information Entry containing tag, attributes, and children *)
 
-  val parse_die : Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> t option
+  val parse_die : Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> Object.Buffer.t -> t option
   (** Parse a single DIE from a buffer using abbreviation table *)
 
   val find_attribute : t -> attribute_encoding -> attribute_value option
@@ -909,7 +909,7 @@ module CompileUnit : sig
   val header : t -> header
   (** Force parsing of the compilation unit header and return parsed data. *)
 
-  val root_die : t -> (u64, abbrev) Hashtbl.t -> DIE.t option
+  val root_die : t -> (u64, abbrev) Hashtbl.t -> Object.Buffer.t -> DIE.t option
   (** Get the root DIE for this compilation unit. *)
 
   (* val abbrev_table : t -> unit *)

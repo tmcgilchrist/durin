@@ -2002,9 +2002,10 @@ let resolve_string_index (buffer : Object.Buffer.t) (index : int) : string =
   | Some (str_offs_offset, _), Some (str_offset, _) -> (
       try
         (* Read offset from string offsets table *)
+        (* Skip the 8-byte header: unit_length(4) + version(2) + padding(2) *)
         let str_offs_cursor =
           Object.Buffer.cursor buffer
-            ~at:(Unsigned.UInt32.to_int str_offs_offset + (index * 4))
+            ~at:(Unsigned.UInt32.to_int str_offs_offset + 8 + (index * 4))
         in
         let string_offset =
           Object.Buffer.Read.u32 str_offs_cursor |> Unsigned.UInt32.to_int
@@ -2047,7 +2048,7 @@ module DIE = struct
       die.attributes
 
   let parse_attribute_value (cur : Object.Buffer.cursor)
-      (form : attribute_form_encoding) : attribute_value =
+      (form : attribute_form_encoding) (full_buffer : Object.Buffer.t) : attribute_value =
     match form with
     | DW_FORM_string ->
         let str = Object.Buffer.Read.zero_string cur () in
@@ -2084,7 +2085,7 @@ module DIE = struct
     | DW_FORM_strx ->
         (* String index form - reads ULEB128 index into string offsets table *)
         let index = Object.Buffer.Read.uleb128 cur in
-        let resolved_string = resolve_string_index cur.buffer index in
+        let resolved_string = resolve_string_index full_buffer index in
         String resolved_string
     | DW_FORM_sec_offset ->
         (* Section offset - 4 or 8 bytes depending on DWARF format *)
@@ -2101,7 +2102,7 @@ module DIE = struct
         String "<unsupported_form>"
 
   let parse_die (cur : Object.Buffer.cursor)
-      (abbrev_table : (u64, abbrev) Hashtbl.t) : t option =
+      (abbrev_table : (u64, abbrev) Hashtbl.t) (full_buffer : Object.Buffer.t) : t option =
     try
       let abbrev_code = Object.Buffer.Read.uleb128 cur in
       if abbrev_code = 0 then None (* End of children marker *)
@@ -2119,7 +2120,7 @@ module DIE = struct
                 (fun (spec : attr_spec) ->
                   let attr_encoding = attribute_encoding spec.attr in
                   let form_encoding = attribute_form_encoding spec.form in
-                  let raw_value = parse_attribute_value cur form_encoding in
+                  let raw_value = parse_attribute_value cur form_encoding full_buffer in
                   let value =
                     (* Convert UData to Language for DW_AT_language attributes *)
                     if attr_encoding = DW_AT_language then
@@ -2176,7 +2177,7 @@ module CompileUnit = struct
   let data t = t.span
   let header t = t.header
 
-  let root_die t abbrev_table =
+  let root_die t abbrev_table full_buffer =
     (* Create cursor positioned after the compilation unit header *)
     (* let _parsed = parsed_data t in *)
     (* DWARF 5 header: unit_length(4) + version(2) + unit_type(1) + address_size(1) + debug_abbrev_offset(4) = 12 bytes *)
@@ -2187,7 +2188,7 @@ module CompileUnit = struct
              (Unsigned.UInt64.add t.span.start (Unsigned.UInt64.of_int 12)))
     in
     (* Skip header *)
-    DIE.parse_die cur abbrev_table
+    DIE.parse_die cur abbrev_table full_buffer
 end
 
 (* TODO Record to keep the different parsed areas of an object file together.

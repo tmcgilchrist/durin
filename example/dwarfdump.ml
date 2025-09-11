@@ -308,11 +308,11 @@ let dump_debug_info filename =
             let _, abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
 
             (* Get the root DIE for this compilation unit *)
-            match Dwarf.CompileUnit.root_die unit abbrev_table with
+            match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
             | None ->
                 Printf.printf "  No root DIE found for this compilation unit\n"
             | Some root_die ->
-                print_die root_die 1 (unit_offset_in_section + 12) buffer)
+                print_die root_die 0 (unit_offset_in_section + 12) buffer)
             (* +12 for DWARF 5 CU header size *)
           compile_units
   with
