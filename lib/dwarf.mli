@@ -24,10 +24,7 @@ val unit_type_of_u8 : Unsigned.UInt8.t -> unit_type
 val string_of_unit_type : unit_type -> string
 (** Convert a unit_type to its string representation *)
 
-val string_of_tag : u64 -> string
-(** Convert a numeric DWARF tag code to its string representation *)
-
-val string_of_attr : u64 -> string
+val string_of_attribute_code : u64 -> string
 (** Convert a numeric DWARF attribute code to its string representation *)
 
 val string_of_attribute_form_encoding : u64 -> string
@@ -113,7 +110,12 @@ type abbreviation_tag =
   | DW_TAG_lo_user
   | DW_TAG_hi_user
 
-val u64_of_abbreviation_tag : abbreviation_tag -> u64
+val uint64_of_abbreviation_tag : abbreviation_tag -> u64
+(** Convert a DWARF [abbreviation_tag] tag to a string *)
+
+val string_of_abbreviation_tag : u64 -> string
+(** Convert a numeric DWARF [abbreviation_tag] code to a string representation
+*)
 
 (** The encodings for the child determination byte. Table 7.4: Child
     determination encodings *)
@@ -721,6 +723,7 @@ type dwarf_section =
   | Debug_str
   | Debug_str_offs
   | Debug_names
+  | Debug_addr
 
 (** Call frame instructions. Table 7.29: Call frame instruction encodings *)
 type call_frame_instruction =
@@ -782,9 +785,14 @@ type object_format =
 val string_of_object_format : object_format -> string
 (** Human readable string for [object_format] type *)
 
+(* TODO This could be stored alongside the parsed representation or
+   to provide a lazy way to parse out the values on demand. *)
 type span = { start : size_t; size : size_t }
+
+(* TODO Improve this to use variant types? *)
 type attr_spec = { attr : u64; form : u64 }
 
+(* TODO Improve this to use variant types? *)
 type abbrev = {
   code : u64;
   tag : u64;
@@ -801,6 +809,19 @@ val detect_format : Object.Buffer.t -> object_format
 val detect_format_and_arch : Object.Buffer.t -> string
 (** Detect file format and architecture from buffer, returning a string like
     "Mach-O arm64" *)
+
+val resolve_string_index : Object.Buffer.t -> int -> string
+(** Resolve a string index to its actual string value using debug_str sections
+*)
+
+val resolve_address_index : Object.Buffer.t -> int -> u64 -> u64
+(** Resolve an address index to its actual address value using debug_addr
+    section. Parameters: buffer, address_index, addr_base_offset Returns the
+    resolved address or the index value if resolution fails *)
+
+val lookup_address_in_debug_addr : Object.Buffer.t -> u64 -> int -> u64 option
+(** Look up an address by index in the debug_addr section at given offset.
+    Returns Some address if found, None if not found or section missing *)
 
 (** Object module as a wrapper around a buffer for an object file. *)
 module Object_file : sig
@@ -834,15 +855,11 @@ module DIE : sig
   }
   (** A Debug Information Entry containing tag, attributes, and children *)
 
-  val parse_die :
-    Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> Object_file.t -> t option
+  val parse_die : Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> t option
   (** Parse a single DIE from a buffer using abbreviation table *)
 
   val find_attribute : t -> attribute_encoding -> attribute_value option
   (** Find an attribute by name in a DIE *)
-
-  val get_producer : t -> string option
-  (** Get the DW_AT_producer attribute from a compilation unit DIE *)
 end
 
 (** Compilation units represent individual source files and their debugging
@@ -878,11 +895,10 @@ module CompileUnit : sig
       metadata needed to interpret the unit's content. *)
 
   type t
-  (** A compilation unit with lazily-parsed content. The actual parsing of DWARF
-      data is deferred until accessed. *)
+  (** A compilation unit with parsed content. *)
 
-  val make : int -> span -> Object.Buffer.t -> header Lazy.t -> t
-  (** Create a new compilation unit with lazy parsing. *)
+  val make : int -> span -> Object.Buffer.t -> header -> t
+  (** Create a new compilation unit. *)
 
   val dwarf_info : t -> int
   (** Get the parent DWARF info identifier. *)
@@ -890,18 +906,15 @@ module CompileUnit : sig
   val data : t -> span
   (** Get the span indicating location/size of unit data. *)
 
-  val parsed_data : t -> header
+  val header : t -> header
   (** Force parsing of the compilation unit header and return parsed data. *)
 
   val root_die : t -> (u64, abbrev) Hashtbl.t -> DIE.t option
   (** Get the root DIE for this compilation unit. *)
 
-  val get_producer : t -> (u64, abbrev) Hashtbl.t -> string option
-  (** Get the DW_AT_producer attribute from this compilation unit. *)
-
-  val abbrev_table : t -> unit
-  (** Get abbreviation table for this compilation unit. TODO: Implementation
-      needs to return actual abbreviation table. *)
+  (* val abbrev_table : t -> unit *)
+  (* (\** Get abbreviation table for this compilation unit. TODO: Implementation *)
+  (*     needs to return actual abbreviation table. *\) *)
 end
 
 (** Line number information in DWARF 5 section 6.2. *)
@@ -1078,13 +1091,8 @@ val object_format_to_section_name : object_format -> dwarf_section -> string
 val create : Object.Buffer.t -> t
 (** Create a new DWARF context from an object file *)
 
-val parse_compile_unit : Object.Buffer.cursor -> CompileUnit.t
-(** Parse an individual compile unit from a cursor positioned at the start of a
-    compile unit header *)
-
-val parse_compile_units : t -> CompileUnit.t list
-(** Parse all compile units from the [Debug_info] section of a Mach-O object
-    file *)
+val parse_compile_units : t -> CompileUnit.t Seq.t
+(** Parse all compile units from the [Debug_info] section lazily *)
 
 val get_abbrev_table : t -> size_t -> t * (u64, abbrev) Hashtbl.t
 (** Retrieve the abbreviation table at offset [size_t]. *)
@@ -1107,4 +1115,29 @@ module DebugStrOffsets : sig
 
   val parse : Object.Buffer.t -> u32 -> t
   (** Parse a complete debug_str_offsets section from buffer at given offset *)
+end
+
+module DebugAddr : sig
+  type header = {
+    unit_length : u32;
+    version : u16;
+    address_size : u8;
+    segment_selector_size : u8;
+  }
+
+  type entry = {
+    segment : u64 option;  (** Present only if segment_selector_size > 0 *)
+    address : u64;
+  }
+
+  type t = { header : header; entries : entry array }
+
+  val parse_header : Object.Buffer.cursor -> header
+  (** Parse the header of a debug_addr section *)
+
+  val parse_entries : Object.Buffer.cursor -> header -> entry array
+  (** Parse the entries following the header *)
+
+  val parse : Object.Buffer.t -> u32 -> t
+  (** Parse a complete debug_addr section from buffer at given offset *)
 end

@@ -29,6 +29,9 @@ Test help flag:
          --debug-abbrev
              Dump debug abbreviation information (.debug_abbrev section)
   
+         --debug-addr
+             Dump debug address information (.debug_addr section)
+  
          --debug-info
              Dump debug info information (.debug_info section)
   
