@@ -490,6 +490,10 @@ type location_list_entry =
 (* Base type encoding.
    The encodings of the constants used in the [DW_AT_encoding] attribute.
 
+   A base type is a data type that is not defined in terms of other data
+   types. Each programming language has a set of base types that are
+   considered to be built into that language.
+
    Table 7.11: Base type encoding values *)
 type base_type =
   | DW_ATE_address
@@ -512,6 +516,9 @@ type base_type =
   | DW_ATE_ASCII
   | DW_ATE_lo_user
   | DW_ATE_hi_user
+
+val string_of_base_type : base_type -> string
+(** Convert a [base_type] to its string representation *)
 
 (* Decimal sign encoding.
    The encodings of the constants used in the [DW_AT_decimal_sign] attribute.
@@ -844,6 +851,8 @@ module DIE : sig
     | Reference of u64  (** Reference from DW_FORM_ref* *)
     | Block of string  (** Block of data from DW_FORM_block* *)
     | Language of dwarf_language  (** Language from DW_AT_language attribute *)
+    | Encoding of base_type
+        (** Data type encoding from DW_AT_encoding attribute *)
 
   type attribute = { attr : attribute_encoding; value : attribute_value }
   (** A DWARF attribute consisting of name and value *)
@@ -851,11 +860,16 @@ module DIE : sig
   type t = {
     tag : abbreviation_tag;
     attributes : attribute list;
-    children : t list;
+    children : t Seq.t;
+    offset : int;
   }
   (** A Debug Information Entry containing tag, attributes, and children *)
 
-  val parse_die : Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> Object.Buffer.t -> t option
+  val parse_die :
+    Object.Buffer.cursor ->
+    (u64, abbrev) Hashtbl.t ->
+    Object.Buffer.t ->
+    t option
   (** Parse a single DIE from a buffer using abbreviation table *)
 
   val find_attribute : t -> attribute_encoding -> attribute_value option

@@ -1336,7 +1336,7 @@ let operation_encoding = function
   | 0x6b -> DW_OP_reg27
   | 0x6c -> DW_OP_reg28
   | 0x6d -> DW_OP_reg29
-  | 0x6e -> DW_OP_reg29
+  | 0x6e -> DW_OP_reg30
   | 0x6f -> DW_OP_reg31
   | 0x70 -> DW_OP_breg0
   | 0x71 -> DW_OP_breg1
@@ -1437,6 +1437,28 @@ let base_type = function
   | 0x80 -> DW_ATE_lo_user
   | 0xff -> DW_ATE_hi_user
   | n -> failwith (Printf.sprintf "Unknown base_type: 0x%02x" n)
+
+let string_of_base_type = function
+  | DW_ATE_address -> "DW_ATE_address"
+  | DW_ATE_boolean -> "DW_ATE_boolean"
+  | DW_ATE_complex_float -> "DW_ATE_complex_float"
+  | DW_ATE_float -> "DW_ATE_float"
+  | DW_ATE_signed -> "DW_ATE_signed"
+  | DW_ATE_signed_char -> "DW_ATE_signed_char"
+  | DW_ATE_unsigned -> "DW_ATE_unsigned"
+  | DW_ATE_unsigned_char -> "DW_ATE_unsigned_char"
+  | DW_ATE_imaginary_float -> "DW_ATE_imaginary_float"
+  | DW_ATE_packed_decimal -> "DW_ATE_packed_decimal"
+  | DW_ATE_numeric_string -> "DW_ATE_numeric_string"
+  | DW_ATE_edited -> "DW_ATE_edited"
+  | DW_ATE_signed_fixed -> "DW_ATE_signed_fixed"
+  | DW_ATE_unsigned_fixed -> "DW_ATE_unsigned_fixed"
+  | DW_ATE_decimal_float -> "DW_ATE_decimal_float"
+  | DW_ATE_UTF -> "DW_ATE_UTF"
+  | DW_ATE_UCS -> "DW_ATE_UCS"
+  | DW_ATE_ASCII -> "DW_ATE_ASCII"
+  | DW_ATE_lo_user -> "DW_ATE_lo_user"
+  | DW_ATE_hi_user -> "DW_ATE_hi_user"
 
 type decimal_sign =
   | DW_DS_unsigned
@@ -2033,13 +2055,15 @@ module DIE = struct
     | Reference of u64
     | Block of string
     | Language of dwarf_language
+    | Encoding of base_type
 
   type attribute = { attr : attribute_encoding; value : attribute_value }
 
   type t = {
     tag : abbreviation_tag;
     attributes : attribute list;
-    children : t list;
+    children : t Seq.t;
+    offset : int;
   }
 
   let find_attribute die attr_name =
@@ -2048,7 +2072,8 @@ module DIE = struct
       die.attributes
 
   let parse_attribute_value (cur : Object.Buffer.cursor)
-      (form : attribute_form_encoding) (full_buffer : Object.Buffer.t) : attribute_value =
+      (form : attribute_form_encoding) (full_buffer : Object.Buffer.t) :
+      attribute_value =
     match form with
     | DW_FORM_string ->
         let str = Object.Buffer.Read.zero_string cur () in
@@ -2097,13 +2122,83 @@ module DIE = struct
         (* TODO: Implement proper address table resolution using DW_AT_addr_base *)
         (* For now, treat as an address placeholder that needs resolution *)
         Address (Unsigned.UInt64.of_int index)
+    | DW_FORM_ref4 ->
+        (* 4-byte offset reference within same compilation unit *)
+        let offset = Object.Buffer.Read.u32 cur in
+        Reference (Unsigned.UInt64.of_uint32 offset)
+    | DW_FORM_ref8 ->
+        (* 8-byte offset reference within same compilation unit *)
+        let offset = Object.Buffer.Read.u64 cur in
+        Reference offset
+    | DW_FORM_ref1 ->
+        (* 1-byte offset reference within same compilation unit *)
+        let offset = Object.Buffer.Read.u8 cur in
+        Reference (Unsigned.UInt64.of_int (Unsigned.UInt8.to_int offset))
+    | DW_FORM_ref2 ->
+        (* 2-byte offset reference within same compilation unit *)
+        let offset = Object.Buffer.Read.u16 cur in
+        Reference (Unsigned.UInt64.of_int (Unsigned.UInt16.to_int offset))
+    | DW_FORM_exprloc ->
+        (* DWARF expression/location - ULEB128 length followed by expression *)
+        let length = Object.Buffer.Read.uleb128 cur in
+        let expr_data = Object.Buffer.Read.fixed_string cur length in
+        Block expr_data
+    | DW_FORM_block ->
+        (* Variable length block - ULEB128 length followed by data *)
+        let length = Object.Buffer.Read.uleb128 cur in
+        let block_data = Object.Buffer.Read.fixed_string cur length in
+        Block block_data
+    | DW_FORM_block1 ->
+        (* 1-byte length followed by data *)
+        let length = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
+        let block_data = Object.Buffer.Read.fixed_string cur length in
+        Block block_data
+    | DW_FORM_block2 ->
+        (* 2-byte length followed by data *)
+        let length = Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int in
+        let block_data = Object.Buffer.Read.fixed_string cur length in
+        Block block_data
+    | DW_FORM_block4 ->
+        (* 4-byte length followed by data *)
+        let length = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
+        let block_data = Object.Buffer.Read.fixed_string cur length in
+        Block block_data
     | _ ->
         (* For unsupported forms, skip and return placeholder *)
         String "<unsupported_form>"
 
-  let parse_die (cur : Object.Buffer.cursor)
-      (abbrev_table : (u64, abbrev) Hashtbl.t) (full_buffer : Object.Buffer.t) : t option =
+  let process_language_attribute (raw_value : attribute_value) : attribute_value
+      =
+    match raw_value with
+    | UData lang_code -> (
+        let lang_int = Unsigned.UInt64.to_int lang_code in
+        (* Language codes are parsed correctly by Object.Buffer based on file endianness *)
+        try Language (dwarf_language lang_int) with _ -> raw_value)
+    | _ -> raw_value
+
+  let process_encoding_attribute (raw_value : attribute_value) : attribute_value
+      =
+    match raw_value with
+    | UData encoding_code -> (
+        let encoding_int = Unsigned.UInt64.to_int encoding_code in
+        (* Encoding codes are parsed correctly by Object.Buffer based on file endianness *)
+        try Encoding (base_type encoding_int) with _ -> raw_value)
+    | _ -> raw_value
+
+  let rec parse_children_seq (cur : Object.Buffer.cursor)
+      (abbrev_table : (u64, abbrev) Hashtbl.t) (full_buffer : Object.Buffer.t) :
+      t Seq.t =
+   fun () ->
+    match parse_die cur abbrev_table full_buffer with
+    | None -> Seq.Nil (* End of children marker or error *)
+    | Some die -> Seq.Cons (die, parse_children_seq cur abbrev_table full_buffer)
+
+  and parse_die (cur : Object.Buffer.cursor)
+      (abbrev_table : (u64, abbrev) Hashtbl.t) (full_buffer : Object.Buffer.t) :
+      t option =
     try
+      (* Capture the position at the start of this DIE *)
+      let die_offset = cur.position in
       let abbrev_code = Object.Buffer.Read.uleb128 cur in
       if abbrev_code = 0 then None (* End of children marker *)
       else
@@ -2120,33 +2215,27 @@ module DIE = struct
                 (fun (spec : attr_spec) ->
                   let attr_encoding = attribute_encoding spec.attr in
                   let form_encoding = attribute_form_encoding spec.form in
-                  let raw_value = parse_attribute_value cur form_encoding full_buffer in
+                  let raw_value =
+                    parse_attribute_value cur form_encoding full_buffer
+                  in
                   let value =
-                    (* Convert UData to Language for DW_AT_language attributes *)
+                    (* Process special attributes that need conversion *)
                     if attr_encoding = DW_AT_language then
-                      match raw_value with
-                      | UData lang_code -> (
-                          let lang_int = Unsigned.UInt64.to_int lang_code in
-                          (* TODO The endianess should be specified in the header *)
-                          (* Handle potential endianness issue - swap bytes if needed *)
-                          let corrected_lang_int =
-                            if lang_int > 0x00ff then
-                              (* If the value is > 255, it might be byte-swapped *)
-                              let low_byte = lang_int land 0xff in
-                              let high_byte = (lang_int lsr 8) land 0xff in
-                              (low_byte lsl 8) lor high_byte
-                            else lang_int
-                          in
-                          try Language (dwarf_language corrected_lang_int)
-                          with _ -> raw_value)
-                      | _ -> raw_value
+                      process_language_attribute raw_value
+                    else if attr_encoding = DW_AT_encoding then
+                      process_encoding_attribute raw_value
                     else raw_value
                   in
                   { attr = attr_encoding; value })
                 abbrev.attr_specs
             in
-
-            Some { tag; attributes; children = [] }
+            (* Parse children if the abbreviation indicates this DIE has children *)
+            let children =
+              if abbrev.has_children then
+                parse_children_seq cur abbrev_table full_buffer
+              else Seq.empty
+            in
+            Some { tag; attributes; children; offset = die_offset }
     with _ -> None
 end
 
