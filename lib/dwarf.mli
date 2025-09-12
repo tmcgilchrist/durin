@@ -961,7 +961,7 @@ module LineTable : sig
     file_name_entry_formats :
       (line_number_header_entry * attribute_form_encoding) array;
     file_names_count : u32;
-    file_names : (string * u64 * u64 * string) array;
+    file_names : (string * u64 * u64 * string * string option) array;
   }
   (** Line number program header as specified in DWARF 5 section 6.2.4
 
@@ -970,7 +970,8 @@ module LineTable : sig
       unit and also provides information used throughout the rest of the line
       number program. *)
 
-  val parse_line_program_header : Object.Buffer.cursor -> Object.Buffer.t -> line_program_header
+  val parse_line_program_header :
+    Object.Buffer.cursor -> Object.Buffer.t -> line_program_header
   (** Parse the line number program header from the [Debug_line] section. *)
 
   (* TODO This module should provide an iterator to

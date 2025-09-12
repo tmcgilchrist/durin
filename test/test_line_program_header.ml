@@ -142,7 +142,10 @@ let test_comprehensive_debug_line_validation binary_path =
       | f -> (
           try
             ignore
-              (f : Object.Buffer.cursor -> Object.Buffer.t -> Dwarf.LineTable.line_program_header);
+              (f
+                : Object.Buffer.cursor ->
+                  Object.Buffer.t ->
+                  Dwarf.LineTable.line_program_header);
             true
           with _ -> false));
 
@@ -205,7 +208,8 @@ let test_comprehensive_debug_line_validation binary_path =
               ( "hello_world.c",
                 Unsigned.UInt64.of_int 0,
                 Unsigned.UInt64.of_int 0,
-                "/Users/tsmc/code/ocaml/durin/_build/default/test" );
+                "/Users/tsmc/code/ocaml/durin/_build/default/test",
+                None );
             |];
         }
     in
@@ -237,7 +241,7 @@ let test_comprehensive_debug_line_validation binary_path =
       (Array.length realistic_header.standard_opcode_lengths);
     Alcotest.(check string)
       "first file name is hello_world.c" "hello_world.c"
-      (let name, _, _, _ = realistic_header.file_names.(0) in
+      (let name, _, _, _, _ = realistic_header.file_names.(0) in
        name);
 
     Alcotest.(check bool)
