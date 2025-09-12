@@ -970,7 +970,7 @@ module LineTable : sig
       unit and also provides information used throughout the rest of the line
       number program. *)
 
-  val parse_line_program_header : Object.Buffer.cursor -> line_program_header
+  val parse_line_program_header : Object.Buffer.cursor -> Object.Buffer.t -> line_program_header
   (** Parse the line number program header from the [Debug_line] section. *)
 
   (* TODO This module should provide an iterator to

@@ -2423,7 +2423,23 @@ module LineTable = struct
     file_names : (string * u64 * u64 * string) array;
   }
 
-  let parse_line_program_header (cur : Object.Buffer.cursor) :
+  let resolve_line_strp_offset buffer offset =
+    (* Find the debug_line_str section and read the string at the given offset *)
+    match find_debug_section buffer "__debug_line_str" with
+    | None -> Printf.sprintf "<line_strp:0x%08lx>" (Unsigned.UInt32.to_int32 offset)
+    | Some (section_offset, _size) ->
+        try
+          let string_cursor = 
+            Object.Buffer.cursor buffer 
+              ~at:(Unsigned.UInt32.to_int section_offset + Unsigned.UInt32.to_int offset)
+          in
+          (match Object.Buffer.Read.zero_string string_cursor () with
+          | Some s -> s
+          | None -> Printf.sprintf "<line_strp:0x%08lx>" (Unsigned.UInt32.to_int32 offset))
+        with _ -> 
+          Printf.sprintf "<line_strp:0x%08lx>" (Unsigned.UInt32.to_int32 offset)
+
+  let parse_line_program_header (cur : Object.Buffer.cursor) buffer :
       line_program_header =
     let unit_length = Object.Buffer.Read.u32 cur in
     let version = Object.Buffer.Read.u16 cur in
@@ -2474,10 +2490,31 @@ module LineTable = struct
       Array.make (Unsigned.UInt32.to_int directories_count) ""
     in
     for i = 0 to Array.length directories - 1 do
-      directories.(i) <-
-        (match Object.Buffer.Read.zero_string cur () with
-        | Some s -> s
-        | None -> "")
+      (* Parse directory entry according to the format descriptors *)
+      let path_ref = ref "" in
+      for j = 0 to Array.length directory_entry_formats - 1 do
+        let content_type, form = directory_entry_formats.(j) in
+        match (content_type, form) with
+        | (DW_LNCT_path, DW_FORM_string) ->
+            path_ref := (match Object.Buffer.Read.zero_string cur () with
+            | Some s -> s
+            | None -> "")
+        | (DW_LNCT_path, DW_FORM_line_strp) ->
+            (* Read offset into .debug_line_str section *)
+            let offset = Object.Buffer.Read.u32 cur in
+            (* Resolve line_strp offset to actual string *)
+            path_ref := resolve_line_strp_offset buffer offset
+        | (_, _) ->
+            (* Skip other content types or forms we don't handle yet *)
+            (match form with
+            | DW_FORM_string -> ignore (Object.Buffer.Read.zero_string cur ())
+            | DW_FORM_data1 -> ignore (Object.Buffer.Read.u8 cur)
+            | DW_FORM_data2 -> ignore (Object.Buffer.Read.u16 cur)
+            | DW_FORM_data4 -> ignore (Object.Buffer.Read.u32 cur)
+            | DW_FORM_data8 -> ignore (Object.Buffer.Read.u64 cur)
+            | _ -> failwith ("Unsupported directory entry form"))
+      done;
+      directories.(i) <- !path_ref
     done;
 
     let file_name_entry_format_count = Object.Buffer.Read.u8 cur in
@@ -2504,23 +2541,50 @@ module LineTable = struct
         ("", Unsigned.UInt64.of_int 0, Unsigned.UInt64.of_int 0, "")
     in
     for i = 0 to Array.length file_names - 1 do
-      let path =
-        match Object.Buffer.Read.zero_string cur () with
-        | Some s -> s
-        | None -> ""
-      in
-      let dir_index = Object.Buffer.Read.uleb128 cur in
-      let timestamp =
-        Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
-      in
-      let file_size =
-        Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
-      in
+      (* Parse file entry according to the format descriptors *)
+      let path_ref = ref "" in
+      let dir_index_ref = ref 0 in
+      let timestamp_ref = ref (Unsigned.UInt64.of_int 0) in
+      let file_size_ref = ref (Unsigned.UInt64.of_int 0) in
+      
+      for j = 0 to Array.length file_name_entry_formats - 1 do
+        let content_type, form = file_name_entry_formats.(j) in
+        match (content_type, form) with
+        | (DW_LNCT_path, DW_FORM_string) ->
+            path_ref := (match Object.Buffer.Read.zero_string cur () with
+            | Some s -> s
+            | None -> "")
+        | (DW_LNCT_path, DW_FORM_line_strp) ->
+            (* Read offset into .debug_line_str section and resolve *)
+            let offset = Object.Buffer.Read.u32 cur in
+            path_ref := resolve_line_strp_offset buffer offset
+        | (DW_LNCT_directory_index, DW_FORM_udata) ->
+            dir_index_ref := Object.Buffer.Read.uleb128 cur
+        | (DW_LNCT_timestamp, DW_FORM_udata) ->
+            timestamp_ref := Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
+        | (DW_LNCT_size, DW_FORM_udata) ->
+            file_size_ref := Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
+        | (DW_LNCT_MD5, DW_FORM_data16) ->
+            (* Skip MD5 hash (16 bytes) *)
+            for _k = 0 to 15 do ignore (Object.Buffer.Read.u8 cur) done
+        | (_, _) ->
+            (* Skip other content types or forms we don't handle yet *)
+            (match form with
+            | DW_FORM_string -> ignore (Object.Buffer.Read.zero_string cur ())
+            | DW_FORM_data1 -> ignore (Object.Buffer.Read.u8 cur)
+            | DW_FORM_data2 -> ignore (Object.Buffer.Read.u16 cur)
+            | DW_FORM_data4 -> ignore (Object.Buffer.Read.u32 cur)
+            | DW_FORM_data8 -> ignore (Object.Buffer.Read.u64 cur)
+            | DW_FORM_data16 -> for _k = 0 to 15 do ignore (Object.Buffer.Read.u8 cur) done
+            | DW_FORM_udata -> ignore (Object.Buffer.Read.uleb128 cur)
+            | _ -> failwith ("Unsupported file name entry form"))
+      done;
+      
       let dir_name =
-        if dir_index < Array.length directories then directories.(dir_index)
+        if !dir_index_ref < Array.length directories then directories.(!dir_index_ref)
         else ""
       in
-      file_names.(i) <- (path, timestamp, file_size, dir_name)
+      file_names.(i) <- (!path_ref, !timestamp_ref, !file_size_ref, dir_name)
     done;
 
     {

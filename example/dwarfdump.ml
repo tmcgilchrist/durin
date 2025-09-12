@@ -108,11 +108,22 @@ let dump_line_program_header header =
     let name, timestamp, file_size, dir_name = header.file_names.(i) in
     Printf.printf "file_names[%3d]:\n" i;
     Printf.printf "           name: \"%s\"\n" name;
-    Printf.printf "      dir_index: %s\n" dir_name;
+    
+    (* Find the directory index by searching through the directories array *)
+    let dir_index = ref (-1) in
+    for j = 0 to Array.length header.directories - 1 do
+      if header.directories.(j) = dir_name then dir_index := j
+    done;
+    Printf.printf "      dir_index: %d\n" !dir_index;
+    
     if Unsigned.UInt64.to_int timestamp <> 0 then
       Printf.printf "   mod_time: %Ld\n" (Unsigned.UInt64.to_int64 timestamp);
     if Unsigned.UInt64.to_int file_size <> 0 then
-      Printf.printf "     length: %Ld\n" (Unsigned.UInt64.to_int64 file_size)
+      Printf.printf "     length: %Ld\n" (Unsigned.UInt64.to_int64 file_size);
+    
+    (* TODO: Show MD5 checksum if available *)
+    if Unsigned.UInt64.to_int timestamp = 0 && Unsigned.UInt64.to_int file_size = 0 then
+      Printf.printf "   md5_checksum: (not available)\n"
   done
 
 let dump_debug_line filename =
@@ -149,7 +160,7 @@ let dump_debug_line filename =
         in
 
         (* Parse the line program header using our implementation *)
-        let header = Dwarf.LineTable.parse_line_program_header cursor in
+        let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
 
         (* Dump the header information *)
         dump_line_program_header header;
@@ -207,7 +218,7 @@ let resolve_file_index buffer object_format stmt_list_offset file_index =
           + Unsigned.UInt64.to_int stmt_list_offset
         in
         let cursor = Object.Buffer.cursor buffer ~at:absolute_offset in
-        let header = Dwarf.LineTable.parse_line_program_header cursor in
+        let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
         let file_index_int = Unsigned.UInt64.to_int file_index in
         if file_index_int < Array.length header.file_names then
           let path, _timestamp, _file_size, _dir_name =

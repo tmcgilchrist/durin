@@ -296,3 +296,51 @@
    (= %{architecture} "arm64")))
  (action
   (diff system_debug_addr.out ocaml_debug_addr.out)))
+
+; Test rules to compare --debug-line output with system dwarfdump
+
+; Generate output from our dwarfdump --debug-line
+
+(rule
+ (alias runtest)
+ (target ocaml_debug_line.out)
+ (deps %{bin:dwarfdump} hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run
+    %{bin:dwarfdump}
+    --debug-line
+    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+
+; Generate output from system dwarfdump --debug-line
+
+(rule
+ (alias runtest)
+ (target system_debug_line.out)
+ (deps hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system
+    "dwarfdump --debug-line hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+
+; Compare the outputs using diff
+
+(rule
+ (alias runtest)
+ (deps ocaml_debug_line.out system_debug_line.out)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (diff system_debug_line.out ocaml_debug_line.out)))

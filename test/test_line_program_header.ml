@@ -142,7 +142,7 @@ let test_comprehensive_debug_line_validation binary_path =
       | f -> (
           try
             ignore
-              (f : Object.Buffer.cursor -> Dwarf.LineTable.line_program_header);
+              (f : Object.Buffer.cursor -> Object.Buffer.t -> Dwarf.LineTable.line_program_header);
             true
           with _ -> false));
 
