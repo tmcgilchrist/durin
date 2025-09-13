@@ -1141,7 +1141,6 @@ module LineTable : sig
   (* TODO This module should provide an iterator to
      get a line table entry based on an address. *)
   (* TODO Provide access to lookup entries by line. *)
-
 end
 
 (** Call frame information parsing for DWARF 5 section 6.4.

@@ -276,7 +276,12 @@ let resolve_file_index buffer object_format stmt_list_offset file_index =
         let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
         let file_index_int = Unsigned.UInt64.to_int file_index in
         if file_index_int < Array.length header.file_names then
-          Some header.file_names.(file_index_int).name
+          let file_entry = header.file_names.(file_index_int) in
+          let full_path =
+            if file_entry.directory = "" then file_entry.name
+            else file_entry.directory ^ "/" ^ file_entry.name
+          in
+          Some full_path
         else None
   with _ -> None
 
