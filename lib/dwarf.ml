@@ -2431,6 +2431,21 @@ module LineTable = struct
     file_names : file_entry array;
   }
 
+  type line_table_entry = {
+    address : u64;
+    line : u32;
+    column : u32;
+    file_index : u32;
+    isa : u32;
+    discriminator : u32;
+    op_index : u32;
+    is_stmt : bool;
+    basic_block : bool;
+    end_sequence : bool;
+    prologue_end : bool;
+    epilogue_begin : bool;
+  }
+
   (** Resolve a DW_FORM_line_strp offset to its string value.
 
       In DWARF 5, strings in line tables can be stored indirectly in the
@@ -2685,6 +2700,190 @@ module LineTable = struct
       file_names_count;
       file_names;
     }
+
+  (** Parse the line number program following the header.
+
+      This implements the DWARF 5 line number state machine as specified in
+      section 6.2.2. The state machine processes opcodes and generates line
+      table entries that map program addresses to source locations. *)
+  let parse_line_program (cur : Object.Buffer.cursor)
+      (header : line_program_header) : line_table_entry list =
+    (* Initialize the line number state machine *)
+    let address = ref (Unsigned.UInt64.of_int 0) in
+    let op_index = ref (Unsigned.UInt32.of_int 0) in
+    let file_index = ref (Unsigned.UInt32.of_int 1) in
+    let line = ref (Unsigned.UInt32.of_int 1) in
+    let column = ref (Unsigned.UInt32.of_int 0) in
+    let is_stmt = ref header.default_is_stmt in
+    let basic_block = ref false in
+    let end_sequence = ref false in
+    let prologue_end = ref false in
+    let epilogue_begin = ref false in
+    let isa = ref (Unsigned.UInt32.of_int 0) in
+    let discriminator = ref (Unsigned.UInt32.of_int 0) in
+
+    let entries = ref [] in
+    let program_done = ref false in
+
+    (* Helper function to create a line table entry *)
+    let make_entry () =
+      {
+        address = !address;
+        line = !line;
+        column = !column;
+        file_index = !file_index;
+        isa = !isa;
+        discriminator = !discriminator;
+        op_index = !op_index;
+        is_stmt = !is_stmt;
+        basic_block = !basic_block;
+        end_sequence = !end_sequence;
+        prologue_end = !prologue_end;
+        epilogue_begin = !epilogue_begin;
+      }
+    in
+
+    (* Process opcodes until end of program *)
+    while not !program_done do
+      try
+        let opcode = Object.Buffer.Read.u8 cur in
+        let opcode_val = Unsigned.UInt8.to_int opcode in
+
+        if opcode_val = 0 then
+          (* Extended opcode *)
+          let length = Object.Buffer.Read.uleb128 cur in
+          let extended_opcode = Object.Buffer.Read.u8 cur in
+          let extended_val = Unsigned.UInt8.to_int extended_opcode in
+
+          match extended_val with
+          | 0x01 ->
+              (* DW_LNE_end_sequence *)
+              end_sequence := true;
+              entries := make_entry () :: !entries;
+              program_done := true
+          | 0x02 ->
+              (* DW_LNE_set_address *)
+              let addr_bytes = length - 1 in
+              if addr_bytes = 4 then
+                address :=
+                  Object.Buffer.Read.u32 cur |> Unsigned.UInt64.of_uint32
+              else if addr_bytes = 8 then address := Object.Buffer.Read.u64 cur
+              else failwith "Unsupported address size in DW_LNE_set_address"
+          | 0x04 ->
+              (* DW_LNE_set_discriminator *)
+              discriminator :=
+                Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+          | _ ->
+              (* Skip unknown extended opcodes *)
+              for _i = 1 to length - 1 do
+                ignore (Object.Buffer.Read.u8 cur)
+              done
+        else if opcode_val >= Unsigned.UInt8.to_int header.opcode_base then (
+          (* Special opcode *)
+          let adjusted_opcode =
+            opcode_val - Unsigned.UInt8.to_int header.opcode_base
+          in
+          let line_increment =
+            header.line_base
+            + (adjusted_opcode mod Unsigned.UInt8.to_int header.line_range)
+          in
+          let address_increment =
+            adjusted_opcode
+            / Unsigned.UInt8.to_int header.line_range
+            * Unsigned.UInt8.to_int header.minimum_instruction_length
+          in
+
+          address :=
+            Unsigned.UInt64.add !address
+              (Unsigned.UInt64.of_int address_increment);
+          line :=
+            Unsigned.UInt32.add !line (Unsigned.UInt32.of_int line_increment);
+
+          entries := make_entry () :: !entries;
+          basic_block := false;
+          prologue_end := false;
+          epilogue_begin := false;
+          discriminator := Unsigned.UInt32.of_int 0)
+        else
+          (* Standard opcode *)
+          match opcode_val with
+          | 0x01 ->
+              (* DW_LNS_copy *)
+              entries := make_entry () :: !entries;
+              basic_block := false;
+              prologue_end := false;
+              epilogue_begin := false;
+              discriminator := Unsigned.UInt32.of_int 0
+          | 0x02 ->
+              (* DW_LNS_advance_pc *)
+              let advance = Object.Buffer.Read.uleb128 cur in
+              let address_increment =
+                advance
+                * Unsigned.UInt8.to_int header.minimum_instruction_length
+              in
+              address :=
+                Unsigned.UInt64.add !address
+                  (Unsigned.UInt64.of_int address_increment)
+          | 0x03 ->
+              (* DW_LNS_advance_line *)
+              let advance = Object.Buffer.Read.sleb128 cur in
+              line := Unsigned.UInt32.add !line (Unsigned.UInt32.of_int advance)
+          | 0x04 ->
+              (* DW_LNS_set_file *)
+              file_index :=
+                Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+          | 0x05 ->
+              (* DW_LNS_set_column *)
+              column := Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+          | 0x06 ->
+              (* DW_LNS_negate_stmt *)
+              is_stmt := not !is_stmt
+          | 0x07 ->
+              (* DW_LNS_set_basic_block *)
+              basic_block := true
+          | 0x08 ->
+              (* DW_LNS_const_add_pc *)
+              let adjusted_opcode =
+                255 - Unsigned.UInt8.to_int header.opcode_base
+              in
+              let address_increment =
+                adjusted_opcode
+                / Unsigned.UInt8.to_int header.line_range
+                * Unsigned.UInt8.to_int header.minimum_instruction_length
+              in
+              address :=
+                Unsigned.UInt64.add !address
+                  (Unsigned.UInt64.of_int address_increment)
+          | 0x09 ->
+              (* DW_LNS_fixed_advance_pc *)
+              let advance = Object.Buffer.Read.u16 cur in
+              address :=
+                Unsigned.UInt64.add !address
+                  (Unsigned.UInt64.of_int (Unsigned.UInt16.to_int advance))
+          | 0x0a ->
+              (* DW_LNS_set_prologue_end *)
+              prologue_end := true
+          | 0x0b ->
+              (* DW_LNS_set_epilogue_begin *)
+              epilogue_begin := true
+          | 0x0c ->
+              (* DW_LNS_set_isa *)
+              isa := Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+          | _ ->
+              (* Skip unknown standard opcodes using operand count from header *)
+              let operand_count =
+                if opcode_val < Array.length header.standard_opcode_lengths then
+                  Unsigned.UInt8.to_int
+                    header.standard_opcode_lengths.(opcode_val - 1)
+                else 0
+              in
+              for _i = 1 to operand_count do
+                ignore (Object.Buffer.Read.uleb128 cur)
+              done
+      with End_of_file | _ -> program_done := true
+    done;
+
+    List.rev !entries
 end
 
 (** Call frame information parsing for Debug_frame section *)

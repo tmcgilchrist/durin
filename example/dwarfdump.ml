@@ -155,7 +155,7 @@ let dump_debug_line filename =
           in
           if Sys.file_exists dsym_path then Printf.printf "Try: %s\n" dsym_path)
     | Some (offset, _size) ->
-        Printf.printf "debug_line[0x%08x]\n" (Unsigned.UInt32.to_int offset);
+        Printf.printf "debug_line[0x%08x]\n" 0;
 
         (* Create cursor at the debug_line section offset *)
         let cursor =
@@ -168,8 +168,60 @@ let dump_debug_line filename =
         (* Dump the header information *)
         dump_line_program_header header;
 
+        (* Parse the line program and display entries *)
+        let entries = Dwarf.LineTable.parse_line_program cursor header in
+        Printf.printf "\n";
+
+        (* Display line table header *)
         Printf.printf
-          "\n(Line table program data parsing not implemented yet)\n"
+          "Address            Line   Column File   ISA Discriminator OpIndex \
+           Flags\n";
+        Printf.printf
+          "------------------ ------ ------ ------ --- ------------- ------- \
+           -------------\n";
+
+        (* Display each entry *)
+        List.iter
+          (fun entry ->
+            let flags =
+              let flags_list = [] in
+              let flags_list =
+                if entry.Dwarf.LineTable.is_stmt then "is_stmt" :: flags_list
+                else flags_list
+              in
+              let flags_list =
+                if entry.Dwarf.LineTable.basic_block then
+                  "basic_block" :: flags_list
+                else flags_list
+              in
+              let flags_list =
+                if entry.Dwarf.LineTable.end_sequence then
+                  "end_sequence" :: flags_list
+                else flags_list
+              in
+              let flags_list =
+                if entry.Dwarf.LineTable.prologue_end then
+                  "prologue_end" :: flags_list
+                else flags_list
+              in
+              let flags_list =
+                if entry.Dwarf.LineTable.epilogue_begin then
+                  "epilogue_begin" :: flags_list
+                else flags_list
+              in
+              " " ^ String.concat " " (List.rev flags_list)
+            in
+            Printf.printf "0x%016Lx %6ld %6ld %6ld %3ld %13ld %7ld %s\n"
+              (Unsigned.UInt64.to_int64 entry.Dwarf.LineTable.address)
+              (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.line)
+              (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.column)
+              (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.file_index)
+              (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.isa)
+              (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.discriminator)
+              (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.op_index)
+              flags)
+          entries;
+        Printf.printf "\n"
   with
   | Sys_error msg ->
       Printf.eprintf "Error: %s\n" msg;

@@ -1055,6 +1055,30 @@ module LineTable : sig
       Reference: DWARF 5 specification, section 6.2.4 "The Line Number Program
       Header" *)
 
+  type line_table_entry = {
+    address : u64;  (** Program counter address *)
+    line : u32;  (** Source line number (1-based) *)
+    column : u32;  (** Source column number (1-based, 0 = no column info) *)
+    file_index : u32;  (** Index into file_names array *)
+    isa : u32;  (** Instruction Set Architecture identifier *)
+    discriminator : u32;  (** Discriminator for multiple blocks on same line *)
+    op_index : u32;  (** Operation index within VLIW instruction *)
+    is_stmt : bool;
+        (** True if this instruction is a recommended breakpoint location *)
+    basic_block : bool;  (** True if this instruction begins a basic block *)
+    end_sequence : bool;  (** True if this instruction ends a sequence *)
+    prologue_end : bool;  (** True if this instruction ends function prologue *)
+    epilogue_begin : bool;
+        (** True if this instruction begins function epilogue *)
+  }
+  (** Line table entry representing one row in the line number matrix.
+
+      Each entry maps a program counter address to source location information
+      and various flags that help debuggers understand the code structure.
+
+      Reference: DWARF 5 specification, section 6.2.2 "State Machine Registers"
+  *)
+
   val parse_line_program_header :
     Object.Buffer.cursor -> Object.Buffer.t -> line_program_header
   (** Parse the line number program header from the [Debug_line] section.
@@ -1086,9 +1110,38 @@ module LineTable : sig
       Reference: DWARF 5 specification, section 6.2.4 "The Line Number Program
       Header" *)
 
+  val parse_line_program :
+    Object.Buffer.cursor -> line_program_header -> line_table_entry list
+  (** Parse the line number program following the header.
+
+      This function executes the line number program (sequence of opcodes) that
+      follows the line program header. It runs the DWARF 5 line number state
+      machine to produce the complete line table matrix.
+
+      The state machine processes three types of opcodes:
+      - Special opcodes (values opcode_base to 255): Efficiently encode common
+        address/line advance combinations
+      - Standard opcodes (values 1 to opcode_base-1): Individual operations like
+        DW_LNS_copy, DW_LNS_advance_pc, DW_LNS_advance_line
+      - Extended opcodes (value 0 followed by length and extended opcode):
+        Operations like DW_LNE_end_sequence, DW_LNE_set_address,
+        DW_LNE_set_discriminator
+
+      @param cursor Buffer cursor positioned after the line program header
+      @param header Parsed line program header containing opcode definitions
+      @return List of line table entries representing the complete line table
+
+      @raise Failure
+        if program contains invalid opcodes or malformed instructions
+
+      Reference: DWARF 5 specification, section 6.2 "Line Number Information" *)
+  (* TODO Combine the header and line_program parsing into a single function
+     That parses the header and lazily parses the line_table_entry Seq.t
+  *)
   (* TODO This module should provide an iterator to
      get a line table entry based on an address. *)
   (* TODO Provide access to lookup entries by line. *)
+
 end
 
 (** Call frame information parsing for DWARF 5 section 6.4.
