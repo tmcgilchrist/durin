@@ -26,6 +26,12 @@ Test help flag:
          -a, --all
              Dump all available debug information
   
+         --debug-abbrev
+             Dump debug abbreviation information (.debug_abbrev section)
+  
+         --debug-addr
+             Dump debug address information (.debug_addr section)
+  
          --debug-info
              Dump debug info information (.debug_info section)
   
@@ -34,6 +40,12 @@ Test help flag:
   
          --debug-names
              Dump debug names information (.debug_names section)
+  
+         --debug-str
+             Dump debug string information (.debug_str section)
+  
+         --debug-str-offsets
+             Dump debug string offsets information (.debug_str_offs section)
   
   COMMON OPTIONS
          --help[=FMT] (default=auto)
