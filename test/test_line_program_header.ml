@@ -205,11 +205,13 @@ let test_comprehensive_debug_line_validation binary_path =
           file_names_count = Unsigned.UInt32.of_int 1;
           file_names =
             [|
-              ( "hello_world.c",
-                Unsigned.UInt64.of_int 0,
-                Unsigned.UInt64.of_int 0,
-                "/Users/tsmc/code/ocaml/durin/_build/default/test",
-                None );
+              {
+                name = "hello_world.c";
+                timestamp = Unsigned.UInt64.of_int 0;
+                size = Unsigned.UInt64.of_int 0;
+                directory = "/Users/tsmc/code/ocaml/durin/_build/default/test";
+                md5_checksum = None;
+              };
             |];
         }
     in
@@ -241,8 +243,7 @@ let test_comprehensive_debug_line_validation binary_path =
       (Array.length realistic_header.standard_opcode_lengths);
     Alcotest.(check string)
       "first file name is hello_world.c" "hello_world.c"
-      (let name, _, _, _, _ = realistic_header.file_names.(0) in
-       name);
+      realistic_header.file_names.(0).name;
 
     Alcotest.(check bool)
       "Buffer size indicates debug information present" true

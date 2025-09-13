@@ -2398,6 +2398,14 @@ module LineTable = struct
     type t = { path : string; modification_time : u64; file_length : u64 }
   end
 
+  type file_entry = {
+    name : string;
+    timestamp : u64;
+    size : u64;
+    directory : string;
+    md5_checksum : string option;
+  }
+
   type line_program_header = {
     unit_length : u32;
     version : u16;
@@ -2420,11 +2428,23 @@ module LineTable = struct
     file_name_entry_formats :
       (line_number_header_entry * attribute_form_encoding) array;
     file_names_count : u32;
-    file_names : (string * u64 * u64 * string * string option) array;
+    file_names : file_entry array;
   }
 
+  (** Resolve a DW_FORM_line_strp offset to its string value.
+
+      In DWARF 5, strings in line tables can be stored indirectly in the
+      .debug_line_str section to reduce duplication. This function takes an
+      offset into that section and returns the null-terminated string found at
+      that offset.
+
+      @param buffer Complete buffer containing debug sections
+      @param offset Offset into .debug_line_str section
+      @return
+        String at the given offset, or a placeholder if section/offset not found
+
+      Reference: DWARF 5 specification, section 7.26 "String Encodings" *)
   let resolve_line_strp_offset buffer offset =
-    (* Find the debug_line_str section and read the string at the given offset *)
     match find_debug_section buffer "__debug_line_str" with
     | None ->
         Printf.sprintf "<line_strp:0x%08lx>" (Unsigned.UInt32.to_int32 offset)
@@ -2445,6 +2465,22 @@ module LineTable = struct
           Printf.sprintf "<line_strp:0x%08lx>" (Unsigned.UInt32.to_int32 offset)
         )
 
+  (** Parse a DWARF 5 line program header from a buffer cursor.
+
+      This implementation handles the complex DWARF 5 format with flexible
+      directory and file entry encodings based on format descriptors. It parses
+      all header fields, builds the directory and file tables, and resolves any
+      string references to the .debug_line_str section.
+
+      The parsing process: 1. Fixed header fields (lengths, versions, basic
+      parameters) 2. Standard opcode definitions array 3. Directory entries
+      using directory_entry_formats descriptors 4. File entries using
+      file_name_entry_formats descriptors 5. Directory index resolution in file
+      entries 6. MD5 checksum conversion from binary to hex string
+
+      Supports all standard DWARF 5 content types and forms including
+      DW_FORM_line_strp indirect string references and DW_FORM_data16 MD5
+      checksums. *)
   let parse_line_program_header (cur : Object.Buffer.cursor) buffer :
       line_program_header =
     let unit_length = Object.Buffer.Read.u32 cur in
@@ -2545,7 +2581,13 @@ module LineTable = struct
     let file_names =
       Array.make
         (Unsigned.UInt32.to_int file_names_count)
-        ("", Unsigned.UInt64.of_int 0, Unsigned.UInt64.of_int 0, "", None)
+        {
+          name = "";
+          timestamp = Unsigned.UInt64.of_int 0;
+          size = Unsigned.UInt64.of_int 0;
+          directory = "";
+          md5_checksum = None;
+        }
     in
     for i = 0 to Array.length file_names - 1 do
       (* Parse file entry according to the format descriptors *)
@@ -2612,7 +2654,13 @@ module LineTable = struct
         else ""
       in
       file_names.(i) <-
-        (!path_ref, !timestamp_ref, !file_size_ref, dir_name, !md5_ref)
+        {
+          name = !path_ref;
+          timestamp = !timestamp_ref;
+          size = !file_size_ref;
+          directory = dir_name;
+          md5_checksum = !md5_ref;
+        }
     done;
 
     {
