@@ -320,7 +320,25 @@ let resolve_address_attribute buffer die attr_name addr_value cu_addr_base =
           | None -> addr_value))
   | _ -> addr_value
 
-let rec print_die die depth buffer object_format stmt_list_offset cu_addr_base =
+let resolve_type_reference buffer abbrev_table debug_info_offset die_offset =
+  (* Try to parse DIE at the given offset and extract its name *)
+  try
+    (* The die_offset is relative to debug_info section start *)
+    let absolute_offset =
+      debug_info_offset + Unsigned.UInt64.to_int die_offset
+    in
+    let cursor = Object.Buffer.cursor buffer ~at:absolute_offset in
+    match Dwarf.DIE.parse_die cursor abbrev_table buffer with
+    | Some die -> (
+        (* Look for DW_AT_name attribute in the referenced DIE *)
+        match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
+        | Some (Dwarf.DIE.String name) -> Some name
+        | _ -> None)
+    | None -> None
+  with _ -> None
+
+let rec print_die die depth buffer object_format stmt_list_offset cu_addr_base
+    debug_info_offset abbrev_table =
   (* Indentation pattern from test expectations:
      - All DIEs: no leading spaces before offset
      - Root DIE: 1 space after colon, 14 spaces for attributes
@@ -381,7 +399,15 @@ let rec print_die die depth buffer object_format stmt_list_offset cu_addr_base =
               Printf.sprintf "0x%08x"
                 (Unsigned.UInt64.to_int64 r |> Int64.to_int)
             in
-            Printf.sprintf "(%s)" offset_hex
+            if attr.Dwarf.DIE.attr = Dwarf.DW_AT_type then
+              (* Resolve type reference and get name *)
+              match
+                resolve_type_reference buffer abbrev_table debug_info_offset r
+              with
+              | Some type_name ->
+                  Printf.sprintf "(%s \"%s\")" offset_hex type_name
+              | None -> Printf.sprintf "(%s)" offset_hex
+            else Printf.sprintf "(%s)" offset_hex
         | Dwarf.DIE.Block b ->
             (* Special handling for DW_AT_frame_base - decode DWARF expression *)
             if attr.Dwarf.DIE.attr = Dwarf.DW_AT_frame_base then
@@ -399,7 +425,7 @@ let rec print_die die depth buffer object_format stmt_list_offset cu_addr_base =
   Seq.iter
     (fun child ->
       print_die child (depth + 1) buffer object_format stmt_list_offset
-        cu_addr_base)
+        cu_addr_base debug_info_offset abbrev_table)
     die.Dwarf.DIE.children
 
 let dump_debug_info filename =
@@ -428,9 +454,10 @@ let dump_debug_info filename =
             ^ Filename.basename filename
           in
           if Sys.file_exists dsym_path then Printf.printf "Try: %s\n" dsym_path)
-    | Some (_debug_info_offset, _size) ->
+    | Some (debug_info_offset, _size) ->
         (* Create DWARF context and parse compile units *)
         let dwarf = Dwarf.create buffer in
+        let debug_info_offset_int = Unsigned.UInt32.to_int debug_info_offset in
 
         let compile_units = Dwarf.parse_compile_units dwarf in
 
@@ -489,7 +516,11 @@ let dump_debug_info filename =
                   | _ -> None
                 in
                 print_die root_die 0 buffer object_format stmt_list_offset
-                  cu_addr_base) (* +12 for DWARF 5 CU header size *)
+                  cu_addr_base debug_info_offset_int abbrev_table;
+                (* Add NULL entry at the end of the compilation unit *)
+                let null_offset = next_unit_offset - 1 in
+                Printf.printf "\n0x%08x:   NULL\n" null_offset)
+            (* +12 for DWARF 5 CU header size *)
           compile_units
   with
   | Sys_error msg ->
@@ -854,6 +885,7 @@ let all_flag =
   let doc = "Dump all available debug information" in
   Cmdliner.Arg.(value & flag & info [ "all"; "a" ] ~doc)
 
+(* TODO handle .debug_macro .debug_frame *)
 let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev
     debug_str_offsets debug_str debug_addr all filename =
   match
