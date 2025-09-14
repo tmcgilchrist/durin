@@ -48,6 +48,18 @@
  (action
   (run %{exe:test_debug_str_offsets.exe})))
 
+(test
+ (name test_djb2)
+ (libraries durin alcotest)
+ (action
+  (run %{exe:test_djb2.exe})))
+
+(test
+ (name test_debug_names_parsing)
+ (libraries durin alcotest)
+ (action
+  (run %{exe:test_debug_names_parsing.exe})))
+
 ; Cram test to compare our dwarfdump with real dwarfdump
 
 (cram
@@ -344,3 +356,51 @@
    (= %{architecture} "arm64")))
  (action
   (diff system_debug_line.out ocaml_debug_line.out)))
+
+; Test rules to compare --debug-names output with system dwarfdump
+
+; Generate output from our dwarfdump --debug-names
+
+(rule
+ (alias runtest)
+ (target ocaml_debug_names.out)
+ (deps %{bin:dwarfdump} hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run
+    %{bin:dwarfdump}
+    --debug-names
+    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+
+; Generate output from system dwarfdump --debug-names
+
+(rule
+ (alias runtest)
+ (target system_debug_names.out)
+ (deps hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system
+    "dwarfdump --debug-names hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+
+; Compare the outputs using diff
+
+(rule
+ (alias runtest)
+ (deps ocaml_debug_names.out system_debug_names.out)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (diff system_debug_names.out ocaml_debug_names.out)))

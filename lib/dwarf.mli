@@ -38,6 +38,7 @@ val string_of_attribute_form_encoding : u64 -> string
 
     Table 7.3: Tag encodings *)
 type abbreviation_tag =
+  | DW_TAG_null
   | DW_TAG_array_type
   | DW_TAG_class_type
   | DW_TAG_entry_point
@@ -301,6 +302,10 @@ type attribute_form_encoding =
   | DW_FORM_addrx2
   | DW_FORM_addrx3
   | DW_FORM_addrx4
+  | DW_FORM_unknown of int  (** Unknown or vendor-specific forms *)
+
+val string_of_attribute_form_encoding_variant :
+  attribute_form_encoding -> string
 
 (** DWARF expression operations
 
@@ -645,7 +650,9 @@ type discriminant = DW_DSC_label | DW_DSC_range
 (** Name index attribute Table 7.23: Name index attribute encodings
 
     New in DWARF Version 5 *)
+
 type name_index_attribute =
+  | DW_IDX_null
   | DW_IDX_compile_unit
   | DW_IDX_type_unit
   | DW_IDX_die_offset
@@ -653,6 +660,8 @@ type name_index_attribute =
   | DW_IDX_type_hash
   | DW_IDX_lo_user
   | DW_IDX_hi_user
+
+val string_of_name_index_attribute : name_index_attribute -> string
 
 (** Defaulted attribute. The encodings of the constants used in the
     [DW_AT_defaulted] attribute. Table 7.24: Defaulted attribute encodings
@@ -679,6 +688,9 @@ type line_number_opcode =
   | DW_LNS_set_epilogue_begin
   | DW_LNS_set_isa
 
+val line_number_opcode : int -> line_number_opcode
+val string_of_line_number_opcode : line_number_opcode -> string
+
 (** Line number extended opcodes. The encodings for the extended opcodes. Table
     7.26: Line number extended opcode encodings *)
 type line_number_extended_opcode =
@@ -687,6 +699,9 @@ type line_number_extended_opcode =
   | DW_LNE_set_discriminator
   | DW_LNE_lo_user
   | DW_LNE_hi_user
+
+val string_of_line_number_extended_opcode :
+  line_number_extended_opcode -> string
 
 (** Line number header entry. The encodings for the line number header entry
     formats. Table 7.27: Line number header entry format encodings. New in DWARF
@@ -699,6 +714,8 @@ type line_number_header_entry =
   | DW_LNCT_MD5
   | DW_LNCT_lo_user
   | DW_LNCT_hi_user
+
+val string_of_line_number_header_entry : line_number_header_entry -> string
 
 (** The macro information entry type is encoded as a single unsigned byte. Table
     7.28: Macro information entry type encodings. New in DWARF Version 5. *)
@@ -717,6 +734,8 @@ type macro_info_entry_type =
   | DW_MACRO_undef_strx
   | DW_MACRO_lo_user
   | DW_MACRO_hi_user
+
+val string_of_macro_info_entry_type : macro_info_entry_type -> string
 
 (** Sections that hold DWARF 5 debugging information. *)
 type dwarf_section =
@@ -1350,6 +1369,12 @@ module DebugNames : sig
 
       Reference: DWARF 5 specification, section 6.1.1.1 "Name Index Header" *)
 
+  type debug_str_entry = {
+    offset : u32;  (** Original offset in debug_str section *)
+    value : string;  (** Resolved string value *)
+  }
+  (** String with original offset preserved for debug_names *)
+
   type name_index_entry = {
     name_offset : u32;  (** Offset into .debug_str section for symbol name *)
     die_offset : u32;  (** Offset to Debug Information Entry in .debug_info *)
@@ -1382,6 +1407,14 @@ module DebugNames : sig
       Reference: DWARF 5 specification, section 6.1.1.4.2 "Name Index Entries"
   *)
 
+  type debug_names_abbrev = {
+    code : u64;  (** Abbreviation code *)
+    tag : abbreviation_tag;  (** DWARF tag *)
+    attributes : (name_index_attribute * attribute_form_encoding) list;
+        (** List of attributes and their forms *)
+  }
+  (** Abbreviation entry for debug_names *)
+
   type debug_names_section = {
     header : name_index_header;  (** Section header with counts and sizes *)
     comp_unit_offsets : u32 array;
@@ -1392,8 +1425,10 @@ module DebugNames : sig
         (** Type signatures for foreign type units *)
     hash_table : u32 array;
         (** Hash buckets containing indices into name_table *)
-    name_table : string array;
-        (** Symbol names resolved from .debug_str offsets *)
+    name_table : debug_str_entry array;
+        (** Symbol names with original offsets preserved *)
+    abbreviation_table : debug_names_abbrev list;
+        (** Parsed abbreviation table *)
     entry_pool : name_index_entry array;
         (** All name index entries with DIE information *)
   }
@@ -1420,6 +1455,21 @@ module DebugNames : sig
       access to compilation units and type units by index.
 
       Reference: DWARF 5 specification, section 6.1.1 "Name Index Format" *)
+
+  val djb2_hash : string -> u32
+  (** Compute DJB2 hash value used by DWARF 5 debug_names sections *)
+
+  val resolve_debug_str_offset : Object.Buffer.t -> u32 -> debug_str_entry
+  (** Resolve debug_str offset to debug_str_entry with both offset and resolved
+      string *)
+
+  val calculate_entry_address : u32 -> int -> u32
+  (** Calculate absolute byte address given section base offset and relative
+      offset *)
+
+  val calculate_section_addresses :
+    u32 -> name_index_header -> (string * u32) list
+  (** Calculate byte addresses for all components of a debug_names section *)
 
   val parse_debug_names_section : Object.Buffer.cursor -> debug_names_section
   (** Parse a complete debug_names section from the [Debug_names] section.
