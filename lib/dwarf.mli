@@ -749,7 +749,8 @@ type debug_macro_header = {
   version : u16;  (** Version number *)
   flags : u8;  (** Flags *)
   debug_line_offset : u32 option;  (** Offset into debug_line (if flag set) *)
-  debug_str_offsets_offset : u32 option;  (** Offset into debug_str_offsets (if flag set) *)
+  debug_str_offsets_offset : u32 option;
+      (** Offset into debug_str_offsets (if flag set) *)
 }
 
 type debug_macro_entry = {
@@ -769,17 +770,18 @@ type debug_macro_section = {
   units : debug_macro_unit list;  (** List of macro units *)
 }
 
-(** Parse debug_macro header from binary data *)
 val parse_debug_macro_header : Object.Buffer.cursor -> debug_macro_header
+(** Parse debug_macro header from binary data *)
 
-(** Parse a single debug_macro entry from binary data *)
 val parse_debug_macro_entry : Object.Buffer.cursor -> debug_macro_entry option
+(** Parse a single debug_macro entry from binary data *)
 
-(** Parse a complete debug_macro unit from binary data *)
 val parse_debug_macro_unit : Object.Buffer.cursor -> debug_macro_unit
+(** Parse a complete debug_macro unit from binary data *)
 
+val parse_debug_macro_section :
+  Object.Buffer.cursor -> int -> debug_macro_section
 (** Parse the entire debug_macro section from binary data *)
-val parse_debug_macro_section : Object.Buffer.cursor -> int -> debug_macro_section
 
 (** Sections that hold DWARF 5 debugging information. *)
 type dwarf_section =
@@ -1357,13 +1359,12 @@ end
     - Resolve type names during expression evaluation
     - Locate compilation units containing specific symbols
 
-    Structure of the debug_names section:
-    1. Name Index Header: Contains sizes, counts, and format information
-    2. Compilation Unit Offsets: Array of offsets to compilation unit headers
-    3. Type Unit Information: Local and foreign type unit references
-    4. Hash Table: Bucket array for efficient name hashing
-    5. Name Table: Array of string offsets into .debug_str section
-    6. Entry Pool: Encoded entries with DIE offsets and attributes
+    Structure of the debug_names section: 1. Name Index Header: Contains sizes,
+    counts, and format information 2. Compilation Unit Offsets: Array of offsets
+    to compilation unit headers 3. Type Unit Information: Local and foreign type
+    unit references 4. Hash Table: Bucket array for efficient name hashing 5.
+    Name Table: Array of string offsets into .debug_str section 6. Entry Pool:
+    Encoded entries with DIE offsets and attributes
 
     The hash table uses a simple chaining mechanism where each bucket contains
     an index into the name table. Multiple names can hash to the same bucket,
@@ -1474,7 +1475,8 @@ module DebugNames : sig
         (** Hash buckets containing indices into name_table *)
     name_table : debug_str_entry array;
         (** Symbol names with original offsets preserved *)
-    entry_offsets : u32 array;  (** Entry offsets into entry pool for each name *)
+    entry_offsets : u32 array;
+        (** Entry offsets into entry pool for each name *)
     abbreviation_table : debug_names_abbrev list;
         (** Parsed abbreviation table *)
     entry_pool : name_index_entry array;
@@ -1519,7 +1521,8 @@ module DebugNames : sig
     u32 -> name_index_header -> (string * u32) list
   (** Calculate byte addresses for all components of a debug_names section *)
 
-  val parse_debug_names_section : Object.Buffer.cursor -> Object.Buffer.t -> debug_names_section
+  val parse_debug_names_section :
+    Object.Buffer.cursor -> Object.Buffer.t -> debug_names_section
   (** Parse a complete debug_names section from the [Debug_names] section.
 
       This function parses all components of a DWARF 5 debug_names section,
@@ -1527,12 +1530,14 @@ module DebugNames : sig
       lookups. It handles the complex multi-table format and resolves all string
       references.
 
-      The parsing process: 1. Read name index header with table sizes and counts
-      2. Parse compilation unit offset array 3. Parse local and foreign type
-      unit arrays 4. Read hash table buckets for name lookup acceleration 5.
-      Parse name table (resolve string offsets from .debug_str section) 6.
-      Decode entry pool using abbreviation table format 7. Associate entries
-      with names and hash buckets
+      The parsing process:
+      + Read name index header with table sizes and counts
+      + Parse compilation unit offset array
+      + Parse local and foreign type unit arrays
+      + Read hash table buckets for name lookup acceleration
+      + Parse name table (resolve string offsets from .debug_str section)
+      + Decode entry pool using abbreviation table format
+      + Associate entries with names and hash buckets
 
       The parser handles:
       - Variable-length encoding of entry pool using abbreviations
@@ -1550,6 +1555,19 @@ module DebugNames : sig
       the hash table, significantly faster than linear DIE scanning.
 
       Reference: DWARF 5 specification, section 6.1.1 "Name Index Format" *)
+
+  val parse_all_entries_for_name :
+    Object.Buffer.t ->
+    debug_names_section ->
+    int ->
+    int ->
+    (int * int * string * string * int option * bool) list
+  (** Parse all entries for a given name index according to DWARF 5
+      specification. Returns a list of tuples: (entry_addr, die_offset, tag_str,
+      abbrev_id, parent_offset_opt, has_parent_flag) *)
+
+  val calculate_entry_pool_offset : name_index_header -> int
+  (** Calculate entry pool offset based on header information *)
 end
 
 val object_format_to_section_name : object_format -> dwarf_section -> string
@@ -1564,13 +1582,57 @@ val parse_compile_units : t -> CompileUnit.t Seq.t
 val get_abbrev_table : t -> size_t -> t * (u64, abbrev) Hashtbl.t
 (** Retrieve the abbreviation table at offset [size_t]. *)
 
+(** String offset table parsing for DWARF 5 section 7.26.
+
+    The [.debug_str_offsets] section provides indirect access to strings in the
+    [.debug_str] section. Instead of embedding string offsets directly in DIEs,
+    DWARF 5 can use string indices that reference this offset table, enabling
+    more compact representation and better string sharing across compilation
+    units.
+
+    The section contains a header followed by an array of 32-bit offsets into
+    the [.debug_str] section. Each offset can be resolved to retrieve the actual
+    string content.
+
+    Reference: DWARF 5 specification, section 7.26 "String Offsets Table" *)
 module DebugStrOffsets : sig
-  type header = { unit_length : u32; version : u16; padding : u16 }
-  type offset_entry = { offset : u32; resolved_string : string option }
-  type t = { header : header; offsets : offset_entry array }
+  type header = {
+    unit_length : u32;  (** Length of this contribution excluding this field *)
+    version : u16;  (** DWARF version number (typically 5) *)
+    padding : u16;  (** Reserved padding field, must be zero *)
+  }
+  (** Header structure for a string offsets contribution.
+
+      Each contribution starts with a header containing the total length, DWARF
+      version, and padding for alignment. Multiple contributions can exist in a
+      single [.debug_str_offsets] section. *)
+
+  type offset_entry = {
+    offset : u32;  (** Offset into .debug_str section *)
+    resolved_string : string option;  (** Resolved string content if available *)
+  }
+  (** An individual offset entry with optional resolved string content.
+
+      Each entry contains a 32-bit offset into the [.debug_str] section. The
+      [resolved_string] field is populated when the parser has access to the
+      [.debug_str] section and can resolve the actual string content. *)
+
+  type t = {
+    header : header;  (** Section header *)
+    offsets : offset_entry array;  (** Array of string offset entries *)
+  }
+  (** Complete parsed string offsets table.
+
+      Contains the header information and an array of all offset entries for
+      this contribution. The array index corresponds to the string index used in
+      DWARF 5 forms like [DW_FORM_strx]. *)
 
   val parse_header : Object.Buffer.cursor -> header
-  (** Parse the header of a debug_str_offsets section *)
+  (** Parse the header of a debug_str_offsets contribution.
+
+      @param cursor Buffer cursor positioned at start of contribution header
+      @return Parsed header structure
+      @raise Failure if header format is invalid or unsupported version *)
 
   val parse_offsets :
     Object.Buffer.cursor ->
@@ -1578,33 +1640,133 @@ module DebugStrOffsets : sig
     (u32 * u64) option ->
     Object.Buffer.t ->
     offset_entry array
-  (** Parse the offset array with optional string resolution *)
+  (** Parse the offset array with optional string resolution.
+
+      Reads the array of 32-bit offsets following the header. If debug_str
+      section information is provided, attempts to resolve each offset to its
+      actual string content.
+
+      @param cursor Buffer cursor positioned after header
+      @param header Previously parsed header for size calculation
+      @param debug_str_info Optional (offset, size) of .debug_str section
+      @param buffer Full buffer for string resolution
+      @return Array of offset entries with optional resolved strings *)
 
   val parse : Object.Buffer.t -> u32 -> t
-  (** Parse a complete debug_str_offsets section from buffer at given offset *)
+  (** Parse a complete debug_str_offsets contribution from buffer.
+
+      This is the main entry point for parsing a string offsets table. It
+      combines header parsing and offset array parsing with automatic string
+      resolution if the [.debug_str] section is available.
+
+      @param buffer Object buffer containing the DWARF data
+      @param section_offset Offset to start of .debug_str_offsets section
+      @return Complete parsed string offsets table
+      @raise Failure if section format is invalid
+
+      Usage example:
+      {[
+        let str_offsets = DebugStrOffsets.parse buffer section_offset in
+        let first_string = str_offsets.offsets.(0).resolved_string
+      ]}
+
+      Performance note: String resolution is performed eagerly during parsing
+      for better cache locality and simpler API usage. *)
 end
 
+(** Address table parsing for DWARF 5 section 7.27.
+
+    The [.debug_addr] section provides indirect access to addresses in DWARF 5.
+    Instead of embedding full addresses directly in DIEs, DWARF 5 can use
+    address indices that reference this address table via forms like
+    [DW_FORM_addrx]. This enables more compact representation, better
+    relocatability, and improved linking performance.
+
+    The section contains a header followed by an array of addresses. Each
+    address can be resolved using an address index and optional addr_base
+    offset. This indirection is particularly useful for position-independent
+    code and shared libraries where actual addresses are determined at load
+    time.
+
+    Reference: DWARF 5 specification, section 7.27 "Address Table" *)
 module DebugAddr : sig
   type header = {
-    unit_length : u32;
-    version : u16;
+    unit_length : u32;  (** Length of this contribution excluding this field *)
+    version : u16;  (** DWARF version number (typically 5) *)
     address_size : u8;
+        (** Size of addresses in bytes (4 for 32-bit, 8 for 64-bit) *)
     segment_selector_size : u8;
+        (** Size of segment selectors in bytes (0 if no segments) *)
   }
+  (** Header structure for an address table contribution.
+
+      Each contribution starts with a header containing the total length, DWARF
+      version, and size information for addresses and segments. Multiple
+      contributions can exist in a single [.debug_addr] section, each
+      potentially with different address sizes for different architectures. *)
 
   type entry = {
-    segment : u64 option;  (** Present only if segment_selector_size > 0 *)
-    address : u64;
+    segment : u64 option;  (** Segment selector if segment_selector_size > 0 *)
+    address : u64;  (** The actual address value *)
   }
+  (** An individual address entry with optional segment information.
 
-  type t = { header : header; entries : entry array }
+      Each entry contains an address value and an optional segment selector. The
+      segment is only present when [segment_selector_size > 0] in the header.
+      Most modern systems use flat memory models with no segments. *)
+
+  type t = {
+    header : header;  (** Section header with size information *)
+    entries : entry array;  (** Array of address entries *)
+  }
+  (** Complete parsed address table.
+
+      Contains the header information and an array of all address entries for
+      this contribution. The array index corresponds to the address index used
+      in DWARF 5 forms like [DW_FORM_addrx]. *)
 
   val parse_header : Object.Buffer.cursor -> header
-  (** Parse the header of a debug_addr section *)
+  (** Parse the header of a debug_addr contribution.
+
+      @param cursor Buffer cursor positioned at start of contribution header
+      @return Parsed header structure with size information
+      @raise Failure if header format is invalid or unsupported version *)
 
   val parse_entries : Object.Buffer.cursor -> header -> entry array
-  (** Parse the entries following the header *)
+  (** Parse the address entries following the header.
+
+      Reads the array of addresses using the size information from the header.
+      Each address is read according to [address_size] and segment selectors are
+      included if [segment_selector_size > 0].
+
+      @param cursor Buffer cursor positioned after header
+      @param header Previously parsed header for size calculation
+      @return Array of address entries
+      @raise Failure if entries cannot be parsed or address sizes are invalid *)
 
   val parse : Object.Buffer.t -> u32 -> t
-  (** Parse a complete debug_addr section from buffer at given offset *)
+  (** Parse a complete debug_addr contribution from buffer.
+
+      This is the main entry point for parsing an address table. It combines
+      header parsing and address entry parsing to provide a complete address
+      lookup table.
+
+      @param buffer Object buffer containing the DWARF data
+      @param section_offset Offset to start of .debug_addr section
+      @return Complete parsed address table
+      @raise Failure if section format is invalid
+
+      Usage example:
+      {[
+        let addr_table = DebugAddr.parse buffer section_offset in
+        let first_address = addr_table.entries.(0).address
+      ]}
+
+      Performance note: This function parses the entire contribution eagerly.
+      For large address tables, consider lazy parsing if only specific indices
+      are needed.
+
+      Architecture note: The [address_size] field determines the width of
+      addresses read from the section. This allows the same DWARF data to
+      support both 32-bit and 64-bit architectures. *)
 end

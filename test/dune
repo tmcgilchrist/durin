@@ -34,6 +34,7 @@
   (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp")))
 
 ; Compile test program with macro debugging information
+
 (rule
  (alias runtest)
  (deps test_macros.c test_macros_header.h)
@@ -486,10 +487,7 @@
  (action
   (with-stdout-to
    %{target}
-   (run
-    %{bin:dwarfdump}
-    --debug-macro
-    "test_macros"))))
+   (run %{bin:dwarfdump} --debug-macro "test_macros"))))
 
 ; Generate output from system dwarfdump --debug-macro
 
@@ -504,8 +502,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system
-    "dwarfdump --debug-macro test_macros"))))
+   (system "dwarfdump --debug-macro test_macros"))))
 
 ; Compare the outputs using diff
 
