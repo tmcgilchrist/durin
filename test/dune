@@ -423,6 +423,54 @@
  (action
   (diff system_debug_names.out ocaml_debug_names.out)))
 
+; Test rules to compare --debug-names output with system dwarfdump for C++ file
+
+; Generate output from our dwarfdump --debug-names for C++ file
+
+(rule
+ (alias runtest)
+ (target ocaml_debug_names_cpp.out)
+ (deps %{bin:dwarfdump} hello_world_cpp)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run
+    %{bin:dwarfdump}
+    --debug-names
+    "hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
+
+; Generate output from system dwarfdump --debug-names for C++ file
+
+(rule
+ (alias runtest)
+ (target system_debug_names_cpp.out)
+ (deps hello_world_cpp)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system
+    "dwarfdump --debug-names hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
+
+; Compare the C++ outputs using diff
+
+(rule
+ (alias runtest)
+ (deps ocaml_debug_names_cpp.out system_debug_names_cpp.out)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (diff system_debug_names_cpp.out ocaml_debug_names_cpp.out)))
+
 ; Test rules to compare --debug-macro output with system dwarfdump
 
 ; Generate output from our dwarfdump --debug-macro

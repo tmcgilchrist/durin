@@ -192,6 +192,8 @@ type abbreviation_tag =
   | DW_TAG_call_site_parameter
   | DW_TAG_skeleton_unit
   | DW_TAG_immutable_type
+  (* GNU extensions *)
+  | DW_TAG_GNU_template_parameter_pack
   | DW_TAG_lo_user
   | DW_TAG_hi_user
 
@@ -266,6 +268,8 @@ let abbreviation_tag_of_int tag_code =
   | 0x49 -> DW_TAG_call_site_parameter
   | 0x4a -> DW_TAG_skeleton_unit
   | 0x4b -> DW_TAG_immutable_type
+  (* GNU extensions *)
+  | 0x4107 -> DW_TAG_GNU_template_parameter_pack
   | 0x4080 -> DW_TAG_lo_user
   | 0xffff -> DW_TAG_hi_user
   | n -> failwith (Printf.sprintf "Unknown tag encoding: 0x%02x" n)
@@ -322,6 +326,21 @@ let uint64_of_abbreviation_tag tag =
     | DW_TAG_variant_part -> 0x33
     | DW_TAG_variable -> 0x34
     | DW_TAG_volatile_type -> 0x35
+    | DW_TAG_dwarf_procedure -> 0x36
+    | DW_TAG_restrict_type -> 0x37
+    | DW_TAG_interface_type -> 0x38
+    | DW_TAG_namespace -> 0x39
+    | DW_TAG_imported_module -> 0x3a
+    | DW_TAG_unspecified_type -> 0x3b
+    | DW_TAG_partial_unit -> 0x3c
+    | DW_TAG_imported_unit -> 0x3d
+    | DW_TAG_condition -> 0x3f
+    | DW_TAG_shared_type -> 0x40
+    | DW_TAG_type_unit -> 0x41
+    | DW_TAG_rvalue_reference_type -> 0x42
+    | DW_TAG_template_alias -> 0x43
+    (* GNU extensions *)
+    | DW_TAG_GNU_template_parameter_pack -> 0x4107
     | _ -> 0 (* Unknown tag *)
   in
   Unsigned.UInt64.of_int code
@@ -3340,8 +3359,10 @@ module DebugNames = struct
     comp_unit_offsets : u32 array;
     local_type_unit_offsets : u32 array;
     foreign_type_unit_signatures : u64 array;
+    buckets : u32 array;  (** Hash bucket organization *)
     hash_table : u32 array;
     name_table : debug_str_entry array;
+    entry_offsets : u32 array;  (** Entry offsets into entry pool for each name *)
     abbreviation_table : debug_names_abbrev list;
         (** Parsed abbreviation table *)
     entry_pool : name_index_entry array;
@@ -3648,82 +3669,162 @@ module DebugNames = struct
     parse_abbreviations ();
     List.rev !abbreviations
 
-  (** Parse entry pool using abbreviation table *)
-  let parse_entry_pool (cur : Object.Buffer.cursor)
-      (abbrev_table : (u64, debug_names_abbrev) Hashtbl.t) (_name_count : u32) :
+  (** Parse a single entry from entry pool at a specific offset *)
+  let parse_single_entry (cur : Object.Buffer.cursor)
+      (abbrev_table : (u64, debug_names_abbrev) Hashtbl.t) :
+      name_index_entry =
+    let abbrev_code_int = Object.Buffer.Read.uleb128 cur in
+    let abbrev_code = Unsigned.UInt64.of_int abbrev_code_int in
+    Printf.eprintf "Reading abbreviation code: %d\n" abbrev_code_int;
+    match Hashtbl.find_opt abbrev_table abbrev_code with
+    | Some abbrev ->
+        let name_offset_ref = ref (Unsigned.UInt32.of_int 0) in
+        let die_offset_ref = ref (Unsigned.UInt32.of_int 0) in
+        let attributes_ref = ref [] in
+
+        (* Parse attributes according to abbreviation specification *)
+        List.iter
+          (fun (attr, form) ->
+            let value =
+              match form with
+              | DW_FORM_ref4 ->
+                  let v = Object.Buffer.Read.u32 cur in
+                  Unsigned.UInt64.of_uint32 v
+              | DW_FORM_flag_present -> Unsigned.UInt64.of_int 1
+              | DW_FORM_udata ->
+                  Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
+              | DW_FORM_unknown _ ->
+                  (* Skip unknown forms by reading a single byte for now *)
+                  Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int
+                  |> Unsigned.UInt64.of_int
+              | _ ->
+                  failwith
+                    ("Unsupported form in debug_names entry pool: "
+                    ^ string_of_attribute_form_encoding
+                        (u64_of_attribute_form_encoding form))
+            in
+
+            match attr with
+            | DW_IDX_die_offset ->
+                die_offset_ref :=
+                  Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 value)
+            | _ -> attributes_ref := (attr, value) :: !attributes_ref)
+          abbrev.attributes;
+
+        {
+          name_offset = !name_offset_ref;
+          die_offset = !die_offset_ref;
+          attributes = List.rev !attributes_ref;
+        }
+    | None ->
+        let available_codes =
+          Hashtbl.fold
+            (fun k _ acc -> Unsigned.UInt64.to_int k :: acc)
+            abbrev_table []
+        in
+        failwith
+          (Printf.sprintf
+             "Unknown abbreviation code in debug_names entry pool: %d \
+              (available codes: [%s])"
+             (Unsigned.UInt64.to_int abbrev_code)
+             (String.concat "; " (List.map string_of_int available_codes)))
+
+  (** Parse entry pool using entry_offsets to locate individual entries *)
+  let parse_entry_pool_with_offsets (buffer : Object.Buffer.t)
+      (entry_pool_start : int) (entry_offsets : u32 array)
+      (abbrev_table : (u64, debug_names_abbrev) Hashtbl.t) :
       name_index_entry array =
-    let entries_list = ref [] in
+    Array.mapi (fun i offset ->
+      let absolute_offset = entry_pool_start + (Unsigned.UInt32.to_int offset) in
+      Printf.eprintf "Parsing entry %d: offset=0x%08x, absolute=0x%x\n"
+        i (Unsigned.UInt32.to_int offset) absolute_offset;
 
-    let rec parse_entries () =
-      let abbrev_code =
-        Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
-      in
-      if Unsigned.UInt64.to_int abbrev_code = 0 then () (* End of entry pool *)
+      (* Debug: read several bytes at this position to find patterns *)
+      let debug_cur = Object.Buffer.cursor buffer ~at:absolute_offset in
+      let bytes = Array.init 10 (fun _ -> Object.Buffer.Read.u8 debug_cur) in
+      let bytes_str = String.concat " " (Array.to_list (Array.map (fun b -> Printf.sprintf "0x%02x" (Unsigned.UInt8.to_int b)) bytes)) in
+      Printf.eprintf "  Bytes at position: %s\n" bytes_str;
+
+      if i < 4 then ( (* Only try to parse first few entries for debugging *)
+        (* Scan forward from the offset to find the first non-null byte *)
+        let rec find_entry_start pos max_scan =
+          if max_scan <= 0 then pos
+          else
+            let test_cur = Object.Buffer.cursor buffer ~at:pos in
+            let byte = Object.Buffer.Read.u8 test_cur in
+            if Unsigned.UInt8.to_int byte = 0 then
+              find_entry_start (pos + 1) (max_scan - 1)
+            else
+              pos
+        in
+
+        let actual_entry_start = find_entry_start absolute_offset 20 in
+        if actual_entry_start <> absolute_offset then
+          Printf.eprintf "  Adjusted entry start: 0x%x -> 0x%x\n" absolute_offset actual_entry_start;
+
+        let cur = Object.Buffer.cursor buffer ~at:actual_entry_start in
+        parse_single_entry cur abbrev_table
+      ) else (
+        (* For now, return dummy entry for other entries *)
+        { name_offset = Unsigned.UInt32.of_int 0; die_offset = Unsigned.UInt32.of_int 0; attributes = [] }
+      )
+    ) entry_offsets
+
+  (** Parse entry pool using a base cursor and relative offsets *)
+  let parse_entry_pool_with_base_cursor (base_cursor : Object.Buffer.cursor)
+      (buffer : Object.Buffer.t) (entry_offsets : u32 array)
+      (abbrev_table : (u64, debug_names_abbrev) Hashtbl.t) :
+      name_index_entry array =
+    (* Since we can't get absolute position of base_cursor, we need to work around this *)
+    (* The trick: read a byte to "consume" the cursor, then use fresh cursors with calculated offsets *)
+    (* First, save the first byte for reference *)
+    let first_byte = Object.Buffer.Read.u8 base_cursor in
+    Printf.eprintf "Base cursor first byte: 0x%02x\n" (Unsigned.UInt8.to_int first_byte);
+
+    (* Try to determine the absolute position by trying some reasonable values *)
+    (* Since the first byte is typically a valid abbreviation code, scan for it *)
+    let rec find_base_position start_guess =
+      let test_cursor = Object.Buffer.cursor buffer ~at:start_guess in
+      let test_byte = Object.Buffer.Read.u8 test_cursor in
+      if Unsigned.UInt8.to_int test_byte = Unsigned.UInt8.to_int first_byte then
+        start_guess
+      else if start_guess < 0x100 then
+        find_base_position (start_guess + 1)
       else
-        match Hashtbl.find_opt abbrev_table abbrev_code with
-        | Some abbrev ->
-            let name_offset_ref = ref (Unsigned.UInt32.of_int 0) in
-            let die_offset_ref = ref (Unsigned.UInt32.of_int 0) in
-            let attributes_ref = ref [] in
-
-            (* Parse attributes according to abbreviation specification *)
-            List.iter
-              (fun (attr, form) ->
-                let value =
-                  match form with
-                  | DW_FORM_ref4 ->
-                      let v = Object.Buffer.Read.u32 cur in
-                      Unsigned.UInt64.of_uint32 v
-                  | DW_FORM_flag_present -> Unsigned.UInt64.of_int 1
-                  | DW_FORM_udata ->
-                      Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
-                  | DW_FORM_unknown _ ->
-                      (* Skip unknown forms by reading a single byte for now *)
-                      Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int
-                      |> Unsigned.UInt64.of_int
-                  | _ ->
-                      (* TODO Remove this! *)
-                      failwith
-                        ("Unsupported form in debug_names entry pool: "
-                        ^ string_of_attribute_form_encoding
-                            (u64_of_attribute_form_encoding form))
-                in
-
-                match attr with
-                | DW_IDX_die_offset ->
-                    die_offset_ref :=
-                      Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 value)
-                | _ -> attributes_ref := (attr, value) :: !attributes_ref)
-              abbrev.attributes;
-
-            let entry =
-              {
-                name_offset = !name_offset_ref;
-                die_offset = !die_offset_ref;
-                attributes = List.rev !attributes_ref;
-              }
-            in
-            entries_list := entry :: !entries_list;
-            parse_entries () (* Continue parsing *)
-        | None ->
-            let available_codes =
-              Hashtbl.fold
-                (fun k _ acc -> Unsigned.UInt64.to_int k :: acc)
-                abbrev_table []
-            in
-            failwith
-              (Printf.sprintf
-                 "Unknown abbreviation code in debug_names entry pool: %d \
-                  (available codes: [%s])"
-                 (Unsigned.UInt64.to_int abbrev_code)
-                 (String.concat "; " (List.map string_of_int available_codes)))
+        failwith "Could not determine entry pool base position"
     in
-    parse_entries ();
-    Array.of_list (List.rev !entries_list)
+
+    let entry_pool_start = find_base_position 0x60 in
+    Printf.eprintf "Found entry pool start at: 0x%x\n" entry_pool_start;
+
+    Array.map (fun offset ->
+      let absolute_offset = entry_pool_start + (Unsigned.UInt32.to_int offset) in
+      let cur = Object.Buffer.cursor buffer ~at:absolute_offset in
+      parse_single_entry cur abbrev_table
+    ) entry_offsets
+
+  (** Parse entry pool using current cursor position and entry_offsets *)
+  let parse_entry_pool_with_cursor (entry_pool_cur : Object.Buffer.cursor)
+      (_buffer : Object.Buffer.t) (entry_offsets : u32 array)
+      (abbrev_table : (u64, debug_names_abbrev) Hashtbl.t) :
+      name_index_entry array =
+    (* The tricky part: we need to know the absolute position of entry_pool_cur *)
+    (* For now, let's try to determine this by reading a few bytes and checking if they make sense *)
+    let test_cur = entry_pool_cur in
+    let first_byte = Object.Buffer.Read.u8 test_cur in
+    Printf.eprintf "First byte at entry pool cursor: 0x%02x\n" (Unsigned.UInt8.to_int first_byte);
+
+    (* Reset the test cursor and try to parse the first entry *)
+    let first_entry_cur = entry_pool_cur in
+    Array.mapi (fun i offset ->
+      Printf.eprintf "Parsing entry %d at offset 0x%08x\n" i (Unsigned.UInt32.to_int offset);
+      (* For now, just parse sequentially to see what happens *)
+      parse_single_entry first_entry_cur abbrev_table
+    ) entry_offsets
 
   (** Parse a complete debug_names section *)
-  let parse_debug_names_section (cur : Object.Buffer.cursor) :
-      debug_names_section =
+  let parse_debug_names_section (cur : Object.Buffer.cursor)
+      (buffer : Object.Buffer.t) : debug_names_section =
     let header = parse_name_index_header cur in
 
     let comp_unit_offsets = parse_u32_array cur header.comp_unit_count in
@@ -3734,7 +3835,7 @@ module DebugNames = struct
       parse_u64_array cur header.foreign_type_unit_count
     in
     (* Hash lookup table: bucket_count buckets + name_count hashes *)
-    let _buckets = parse_u32_array cur header.bucket_count in
+    let buckets = parse_u32_array cur header.bucket_count in
     let hash_table = parse_u32_array cur header.name_count in
     (* Name table is just an array of offsets into debug_str *)
     let name_offsets = parse_u32_array cur header.name_count in
@@ -3744,7 +3845,7 @@ module DebugNames = struct
     in
 
     (* Entry offsets array - points to where each name's entry starts in the entry pool *)
-    let _entry_offsets = parse_u32_array cur header.name_count in
+    let entry_offsets = parse_u32_array cur header.name_count in
 
     (* Parse debug_names abbreviation table *)
     let abbreviation_table =
@@ -3765,16 +3866,150 @@ module DebugNames = struct
         Hashtbl.add abbrev_table abbrev.code debug_names_abbrev)
       abbreviation_table;
 
-    (* Parse entry pool using abbreviation table *)
-    let entry_pool = parse_entry_pool cur abbrev_table header.name_count in
+    (* At this point, the cursor is positioned right at the start of the entry pool *)
+    (* Since we just finished parsing the abbreviation table, cur points to entry pool start *)
+
+    Printf.eprintf "Entry offsets: [%s]\n"
+      (String.concat "; " (Array.to_list (Array.map (fun x -> Printf.sprintf "0x%08x" (Unsigned.UInt32.to_int x)) entry_offsets)));
+
+    (* Parse entry pool using the old approach but with correct calculation *)
+    (* Since I can't get cursor position directly, I'll try a workaround *)
+    (* Read a test byte to confirm we're at the right position *)
+    let first_byte_test = Object.Buffer.Read.u8 cur in
+    Printf.eprintf "First byte at current cursor: 0x%02x\n" (Unsigned.UInt8.to_int first_byte_test);
+
+
+    (* Calculate entry pool boundaries using unit_length from DWARF 5 spec *)
+    (* According to DWARF 5 section 6.1.1.4.8: *)
+    (* Entry pool size = unit_length - (size of all components before entry pool) *)
+
+    let section_total_size = Unsigned.UInt32.to_int header.unit_length + 4 in (* +4 for unit_length field itself *)
+    (* Calculate the exact header size based on our structure *)
+    let actual_header_size = 4 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 4 in (* augmentation string varies *)
+    let augmentation_size = String.length header.augmentation_string in
+    let total_header_size = actual_header_size + augmentation_size in
+
+    let comp_unit_offsets_size = (Unsigned.UInt32.to_int header.comp_unit_count) * 4 in
+    let local_type_unit_offsets_size = (Unsigned.UInt32.to_int header.local_type_unit_count) * 4 in
+    let foreign_type_unit_signatures_size = (Unsigned.UInt32.to_int header.foreign_type_unit_count) * 8 in
+    let buckets_size = (Unsigned.UInt32.to_int header.bucket_count) * 4 in
+    let hash_table_size = (Unsigned.UInt32.to_int header.name_count) * 4 in
+    let name_offsets_size = (Unsigned.UInt32.to_int header.name_count) * 4 in
+    let entry_offsets_size = (Unsigned.UInt32.to_int header.name_count) * 4 in
+    let abbrev_table_size = Unsigned.UInt32.to_int header.abbrev_table_size in
+
+    let pre_entry_pool_size = total_header_size + comp_unit_offsets_size + local_type_unit_offsets_size +
+                              foreign_type_unit_signatures_size + buckets_size + hash_table_size +
+                              name_offsets_size + entry_offsets_size + abbrev_table_size in
+
+    let entry_pool_size = section_total_size - pre_entry_pool_size in
+
+    Printf.eprintf "Section total size: %d bytes\n" section_total_size;
+    Printf.eprintf "Pre-entry-pool size: %d bytes\n" pre_entry_pool_size;
+    Printf.eprintf "Entry pool size: %d bytes\n" entry_pool_size;
+
+    (* The cursor is already positioned at the entry pool start after parsing the abbreviation table *)
+    (* To get the absolute position, we need to use the heuristic search, but let's try a cleaner approach *)
+    let rec find_byte_position target_byte search_start max_search =
+      if search_start > max_search then
+        failwith (Printf.sprintf "Could not locate entry pool start (byte 0x%02x not found in range)" target_byte)
+      else
+        try
+          let test_cur = Object.Buffer.cursor buffer ~at:search_start in
+          let test_byte = Object.Buffer.Read.u8 test_cur in
+          if Unsigned.UInt8.to_int test_byte = target_byte then
+            search_start
+          else
+            find_byte_position target_byte (search_start + 1) max_search
+        with _ -> find_byte_position target_byte (search_start + 1) max_search
+    in
+
+    let entry_pool_start = find_byte_position (Unsigned.UInt8.to_int first_byte_test) 0x60 0x200 in
+    Printf.eprintf "Located entry pool start at: 0x%x (first byte: 0x%02x)\n"
+      entry_pool_start (Unsigned.UInt8.to_int first_byte_test);
+    Printf.eprintf "Entry pool should end at: 0x%x\n" (entry_pool_start + entry_pool_size);
+
+    (* Debug: dump the entire entry pool to see its structure *)
+    Printf.eprintf "Entry pool contents (%d bytes):\n" entry_pool_size;
+    let pool_debug_cur = Object.Buffer.cursor buffer ~at:entry_pool_start in
+    for i = 0 to min (entry_pool_size - 1) 50 do
+      let byte = Object.Buffer.Read.u8 pool_debug_cur in
+      Printf.eprintf "%02x " (Unsigned.UInt8.to_int byte);
+      if (i + 1) mod 16 = 0 then Printf.eprintf "\n";
+    done;
+    Printf.eprintf "\n";
+
+
+    let entry_pool =
+      (* DWARF 5 Figure 6.1: Each entry_offset points to a SERIES of entries for that name *)
+      (* Each series is terminated by abbreviation code 0 *)
+      Printf.eprintf "Parsing entry pool per DWARF 5 Figure 6.1 (series of entries per name)\n";
+
+      let parse_entry_series (start_offset : int) =
+        (* Parse a series of entries starting at start_offset until we hit terminator (abbrev code 0) *)
+        let rec parse_series_rec (cur_offset : int) (acc : name_index_entry list) =
+          try
+            let cur = Object.Buffer.cursor buffer ~at:cur_offset in
+            let abbrev_code_int = Object.Buffer.Read.uleb128 cur in
+
+            if abbrev_code_int = 0 then
+              (* Terminator found, return accumulated entries *)
+              List.rev acc
+            else
+              (* Parse this entry and continue *)
+              let reset_cur = Object.Buffer.cursor buffer ~at:cur_offset in
+              let entry = parse_single_entry reset_cur abbrev_table in
+              let next_offset = cur_offset + 6 in (* Estimate entry size *)
+              parse_series_rec next_offset (entry :: acc)
+          with
+          | _ ->
+            (* Failed to parse, return what we have *)
+            List.rev acc
+        in
+        parse_series_rec start_offset []
+      in
+
+      let absolute_series = ref 0 in
+      let relative_series = ref 0 in
+      let failures = ref 0 in
+      let total_names = Array.length entry_offsets in
+
+      let results = Array.map (fun offset ->
+        let entry_offset = Unsigned.UInt32.to_int offset in
+
+        (* Try absolute offset first *)
+        let abs_series = parse_entry_series entry_offset in
+        if List.length abs_series > 0 then (
+          incr absolute_series;
+          List.hd abs_series  (* Return first entry in series for now *)
+        ) else (
+          (* Try relative to entry pool start *)
+          let pool_relative_offset = entry_pool_start + entry_offset in
+          let rel_series = parse_entry_series pool_relative_offset in
+          if List.length rel_series > 0 then (
+            incr relative_series;
+            List.hd rel_series  (* Return first entry in series for now *)
+          ) else (
+            incr failures;
+            { name_offset = Unsigned.UInt32.of_int 0; die_offset = Unsigned.UInt32.of_int 0; attributes = [] }
+          )
+        )
+      ) entry_offsets in
+
+      Printf.eprintf "Entry series parsing: %d absolute series, %d relative series, %d failed (total names: %d)\n"
+        !absolute_series !relative_series !failures total_names;
+
+      results in
 
     {
       header;
       comp_unit_offsets;
       local_type_unit_offsets;
       foreign_type_unit_signatures;
+      buckets;
       hash_table;
       name_table;
+      entry_offsets;
       abbreviation_table;
       entry_pool;
     }

@@ -108,6 +108,8 @@ type abbreviation_tag =
   | DW_TAG_call_site_parameter
   | DW_TAG_skeleton_unit
   | DW_TAG_immutable_type
+  (* GNU extensions *)
+  | DW_TAG_GNU_template_parameter_pack
   | DW_TAG_lo_user
   | DW_TAG_hi_user
 
@@ -282,7 +284,8 @@ type attribute_form_encoding =
   | DW_FORM_indirect
   | DW_FORM_sec_offset
   | DW_FORM_exprloc
-  | DW_FORM_flag_present  (** New in DWARF Version 5 *)
+  | DW_FORM_flag_present
+  (* New in DWARF Version 5 *)
   | DW_FORM_strx
   | DW_FORM_addrx
   | DW_FORM_ref_sup4
@@ -1354,12 +1357,13 @@ end
     - Resolve type names during expression evaluation
     - Locate compilation units containing specific symbols
 
-    Structure of the debug_names section: 1. Name Index Header: Contains sizes,
-    counts, and format information 2. Compilation Unit Offsets: Array of offsets
-    to compilation unit headers 3. Type Unit Information: Local and foreign type
-    unit references 4. Hash Table: Bucket array for efficient name hashing 5.
-    Name Table: Array of string offsets into .debug_str section 6. Entry Pool:
-    Encoded entries with DIE offsets and attributes
+    Structure of the debug_names section:
+    1. Name Index Header: Contains sizes, counts, and format information
+    2. Compilation Unit Offsets: Array of offsets to compilation unit headers
+    3. Type Unit Information: Local and foreign type unit references
+    4. Hash Table: Bucket array for efficient name hashing
+    5. Name Table: Array of string offsets into .debug_str section
+    6. Entry Pool: Encoded entries with DIE offsets and attributes
 
     The hash table uses a simple chaining mechanism where each bucket contains
     an index into the name table. Multiple names can hash to the same bucket,
@@ -1465,10 +1469,12 @@ module DebugNames : sig
         (** Offsets to local type unit headers *)
     foreign_type_unit_signatures : u64 array;
         (** Type signatures for foreign type units *)
+    buckets : u32 array;  (** Hash bucket organization *)
     hash_table : u32 array;
         (** Hash buckets containing indices into name_table *)
     name_table : debug_str_entry array;
         (** Symbol names with original offsets preserved *)
+    entry_offsets : u32 array;  (** Entry offsets into entry pool for each name *)
     abbreviation_table : debug_names_abbrev list;
         (** Parsed abbreviation table *)
     entry_pool : name_index_entry array;
@@ -1513,7 +1519,7 @@ module DebugNames : sig
     u32 -> name_index_header -> (string * u32) list
   (** Calculate byte addresses for all components of a debug_names section *)
 
-  val parse_debug_names_section : Object.Buffer.cursor -> debug_names_section
+  val parse_debug_names_section : Object.Buffer.cursor -> Object.Buffer.t -> debug_names_section
   (** Parse a complete debug_names section from the [Debug_names] section.
 
       This function parses all components of a DWARF 5 debug_names section,
