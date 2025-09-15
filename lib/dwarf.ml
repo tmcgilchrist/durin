@@ -14,6 +14,7 @@ type dwarf_section =
   | Debug_str_offs
   | Debug_names
   | Debug_addr
+  | Debug_macro
 
 type object_format = MachO | ELF
 
@@ -103,7 +104,8 @@ let object_format_to_section_name format section =
       | Debug_str -> "__debug_str"
       | Debug_str_offs -> "__debug_str_offs"
       | Debug_names -> "__debug_names"
-      | Debug_addr -> "__debug_addr")
+      | Debug_addr -> "__debug_addr"
+      | Debug_macro -> "__debug_macro")
   | ELF -> (
       match section with
       | Debug_info -> ".debug_info"
@@ -116,7 +118,8 @@ let object_format_to_section_name format section =
       | Debug_str -> ".debug_str"
       | Debug_str_offs -> ".debug_str_offs"
       | Debug_names -> ".debug_names"
-      | Debug_addr -> ".debug_addr")
+      | Debug_addr -> ".debug_addr"
+      | Debug_macro -> ".debug_macro")
 
 type abbreviation_tag =
   | DW_TAG_null
@@ -1969,6 +1972,9 @@ let macro_info_entry_type = function
   | 0xff -> DW_MACRO_hi_user
   | n -> failwith (Printf.sprintf "Unknown macro_info_entry_type: 0x%02x" n)
 
+let macro_info_entry_type_of_u8 u =
+  macro_info_entry_type (Unsigned.UInt8.to_int u)
+
 let string_of_macro_info_entry_type = function
   | DW_MACRO_define -> "DW_MACRO_define"
   | DW_MACRO_undef -> "DW_MACRO_undef"
@@ -1984,6 +1990,130 @@ let string_of_macro_info_entry_type = function
   | DW_MACRO_undef_strx -> "DW_MACRO_undef_strx"
   | DW_MACRO_lo_user -> "DW_MACRO_lo_user"
   | DW_MACRO_hi_user -> "DW_MACRO_hi_user"
+
+(* Debug Macro Section - DWARF 5 Section 6.3 *)
+
+type debug_macro_header = {
+  length : u32;  (** Unit length *)
+  format : string;  (** DWARF32 or DWARF64 *)
+  version : u16;  (** Version number *)
+  flags : u8;  (** Flags *)
+  debug_line_offset : u32 option;  (** Offset into debug_line (if flag set) *)
+  debug_str_offsets_offset : u32 option;  (** Offset into debug_str_offsets (if flag set) *)
+}
+
+type debug_macro_entry = {
+  entry_type : macro_info_entry_type;  (** Type of macro entry *)
+  line_number : u32 option;  (** Line number for certain types *)
+  string_offset : u32 option;  (** Offset into string table *)
+  string_value : string option;  (** Direct string value *)
+  file_index : u32 option;  (** File index for start_file entries *)
+}
+
+type debug_macro_unit = {
+  header : debug_macro_header;  (** Unit header *)
+  entries : debug_macro_entry list;  (** List of macro entries *)
+}
+
+type debug_macro_section = {
+  units : debug_macro_unit list;  (** List of macro units *)
+}
+
+(* Debug Macro Parsing Functions *)
+
+let parse_debug_macro_header (cur : Object.Buffer.cursor) : debug_macro_header =
+  let length = Object.Buffer.Read.u32 cur in
+  let format = "DWARF32" in (* For now, only support DWARF32 format *)
+  let version = Object.Buffer.Read.u16 cur in
+  let flags = Object.Buffer.Read.u8 cur in
+
+  let debug_line_offset =
+    if Unsigned.UInt8.to_int flags land 0x01 <> 0 then
+      Some (Object.Buffer.Read.u32 cur)
+    else None
+  in
+
+  let debug_str_offsets_offset =
+    if Unsigned.UInt8.to_int flags land 0x02 <> 0 then
+      Some (Object.Buffer.Read.u32 cur)
+    else None
+  in
+
+  { length; format; version; flags; debug_line_offset; debug_str_offsets_offset }
+
+let parse_debug_macro_entry (cur : Object.Buffer.cursor) : debug_macro_entry option =
+  let entry_type_code = Object.Buffer.Read.u8 cur in
+  if Unsigned.UInt8.to_int entry_type_code = 0 then
+    None (* End of entries marker *)
+  else
+    let entry_type = macro_info_entry_type_of_u8 entry_type_code in
+    let line_number, string_offset, string_value, file_index =
+      match entry_type with
+      | DW_MACRO_define | DW_MACRO_undef ->
+          let line = Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int in
+          let str_offset = Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int in
+          (Some line, Some str_offset, None, None)
+      | DW_MACRO_define_strp | DW_MACRO_undef_strp ->
+          let line = Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int in
+          let str_offset = Object.Buffer.Read.u32 cur in
+          (Some line, Some str_offset, None, None)
+      | DW_MACRO_define_sup | DW_MACRO_undef_sup ->
+          let line = Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int in
+          let str_offset = Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int in
+          (Some line, Some str_offset, None, None)
+      | DW_MACRO_define_strx | DW_MACRO_undef_strx ->
+          let line = Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int in
+          let str_offset = Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int in
+          (Some line, Some str_offset, None, None)
+      | DW_MACRO_start_file ->
+          let line = Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int in
+          let file_idx = Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int in
+          (Some line, None, None, Some file_idx)
+      | DW_MACRO_end_file ->
+          (None, None, None, None)
+      | DW_MACRO_import | DW_MACRO_import_sup ->
+          let offset = Object.Buffer.Read.u32 cur in
+          (None, Some offset, None, None)
+      | _ ->
+          (* For unknown or user-defined entry types, skip *)
+          (None, None, None, None)
+    in
+    Some { entry_type; line_number; string_offset; string_value; file_index }
+
+let parse_debug_macro_unit (cur : Object.Buffer.cursor) : debug_macro_unit =
+  let header = parse_debug_macro_header cur in
+  let entries = ref [] in
+
+  let rec parse_entries () =
+    match parse_debug_macro_entry cur with
+    | None -> List.rev !entries
+    | Some entry ->
+        entries := entry :: !entries;
+        parse_entries ()
+  in
+
+  let entries_list = parse_entries () in
+  { header; entries = entries_list }
+
+let parse_debug_macro_section (cur : Object.Buffer.cursor) (section_size : int) : debug_macro_section =
+  let start_pos = cur.position in
+  let end_pos = start_pos + section_size in
+  let units = ref [] in
+
+  let rec parse_units () =
+    if cur.position >= end_pos then
+      List.rev !units
+    else
+      let unit = parse_debug_macro_unit cur in
+      units := unit :: !units;
+      (* Skip to next unit based on header length *)
+      let unit_end = start_pos + (Unsigned.UInt32.to_int unit.header.length) + 4 in
+      cur.position <- unit_end;
+      parse_units ()
+  in
+
+  let units_list = parse_units () in
+  { units = units_list }
 
 type call_frame_instruction =
   | DW_CFA_advance_loc

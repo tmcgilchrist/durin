@@ -38,6 +38,9 @@ Test help flag:
          --debug-line
              Dump debug line information (.debug_line section)
   
+         --debug-macro
+             Dump debug macro information (.debug_macro section)
+  
          --debug-names
              Dump debug names information (.debug_names section)
   

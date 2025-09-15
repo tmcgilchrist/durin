@@ -15,17 +15,35 @@
  (alias runtest)
  (deps hello_world.c)
  (targets hello_world hello_world.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
  (action
-  ; (run cc -gdwarf-5 %{deps} -o %{target})
   (system "cc -gdwarf-5 %{deps} -o hello_world")))
 
 (rule
  (alias runtest)
  (deps hello_world.cpp)
  (targets hello_world_cpp hello_world_cpp.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
  (action
-  ; (run clang++ -std=c++17 -gdwarf-5 %{deps} -o %{target})
   (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp")))
+
+; Compile test program with macro debugging information
+(rule
+ (alias runtest)
+ (deps test_macros.c test_macros_header.h)
+ (targets test_macros)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "gcc -gdwarf-5 test_macros.c -o test_macros")))
 
 (test
  (name test_line_program_header)
@@ -404,3 +422,51 @@
    (= %{architecture} "arm64")))
  (action
   (diff system_debug_names.out ocaml_debug_names.out)))
+
+; Test rules to compare --debug-macro output with system dwarfdump
+
+; Generate output from our dwarfdump --debug-macro
+
+(rule
+ (alias runtest)
+ (target ocaml_debug_macro.out)
+ (deps %{bin:dwarfdump} test_macros)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run
+    %{bin:dwarfdump}
+    --debug-macro
+    "test_macros"))))
+
+; Generate output from system dwarfdump --debug-macro
+
+(rule
+ (alias runtest)
+ (target system_debug_macro.out)
+ (deps test_macros)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system
+    "dwarfdump --debug-macro test_macros"))))
+
+; Compare the outputs using diff
+
+(rule
+ (alias runtest)
+ (deps ocaml_debug_macro.out system_debug_macro.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_debug_macro.out ocaml_debug_macro.out)))

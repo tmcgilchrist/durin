@@ -942,6 +942,53 @@ let dump_debug_addr filename =
         (Printexc.to_string exn);
       exit 1
 
+let dump_debug_macro filename =
+  try
+    let actual_filename, is_dsym = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+    let format_str = Dwarf.detect_format_and_arch buffer in
+    let object_format = Dwarf.detect_format buffer in
+
+    (* Output header similar to dwarfdump *)
+    Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
+    Printf.printf ".debug_macro contents:\n";
+
+    (* Try to find the debug_macro section *)
+    let debug_macro_section_name =
+      Dwarf.object_format_to_section_name object_format Dwarf.Debug_macro
+    in
+    match find_debug_section buffer debug_macro_section_name with
+    | None ->
+        Printf.printf "No %s section found in file\n" debug_macro_section_name;
+        if not is_dsym then (
+          Printf.printf
+            "Note: For MachO binaries, debug info is typically in .dSYM bundles\n";
+          let dsym_path =
+            filename ^ ".dSYM/Contents/Resources/DWARF/"
+            ^ Filename.basename filename
+          in
+          if Sys.file_exists dsym_path then Printf.printf "Try: %s\n" dsym_path)
+    | Some (section_offset, section_size) ->
+        (* Create cursor at the debug_macro section offset *)
+        let cursor =
+          Object.Buffer.cursor buffer
+            ~at:(Unsigned.UInt32.to_int section_offset)
+        in
+
+        (* Parse the debug_macro section *)
+        let section_size_int = Unsigned.UInt64.to_int section_size in
+        let macro_section = Dwarf.parse_debug_macro_section cursor section_size_int in
+
+        Printf.printf "Debug macro section parsed successfully with %d units\n" (List.length macro_section.units)
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF macro information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
 (* Command line interface *)
 (* TODO Use platform agnostic names for sections. *)
 let filename =
@@ -976,6 +1023,10 @@ let debug_addr_flag =
   let doc = "Dump debug address information (.debug_addr section)" in
   Cmdliner.Arg.(value & flag & info [ "debug-addr" ] ~doc)
 
+let debug_macro_flag =
+  let doc = "Dump debug macro information (.debug_macro section)" in
+  Cmdliner.Arg.(value & flag & info [ "debug-macro" ] ~doc)
+
 let all_flag =
   let doc = "Dump all available debug information" in
   Cmdliner.Arg.(value & flag & info [ "all"; "a" ] ~doc)
@@ -984,9 +1035,8 @@ let all_flag =
 
    dwarfdump --show-section-sizes  - Show the sizes of all debug sections, expressed in bytes.
  *)
-(* TODO handle .debug_macro .debug_frame *)
 let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev
-    debug_str_offsets debug_str debug_addr all filename =
+    debug_str_offsets debug_str debug_addr debug_macro all filename =
   match
     ( debug_line,
       debug_info,
@@ -995,17 +1045,19 @@ let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev
       debug_str_offsets,
       debug_str,
       debug_addr,
+      debug_macro,
       all )
   with
-  | true, _, _, _, _, _, _, _ -> dump_debug_line filename
-  | _, true, _, _, _, _, _, _ -> dump_debug_info filename
-  | _, _, true, _, _, _, _, _ -> dump_debug_names filename
-  | _, _, _, true, _, _, _, _ -> dump_debug_abbrev filename
-  | _, _, _, _, true, _, _, _ -> dump_debug_str_offsets filename
-  | _, _, _, _, _, true, _, _ -> dump_debug_str filename
-  | _, _, _, _, _, _, true, _ -> dump_debug_addr filename
-  | _, _, _, _, _, _, _, true -> dump_all filename
-  | false, false, false, false, false, false, false, false ->
+  | true, _, _, _, _, _, _, _, _ -> dump_debug_line filename
+  | _, true, _, _, _, _, _, _, _ -> dump_debug_info filename
+  | _, _, true, _, _, _, _, _, _ -> dump_debug_names filename
+  | _, _, _, true, _, _, _, _, _ -> dump_debug_abbrev filename
+  | _, _, _, _, true, _, _, _, _ -> dump_debug_str_offsets filename
+  | _, _, _, _, _, true, _, _, _ -> dump_debug_str filename
+  | _, _, _, _, _, _, true, _, _ -> dump_debug_addr filename
+  | _, _, _, _, _, _, _, true, _ -> dump_debug_macro filename
+  | _, _, _, _, _, _, _, _, true -> dump_all filename
+  | false, false, false, false, false, false, false, false, false ->
       (* Default behavior - dump debug line information *)
       dump_debug_line filename
 
@@ -1016,6 +1068,6 @@ let cmd =
     Cmdliner.Term.(
       const dwarfdump_cmd $ debug_line_flag $ debug_info_flag $ debug_names_flag
       $ debug_abbrev_flag $ debug_str_offsets_flag $ debug_str_flag
-      $ debug_addr_flag $ all_flag $ filename)
+      $ debug_addr_flag $ debug_macro_flag $ all_flag $ filename)
 
 let () = exit (Cmdliner.Cmd.eval cmd)

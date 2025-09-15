@@ -735,7 +735,48 @@ type macro_info_entry_type =
   | DW_MACRO_lo_user
   | DW_MACRO_hi_user
 
+val macro_info_entry_type_of_u8 : Types.u8 -> macro_info_entry_type
 val string_of_macro_info_entry_type : macro_info_entry_type -> string
+
+(** Debug Macro Section - DWARF 5 Section 6.3 *)
+
+type debug_macro_header = {
+  length : u32;  (** Unit length *)
+  format : string;  (** DWARF32 or DWARF64 *)
+  version : u16;  (** Version number *)
+  flags : u8;  (** Flags *)
+  debug_line_offset : u32 option;  (** Offset into debug_line (if flag set) *)
+  debug_str_offsets_offset : u32 option;  (** Offset into debug_str_offsets (if flag set) *)
+}
+
+type debug_macro_entry = {
+  entry_type : macro_info_entry_type;  (** Type of macro entry *)
+  line_number : u32 option;  (** Line number for certain types *)
+  string_offset : u32 option;  (** Offset into string table *)
+  string_value : string option;  (** Direct string value *)
+  file_index : u32 option;  (** File index for start_file entries *)
+}
+
+type debug_macro_unit = {
+  header : debug_macro_header;  (** Unit header *)
+  entries : debug_macro_entry list;  (** List of macro entries *)
+}
+
+type debug_macro_section = {
+  units : debug_macro_unit list;  (** List of macro units *)
+}
+
+(** Parse debug_macro header from binary data *)
+val parse_debug_macro_header : Object.Buffer.cursor -> debug_macro_header
+
+(** Parse a single debug_macro entry from binary data *)
+val parse_debug_macro_entry : Object.Buffer.cursor -> debug_macro_entry option
+
+(** Parse a complete debug_macro unit from binary data *)
+val parse_debug_macro_unit : Object.Buffer.cursor -> debug_macro_unit
+
+(** Parse the entire debug_macro section from binary data *)
+val parse_debug_macro_section : Object.Buffer.cursor -> int -> debug_macro_section
 
 (** Sections that hold DWARF 5 debugging information. *)
 type dwarf_section =
@@ -750,6 +791,7 @@ type dwarf_section =
   | Debug_str_offs
   | Debug_names
   | Debug_addr
+  | Debug_macro
 
 (** Call frame instructions. Table 7.29: Call frame instruction encodings *)
 type call_frame_instruction =
