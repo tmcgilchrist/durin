@@ -44,6 +44,9 @@ Test help flag:
          --debug-line-str
              Dump debug line string information (.debug_line_str section)
   
+         --debug-loclists
+             Dump debug location lists information (.debug_loclists section)
+  
          --debug-macro
              Dump debug macro information (.debug_macro section)
   

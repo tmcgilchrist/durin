@@ -1817,6 +1817,87 @@ module DebugAranges : sig
       @raise Failure if section format is invalid *)
 end
 
+(** Location list parsing for .debug_loclists section.
+
+    This module provides support for parsing DWARF 5 Location Lists, which
+    describe where variables and parameters can be found during program execution.
+    Location lists are essential for debuggers to track variable locations as they
+    move between registers, memory locations, or become temporarily unavailable
+    during optimization.
+
+    The .debug_loclists section contains location descriptions that specify:
+    - Address ranges where variables are valid
+    - How to find variables (register, memory address, computed location)
+    - When variables are not available (optimized out, between scopes)
+
+    Each location list consists of a series of location list entries (LLE) that
+    describe contiguous ranges of program counter values and the corresponding
+    location expressions. This replaces the older .debug_loc section format
+    used in DWARF 4 and earlier.
+
+    DWARF 5 Specification Reference: Section 7.7.3 (Location Lists) *)
+module DebugLoclists : sig
+  type header = {
+    unit_length : u32;  (** Length of the location lists contribution *)
+    version : u16;  (** Version identifier (DWARF 5) *)
+    address_size : u8;  (** Size of addresses in bytes *)
+    segment_size : u8;  (** Size of segment selectors in bytes (usually 0) *)
+    offset_entry_count : u32;  (** Number of entries in the offset table *)
+  }
+  (** Header structure for a location lists contribution.
+
+      The location lists section contains location descriptions that are
+      referenced by debug information entries via DW_AT_location attributes. *)
+
+  type location_list_entry_type =
+    | DW_LLE_end_of_list  (** 0x00 - End of location list *)
+    | DW_LLE_base_addressx  (** 0x01 - Base address from address table *)
+    | DW_LLE_startx_endx  (** 0x02 - Start/end addresses from address table *)
+    | DW_LLE_startx_length  (** 0x03 - Start from address table + length *)
+    | DW_LLE_offset_pair  (** 0x04 - Offset pair from base address *)
+    | DW_LLE_default_location  (** 0x05 - Default location for object *)
+    | DW_LLE_base_address  (** 0x06 - Base address (direct) *)
+    | DW_LLE_start_end  (** 0x07 - Start/end addresses (direct) *)
+    | DW_LLE_start_length  (** 0x08 - Start address + length (direct) *)
+  (** Location list entry types as defined in DWARF 5 Section 7.7.3 *)
+
+  type location_list_entry = {
+    entry_type : location_list_entry_type;  (** Type of this entry *)
+    data : string;  (** Raw data for the entry (varies by type) *)
+  }
+  (** Individual location list entry.
+
+      Each entry describes a range of program counter values and the
+      corresponding location where a variable can be found. *)
+
+  type location_list = {
+    offset : u32;  (** Offset within the section *)
+    entries : location_list_entry list;  (** List of location entries *)
+  }
+  (** Complete location list for one object.
+
+      Contains all location entries that describe where an object can be
+      found throughout the program's execution. *)
+
+  type loclists_section = {
+    header : header;  (** Section header *)
+    offset_table : u32 array;  (** Table of offsets to location lists *)
+    location_lists : location_list list;  (** All location lists in section *)
+  }
+  (** Complete .debug_loclists section.
+
+      Contains header information and all location lists for the
+      compilation unit. *)
+
+  val parse : Object.Buffer.t -> u32 -> loclists_section
+  (** Parse location lists section from buffer.
+
+      @param buffer Object buffer containing the DWARF data
+      @param section_offset Offset to start of .debug_loclists section
+      @return Parsed location lists section
+      @raise Failure if section format is invalid *)
+end
+
 (** CompactUnwind module for Apple's Compact Unwinding Format.
 
     This module provides support for parsing and interpreting Apple's

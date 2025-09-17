@@ -46,10 +46,10 @@ let resolve_binary_path filename =
     if Sys.file_exists dsym_path then (dsym_path, true) else (filename, false)
 (* Use original filename, will fail later if not found *)
 
-let suggest_dsym_if_needed filename is_dsym =
+let suggest_dsym_if_needed filename is_dsym section_name =
   if not is_dsym then (
     Printf.printf
-      "Note: For MachO binaries, debug info is typically in .dSYM bundles\n";
+      "Note: For MachO binaries, %s is typically in .dSYM bundles\n" section_name;
     let dsym_path =
       filename ^ ".dSYM/Contents/Resources/DWARF/" ^ Filename.basename filename
     in
@@ -57,22 +57,32 @@ let suggest_dsym_if_needed filename is_dsym =
 
 let handle_section_not_found section_name filename is_dsym =
   Printf.printf "No %s section found in file\n" section_name;
-  suggest_dsym_if_needed filename is_dsym
+  suggest_dsym_if_needed filename is_dsym section_name
 
 let create_section_cursor buffer section_offset =
   Object.Buffer.cursor buffer ~at:(Unsigned.UInt32.to_int section_offset)
 
 let init_dwarf_context filename =
   let actual_filename, is_dsym = resolve_binary_path filename in
-  let buffer = Object.Buffer.parse actual_filename in
-  let format_str = Dwarf.detect_format_and_arch buffer in
-  let object_format = Dwarf.detect_format buffer in
-  (actual_filename, is_dsym, buffer, format_str, object_format)
+  (* Check if the file is a directory before trying to parse it *)
+  if Sys.is_directory actual_filename then
+    failwith (Printf.sprintf "'%s' is a directory" actual_filename)
+  else
+    let buffer = Object.Buffer.parse actual_filename in
+    let format_str = Dwarf.detect_format_and_arch buffer in
+    let object_format = Dwarf.detect_format buffer in
+    (actual_filename, is_dsym, buffer, format_str, object_format)
 
 let handle_dwarf_errors f =
   try f () with
   | Sys_error msg ->
       Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | Failure msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | Unix.Unix_error (Unix.EISDIR, _, filename) ->
+      Printf.eprintf "Error: '%s' is a directory\n" filename;
       exit 1
   | exn ->
       Printf.eprintf "Error parsing DWARF information: %s\n"
@@ -1060,6 +1070,40 @@ let dump_debug_macro filename =
             "Debug macro section parsed successfully with %d units\n"
             (List.length macro_section.units))
 
+let dump_debug_loclists filename =
+  handle_dwarf_errors (fun () ->
+      let actual_filename, _is_dsym, buffer, format_str, object_format =
+        init_dwarf_context filename
+      in
+      Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
+      Printf.printf ".debug_loclists contents:\n";
+
+      (* Try to find the debug_loclists section *)
+      let debug_loclists_section_name =
+        Dwarf.object_format_to_section_name object_format Dwarf.Debug_loclists
+      in
+      match find_debug_section buffer debug_loclists_section_name with
+      | None ->
+          (* No debug_loclists section found - this is normal for simple programs.
+             Show empty section output to match system dwarfdump behavior *)
+          ()
+      | Some (section_offset, _section_size) ->
+          (* Parse the debug_loclists section *)
+          let loclists_section = Dwarf.DebugLoclists.parse buffer section_offset in
+
+          (* Check if section is empty (indicated by zero unit_length) *)
+          if Unsigned.UInt32.equal loclists_section.header.unit_length Unsigned.UInt32.zero then
+            (* Empty section - no output needed, this matches system dwarfdump *)
+            ()
+          else
+            (* Format output similar to other debug sections *)
+            Printf.printf "Location lists header: length = 0x%08lx, format = DWARF32, version = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x, offset_entry_count = 0x%08lx\n"
+              (Unsigned.UInt32.to_int32 loclists_section.header.unit_length)
+              (Unsigned.UInt16.to_int loclists_section.header.version)
+              (Unsigned.UInt8.to_int loclists_section.header.address_size)
+              (Unsigned.UInt8.to_int loclists_section.header.segment_size)
+              (Unsigned.UInt32.to_int32 loclists_section.header.offset_entry_count))
+
 (* Command line interface *)
 (* TODO Use platform agnostic names for sections. *)
 let filename =
@@ -1106,16 +1150,20 @@ let debug_macro_flag =
   let doc = "Dump debug macro information (.debug_macro section)" in
   Cmdliner.Arg.(value & flag & info [ "debug-macro" ] ~doc)
 
+let debug_loclists_flag =
+  let doc = "Dump debug location lists information (.debug_loclists section)" in
+  Cmdliner.Arg.(value & flag & info [ "debug-loclists" ] ~doc)
+
 let all_flag =
   let doc = "Dump all available debug information" in
   Cmdliner.Arg.(value & flag & info [ "all"; "a" ] ~doc)
 
-(* TODO handle .debug_frame .debug_aranges .debug_loclists .debug_rnglists
+(* TODO handle .debug_frame .debug_rnglists
 
    dwarfdump --show-section-sizes  - Show the sizes of all debug sections, expressed in bytes.
  *)
 let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev
-    debug_str_offsets debug_str debug_line_str debug_addr debug_aranges debug_macro all filename =
+    debug_str_offsets debug_str debug_line_str debug_addr debug_aranges debug_macro debug_loclists all filename =
   match
     ( debug_line,
       debug_info,
@@ -1127,20 +1175,22 @@ let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev
       debug_addr,
       debug_aranges,
       debug_macro,
+      debug_loclists,
       all )
   with
-  | true, _, _, _, _, _, _, _, _, _, _ -> dump_debug_line filename
-  | _, true, _, _, _, _, _, _, _, _, _ -> dump_debug_info filename
-  | _, _, true, _, _, _, _, _, _, _, _ -> dump_debug_names filename
-  | _, _, _, true, _, _, _, _, _, _, _ -> dump_debug_abbrev filename
-  | _, _, _, _, true, _, _, _, _, _, _ -> dump_debug_str_offsets filename
-  | _, _, _, _, _, true, _, _, _, _, _ -> dump_debug_str filename
-  | _, _, _, _, _, _, true, _, _, _, _ -> dump_debug_line_str filename
-  | _, _, _, _, _, _, _, true, _, _, _ -> dump_debug_addr filename
-  | _, _, _, _, _, _, _, _, true, _, _ -> dump_debug_aranges filename
-  | _, _, _, _, _, _, _, _, _, true, _ -> dump_debug_macro filename
-  | _, _, _, _, _, _, _, _, _, _, true -> dump_all filename
-  | false, false, false, false, false, false, false, false, false, false, false ->
+  | true, _, _, _, _, _, _, _, _, _, _, _ -> dump_debug_line filename
+  | _, true, _, _, _, _, _, _, _, _, _, _ -> dump_debug_info filename
+  | _, _, true, _, _, _, _, _, _, _, _, _ -> dump_debug_names filename
+  | _, _, _, true, _, _, _, _, _, _, _, _ -> dump_debug_abbrev filename
+  | _, _, _, _, true, _, _, _, _, _, _, _ -> dump_debug_str_offsets filename
+  | _, _, _, _, _, true, _, _, _, _, _, _ -> dump_debug_str filename
+  | _, _, _, _, _, _, true, _, _, _, _, _ -> dump_debug_line_str filename
+  | _, _, _, _, _, _, _, true, _, _, _, _ -> dump_debug_addr filename
+  | _, _, _, _, _, _, _, _, true, _, _, _ -> dump_debug_aranges filename
+  | _, _, _, _, _, _, _, _, _, true, _, _ -> dump_debug_macro filename
+  | _, _, _, _, _, _, _, _, _, _, true, _ -> dump_debug_loclists filename
+  | _, _, _, _, _, _, _, _, _, _, _, true -> dump_all filename
+  | false, false, false, false, false, false, false, false, false, false, false, false ->
       (* Default behavior - dump debug line information *)
       dump_debug_line filename
 
@@ -1151,6 +1201,6 @@ let cmd =
     Cmdliner.Term.(
       const dwarfdump_cmd $ debug_line_flag $ debug_info_flag $ debug_names_flag
       $ debug_abbrev_flag $ debug_str_offsets_flag $ debug_str_flag
-      $ debug_line_str_flag $ debug_addr_flag $ debug_aranges_flag $ debug_macro_flag $ all_flag $ filename)
+      $ debug_line_str_flag $ debug_addr_flag $ debug_aranges_flag $ debug_macro_flag $ debug_loclists_flag $ all_flag $ filename)
 
 let () = exit (Cmdliner.Cmd.eval cmd)
