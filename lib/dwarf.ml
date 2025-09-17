@@ -4400,15 +4400,8 @@ module DebugAranges = struct
     segment_size : u8;
   }
 
-  type address_range = {
-    start_address : u64;
-    length : u64;
-  }
-
-  type aranges_set = {
-    header : header;
-    ranges : address_range list;
-  }
+  type address_range = { start_address : u64; length : u64 }
+  type aranges_set = { header : header; ranges : address_range list }
 
   let parse_header cursor =
     let unit_length = Object.Buffer.Read.u32 cursor in
@@ -4431,30 +4424,33 @@ module DebugAranges = struct
 
     let rec read_ranges acc =
       (* Read address and length based on address_size *)
-      let start_address = match address_size with
+      let start_address =
+        match address_size with
         | 4 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
         | 8 -> Object.Buffer.Read.u64 cursor
-        | _ -> failwith ("Unsupported address size: " ^ string_of_int address_size)
+        | _ ->
+            failwith ("Unsupported address size: " ^ string_of_int address_size)
       in
 
-      let length = match address_size with
+      let length =
+        match address_size with
         | 4 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
         | 8 -> Object.Buffer.Read.u64 cursor
-        | _ -> failwith ("Unsupported address size: " ^ string_of_int address_size)
+        | _ ->
+            failwith ("Unsupported address size: " ^ string_of_int address_size)
       in
-
 
       (* Skip segment selector if present *)
-      if segment_size > 0 then (
+      if segment_size > 0 then
         for _i = 0 to segment_size - 1 do
           ignore (Object.Buffer.Read.u8 cursor)
-        done
-      );
+        done;
 
       (* Check for terminating null entry *)
-      if Unsigned.UInt64.equal start_address Unsigned.UInt64.zero &&
-         Unsigned.UInt64.equal length Unsigned.UInt64.zero then
-        List.rev acc
+      if
+        Unsigned.UInt64.equal start_address Unsigned.UInt64.zero
+        && Unsigned.UInt64.equal length Unsigned.UInt64.zero
+      then List.rev acc
       else
         let range = { start_address; length } in
         read_ranges (range :: acc)
@@ -4496,10 +4492,7 @@ module DebugLoclists = struct
     data : string; (* Raw data for the entry, varies by type *)
   }
 
-  type location_list = {
-    offset : u32;
-    entries : location_list_entry list;
-  }
+  type location_list = { offset : u32; entries : location_list_entry list }
 
   type loclists_section = {
     header : header;
@@ -4518,7 +4511,8 @@ module DebugLoclists = struct
     | 0x06 -> DW_LLE_base_address
     | 0x07 -> DW_LLE_start_end
     | 0x08 -> DW_LLE_start_length
-    | n -> failwith (Printf.sprintf "Unknown location list entry type: 0x%02x" n)
+    | n ->
+        failwith (Printf.sprintf "Unknown location list entry type: 0x%02x" n)
 
   let parse_header cursor =
     let unit_length = Object.Buffer.Read.u32 cursor in
@@ -4563,17 +4557,17 @@ module DebugLoclists = struct
       (* For now, return empty location lists since our test files are empty *)
       let location_lists = [] in
       { header; offset_table; location_lists }
-    with
-    | _ ->
+    with _ ->
       (* Return empty structure for empty or invalid section *)
       {
-        header = {
-          unit_length = Unsigned.UInt32.zero;
-          version = Unsigned.UInt16.zero;
-          address_size = Unsigned.UInt8.zero;
-          segment_size = Unsigned.UInt8.zero;
-          offset_entry_count = Unsigned.UInt32.zero;
-        };
+        header =
+          {
+            unit_length = Unsigned.UInt32.zero;
+            version = Unsigned.UInt16.zero;
+            address_size = Unsigned.UInt8.zero;
+            segment_size = Unsigned.UInt8.zero;
+            offset_entry_count = Unsigned.UInt32.zero;
+          };
         offset_table = [||];
         location_lists = [];
       }

@@ -48,8 +48,8 @@ let resolve_binary_path filename =
 
 let suggest_dsym_if_needed filename is_dsym section_name =
   if not is_dsym then (
-    Printf.printf
-      "Note: For MachO binaries, %s is typically in .dSYM bundles\n" section_name;
+    Printf.printf "Note: For MachO binaries, %s is typically in .dSYM bundles\n"
+      section_name;
     let dsym_path =
       filename ^ ".dSYM/Contents/Resources/DWARF/" ^ Filename.basename filename
     in
@@ -924,7 +924,8 @@ let dump_debug_line_str filename =
         Dwarf.object_format_to_section_name object_format Dwarf.Debug_line_str
       in
       match find_debug_section buffer debug_line_str_section_name with
-      | None -> handle_section_not_found "__debug_line_str section" filename is_dsym
+      | None ->
+          handle_section_not_found "__debug_line_str section" filename is_dsym
       | Some (section_offset, section_size) ->
           (* Create cursor at the debug_line_str section offset *)
           let cursor = create_section_cursor buffer section_offset in
@@ -1023,20 +1024,26 @@ let dump_debug_aranges filename =
 
           (* Print header information matching system dwarfdump format *)
           Printf.printf
-            "Address Range Header: length = 0x%08lx, format = DWARF32, version = 0x%04x, cu_offset = 0x%08lx, addr_size = 0x%02x, seg_size = 0x%02x\n"
+            "Address Range Header: length = 0x%08lx, format = DWARF32, version \
+             = 0x%04x, cu_offset = 0x%08lx, addr_size = 0x%02x, seg_size = \
+             0x%02x\n"
             (Unsigned.UInt32.to_int32 header.Dwarf.DebugAranges.unit_length)
             (Unsigned.UInt16.to_int header.Dwarf.DebugAranges.version)
-            (Unsigned.UInt32.to_int32 header.Dwarf.DebugAranges.debug_info_offset)
+            (Unsigned.UInt32.to_int32
+               header.Dwarf.DebugAranges.debug_info_offset)
             (Unsigned.UInt8.to_int header.Dwarf.DebugAranges.address_size)
             (Unsigned.UInt8.to_int header.Dwarf.DebugAranges.segment_size);
 
           (* Print address ranges *)
           List.iter
             (fun range ->
-              let start_addr = Unsigned.UInt64.to_int64 range.Dwarf.DebugAranges.start_address in
+              let start_addr =
+                Unsigned.UInt64.to_int64 range.Dwarf.DebugAranges.start_address
+              in
               let end_addr =
                 Unsigned.UInt64.to_int64
-                  (Unsigned.UInt64.add range.Dwarf.DebugAranges.start_address range.Dwarf.DebugAranges.length)
+                  (Unsigned.UInt64.add range.Dwarf.DebugAranges.start_address
+                     range.Dwarf.DebugAranges.length)
               in
               Printf.printf "[0x%016Lx, 0x%016Lx)\n" start_addr end_addr)
             aranges_set.Dwarf.DebugAranges.ranges)
@@ -1089,20 +1096,29 @@ let dump_debug_loclists filename =
           ()
       | Some (section_offset, _section_size) ->
           (* Parse the debug_loclists section *)
-          let loclists_section = Dwarf.DebugLoclists.parse buffer section_offset in
+          let loclists_section =
+            Dwarf.DebugLoclists.parse buffer section_offset
+          in
 
           (* Check if section is empty (indicated by zero unit_length) *)
-          if Unsigned.UInt32.equal loclists_section.header.unit_length Unsigned.UInt32.zero then
+          if
+            Unsigned.UInt32.equal loclists_section.header.unit_length
+              Unsigned.UInt32.zero
+          then
             (* Empty section - no output needed, this matches system dwarfdump *)
             ()
           else
             (* Format output similar to other debug sections *)
-            Printf.printf "Location lists header: length = 0x%08lx, format = DWARF32, version = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x, offset_entry_count = 0x%08lx\n"
+            Printf.printf
+              "Location lists header: length = 0x%08lx, format = DWARF32, \
+               version = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x, \
+               offset_entry_count = 0x%08lx\n"
               (Unsigned.UInt32.to_int32 loclists_section.header.unit_length)
               (Unsigned.UInt16.to_int loclists_section.header.version)
               (Unsigned.UInt8.to_int loclists_section.header.address_size)
               (Unsigned.UInt8.to_int loclists_section.header.segment_size)
-              (Unsigned.UInt32.to_int32 loclists_section.header.offset_entry_count))
+              (Unsigned.UInt32.to_int32
+                 loclists_section.header.offset_entry_count))
 
 (* Command line interface *)
 (* TODO Use platform agnostic names for sections. *)
@@ -1163,7 +1179,8 @@ let all_flag =
    dwarfdump --show-section-sizes  - Show the sizes of all debug sections, expressed in bytes.
  *)
 let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev
-    debug_str_offsets debug_str debug_line_str debug_addr debug_aranges debug_macro debug_loclists all filename =
+    debug_str_offsets debug_str debug_line_str debug_addr debug_aranges
+    debug_macro debug_loclists all filename =
   match
     ( debug_line,
       debug_info,
@@ -1190,7 +1207,18 @@ let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev
   | _, _, _, _, _, _, _, _, _, true, _, _ -> dump_debug_macro filename
   | _, _, _, _, _, _, _, _, _, _, true, _ -> dump_debug_loclists filename
   | _, _, _, _, _, _, _, _, _, _, _, true -> dump_all filename
-  | false, false, false, false, false, false, false, false, false, false, false, false ->
+  | ( false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false ) ->
       (* Default behavior - dump debug line information *)
       dump_debug_line filename
 
@@ -1201,6 +1229,7 @@ let cmd =
     Cmdliner.Term.(
       const dwarfdump_cmd $ debug_line_flag $ debug_info_flag $ debug_names_flag
       $ debug_abbrev_flag $ debug_str_offsets_flag $ debug_str_flag
-      $ debug_line_str_flag $ debug_addr_flag $ debug_aranges_flag $ debug_macro_flag $ debug_loclists_flag $ all_flag $ filename)
+      $ debug_line_str_flag $ debug_addr_flag $ debug_aranges_flag
+      $ debug_macro_flag $ debug_loclists_flag $ all_flag $ filename)
 
 let () = exit (Cmdliner.Cmd.eval cmd)
