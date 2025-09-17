@@ -2,6 +2,7 @@
  (public_names
   dwprod
   dwarfdump
+  objdump
   addr2line
   dwarf_validate
   simple_debug_info
@@ -9,6 +10,7 @@
  (names
   dwprod
   dwarfdump
+  objdump
   addr2line
   dwarf_validate
   simple_debug_info

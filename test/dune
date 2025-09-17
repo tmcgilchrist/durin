@@ -88,6 +88,15 @@
    (= %{architecture} "arm64")))
  (deps %{bin:dwarfdump} hello_world))
 
+; Cram test for objdump functionality
+
+(cram
+ (deps %{bin:objdump} hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64"))))
+
 ; Test rules to compare --debug-str output with system dwarfdump
 
 ; Generate output from our dwarfdump --debug-str
@@ -515,3 +524,89 @@
    (= %{architecture} "amd64")))
  (action
   (diff system_debug_macro.out ocaml_debug_macro.out)))
+
+; Test rules to compare our objdump --unwind-info output with system objdump --unwind-info
+
+; Generate output from our objdump --unwind-info for hello_world
+
+(rule
+ (alias runtest)
+ (target ocaml_unwind_info.out)
+ (deps %{bin:objdump} hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:objdump} --unwind-info "hello_world"))))
+
+; Generate output from system objdump --unwind-info for hello_world
+
+(rule
+ (alias runtest)
+ (target system_unwind_info.out)
+ (deps hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "objdump --unwind-info hello_world"))))
+
+; Generate output from our objdump --unwind-info for hello_world_cpp
+
+(rule
+ (alias runtest)
+ (target ocaml_unwind_info_cpp.out)
+ (deps %{bin:objdump} hello_world_cpp)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:objdump} --unwind-info "hello_world_cpp"))))
+
+; Generate output from system objdump --unwind-info for hello_world_cpp
+
+(rule
+ (alias runtest)
+ (target system_unwind_info_cpp.out)
+ (deps hello_world_cpp)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "objdump --unwind-info hello_world_cpp"))))
+
+; Compare the unwind info outputs using diff for hello_world
+
+(rule
+ (alias runtest)
+ (deps ocaml_unwind_info.out system_unwind_info.out)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (diff system_unwind_info.out ocaml_unwind_info.out)))
+
+; Compare the unwind info outputs using diff for hello_world_cpp
+
+(rule
+ (alias runtest)
+ (deps ocaml_unwind_info_cpp.out system_unwind_info_cpp.out)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (diff system_unwind_info_cpp.out ocaml_unwind_info_cpp.out)))

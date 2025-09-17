@@ -1770,3 +1770,27 @@ module DebugAddr : sig
       addresses read from the section. This allows the same DWARF data to
       support both 32-bit and 64-bit architectures. *)
 end
+
+(** CompactUnwind module for Apple's Compact Unwinding Format.
+
+    This module provides support for parsing and interpreting Apple's
+    non-standard Compact Unwinding Format found in MachO binaries. The compact
+    format provides efficient stack unwinding information stored in the
+    __unwind_info section within the __TEXT segment.
+
+    This is complementary to standard DWARF CFI and is used by Apple platforms
+    for improved performance and reduced memory usage during stack unwinding. *)
+module CompactUnwind : sig
+  include module type of Compact_unwind
+
+  val find_unwind_info_section : Object.Buffer.t -> (int * int) option
+  (** Find the __unwind_info section in a MachO binary
+      @param buffer Object buffer containing the MachO binary
+      @return Optional tuple of (section_offset, section_size) *)
+
+  val parse_from_buffer : Object.Buffer.t -> (unwind_info * architecture) option
+  (** Parse compact unwind information from a MachO binary
+      @param buffer Object buffer containing the MachO binary
+      @return Optional tuple of (unwind_info, architecture) if parsing succeeds
+  *)
+end

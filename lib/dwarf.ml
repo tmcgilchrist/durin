@@ -4413,3 +4413,49 @@ let resolve_address_index (buffer : Object.Buffer.t) (index : int)
   | None ->
       (* Fall back to returning the index value if resolution fails *)
       Unsigned.UInt64.of_int index
+
+(** CompactUnwind module integrates with MachO compact unwinding format *)
+module CompactUnwind = struct
+  include Compact_unwind
+
+  let find_unwind_info_section buffer =
+    try
+      let open Object.Macho in
+      let _header, commands = read buffer in
+
+      (* Look for __TEXT segment *)
+      let text_segment_opt =
+        List.find_map
+          (function
+            | LC_SEGMENT_64 (lazy seg) when seg.seg_segname = "__TEXT" ->
+                Some seg
+            | _ -> None)
+          commands
+      in
+
+      match text_segment_opt with
+      | None -> None
+      | Some text_segment ->
+          (* Find __unwind_info section within __TEXT segment *)
+          Array.find_map
+            (fun section ->
+              if section.sec_sectname = "__unwind_info" then
+                Some
+                  ( Unsigned.UInt32.to_int section.sec_offset,
+                    Unsigned.UInt64.to_int section.sec_size )
+              else None)
+            text_segment.seg_sections
+    with _ -> None
+
+  let parse_from_buffer buffer =
+    match find_unwind_info_section buffer with
+    | None -> None
+    | Some (section_offset, section_size) -> (
+        try
+          let unwind_info =
+            parse_unwind_info buffer section_offset section_size
+          in
+          let arch = detect_architecture buffer in
+          Some (unwind_info, arch)
+        with Invalid_compact_unwind_format _ -> None)
+end
