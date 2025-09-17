@@ -610,3 +610,99 @@
    (= %{architecture} "arm64")))
  (action
   (diff system_unwind_info_cpp.out ocaml_unwind_info_cpp.out)))
+
+; Test rules to compare --debug-line-str output with system dwarfdump
+
+; Generate output from our dwarfdump --debug-line-str
+
+(rule
+ (alias runtest)
+ (target ocaml_debug_line_str.out)
+ (deps %{bin:dwarfdump} hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run
+    %{bin:dwarfdump}
+    --debug-line-str
+    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+
+; Generate output from system dwarfdump --debug-line-str
+
+(rule
+ (alias runtest)
+ (target system_debug_line_str.out)
+ (deps hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system
+    "dwarfdump --debug-line-str hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+
+; Compare the outputs using diff
+
+(rule
+ (alias runtest)
+ (deps ocaml_debug_line_str.out system_debug_line_str.out)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (diff system_debug_line_str.out ocaml_debug_line_str.out)))
+
+; Test rules to compare --debug-aranges output with system dwarfdump
+
+; Generate output from our dwarfdump --debug-aranges
+
+(rule
+ (alias runtest)
+ (target ocaml_debug_aranges.out)
+ (deps %{bin:dwarfdump} hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run
+    %{bin:dwarfdump}
+    --debug-aranges
+    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+
+; Generate output from system dwarfdump --debug-aranges
+
+(rule
+ (alias runtest)
+ (target system_debug_aranges.out)
+ (deps hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system
+    "dwarfdump --debug-aranges hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+
+; Compare the outputs using diff
+
+(rule
+ (alias runtest)
+ (deps ocaml_debug_aranges.out system_debug_aranges.out)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (diff system_debug_aranges.out ocaml_debug_aranges.out)))

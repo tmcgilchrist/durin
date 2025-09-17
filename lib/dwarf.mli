@@ -1771,6 +1771,52 @@ module DebugAddr : sig
       support both 32-bit and 64-bit architectures. *)
 end
 
+(** DebugAranges module for Address Range Tables (.debug_aranges section).
+
+    This module provides support for parsing DWARF Address Range Tables,
+    which map address ranges to compilation units. These tables accelerate
+    lookups when determining which compilation unit contains a given address. *)
+module DebugAranges : sig
+  type header = {
+    unit_length : u32;  (** Length of this aranges set excluding this field *)
+    version : u16;  (** DWARF version number (typically 2) *)
+    debug_info_offset : u32;  (** Offset into .debug_info section *)
+    address_size : u8;  (** Size of addresses in bytes *)
+    segment_size : u8;  (** Size of segment selectors in bytes (usually 0) *)
+  }
+  (** Header structure for an address range table.
+
+      Each compilation unit can have its own address range table describing
+      the non-contiguous address ranges of code belonging to that unit. *)
+
+  type address_range = {
+    start_address : u64;  (** Beginning of address range *)
+    length : u64;  (** Length of address range *)
+  }
+  (** A single address range entry.
+
+      Represents a contiguous range of addresses belonging to a compilation
+      unit. The range covers addresses from [start_address] to
+      [start_address + length - 1]. *)
+
+  type aranges_set = {
+    header : header;  (** Header information *)
+    ranges : address_range list;  (** List of address ranges *)
+  }
+  (** Complete address range table for one compilation unit.
+
+      Contains header information identifying the compilation unit and
+      a list of all address ranges belonging to that unit. *)
+
+  val parse : Object.Buffer.t -> u32 -> aranges_set
+  (** Parse an address range table from buffer.
+
+      @param buffer Object buffer containing the DWARF data
+      @param section_offset Offset to start of .debug_aranges section
+      @return Parsed address range table
+      @raise Failure if section format is invalid *)
+end
+
 (** CompactUnwind module for Apple's Compact Unwinding Format.
 
     This module provides support for parsing and interpreting Apple's

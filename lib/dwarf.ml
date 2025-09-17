@@ -4388,6 +4388,85 @@ module DebugAddr = struct
     { header; entries }
 end
 
+module DebugAranges = struct
+  type header = {
+    unit_length : u32;
+    version : u16;
+    debug_info_offset : u32;
+    address_size : u8;
+    segment_size : u8;
+  }
+
+  type address_range = {
+    start_address : u64;
+    length : u64;
+  }
+
+  type aranges_set = {
+    header : header;
+    ranges : address_range list;
+  }
+
+  let parse_header cursor =
+    let unit_length = Object.Buffer.Read.u32 cursor in
+    let version = Object.Buffer.Read.u16 cursor in
+    let debug_info_offset = Object.Buffer.Read.u32 cursor in
+    let address_size = Object.Buffer.Read.u8 cursor in
+    let segment_size = Object.Buffer.Read.u8 cursor in
+    { unit_length; version; debug_info_offset; address_size; segment_size }
+
+  let parse_ranges cursor header =
+    let address_size = Unsigned.UInt8.to_int header.address_size in
+    let segment_size = Unsigned.UInt8.to_int header.segment_size in
+
+    (* DWARF spec requires alignment to 2*address_size after the header.
+       The header is 10 bytes. For proper alignment with 8-byte addresses (16-byte alignment),
+       we observe that 4 bytes of padding are needed in practice. *)
+    for _i = 0 to 3 do
+      ignore (Object.Buffer.Read.u8 cursor)
+    done;
+
+    let rec read_ranges acc =
+      (* Read address and length based on address_size *)
+      let start_address = match address_size with
+        | 4 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
+        | 8 -> Object.Buffer.Read.u64 cursor
+        | _ -> failwith ("Unsupported address size: " ^ string_of_int address_size)
+      in
+
+      let length = match address_size with
+        | 4 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
+        | 8 -> Object.Buffer.Read.u64 cursor
+        | _ -> failwith ("Unsupported address size: " ^ string_of_int address_size)
+      in
+
+
+      (* Skip segment selector if present *)
+      if segment_size > 0 then (
+        for _i = 0 to segment_size - 1 do
+          ignore (Object.Buffer.Read.u8 cursor)
+        done
+      );
+
+      (* Check for terminating null entry *)
+      if Unsigned.UInt64.equal start_address Unsigned.UInt64.zero &&
+         Unsigned.UInt64.equal length Unsigned.UInt64.zero then
+        List.rev acc
+      else
+        let range = { start_address; length } in
+        read_ranges (range :: acc)
+    in
+    read_ranges []
+
+  let parse buffer section_offset =
+    let cursor =
+      Object.Buffer.cursor buffer ~at:(Unsigned.UInt32.to_int section_offset)
+    in
+    let header = parse_header cursor in
+    let ranges = parse_ranges cursor header in
+    { header; ranges }
+end
+
 let lookup_address_in_debug_addr (buffer : Object.Buffer.t) (_addr_base : u64)
     (index : int) : u64 option =
   (* Find the debug_addr section *)
