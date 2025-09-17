@@ -3399,7 +3399,7 @@ module CallFrame = struct
     }
 end
 
-(** Debug names section parsing for Debug_names section *)
+(** Accelerated Name Lookup (.debug_names section) - DWARF 5 Section 6.1 *)
 module DebugNames = struct
   type name_index_header = {
     unit_length : u32;
@@ -4247,6 +4247,7 @@ let get_compile_units t =
   let compile_units = parse_compile_units t |> List.of_seq |> Array.of_list in
   { t with compile_units_ = compile_units }
 
+(** String Offset Tables (.debug_str_offsets section) - DWARF 5 Section 7.26 *)
 module DebugStrOffsets = struct
   type header = { unit_length : u32; version : u16; padding : u16 }
   type offset_entry = { offset : u32; resolved_string : string option }
@@ -4307,6 +4308,7 @@ module DebugStrOffsets = struct
     { header; offsets }
 end
 
+(** Address Tables (.debug_addr section) - DWARF 5 Section 7.27 *)
 module DebugAddr = struct
   type header = {
     unit_length : u32;
@@ -4388,6 +4390,7 @@ module DebugAddr = struct
     { header; entries }
 end
 
+(** Address Range Tables (.debug_aranges section) - DWARF 5 Section 6.1.2 *)
 module DebugAranges = struct
   type header = {
     unit_length : u32;
