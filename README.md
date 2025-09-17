@@ -42,3 +42,10 @@ And add `durin` to your project's `dune-project` or `*.opam` files.
    - A [dwarf-valiate clone](./example/dwarf_validate.ml), a program to
      validate the integrity of some DWARF information and the references
      between sections and compilation units.
+
+## Resources
+
+ * Apple Compact Unwinding Format is defined by the LLVM implementation.
+   https://github.com/llvm/llvm-project/blob/main/libunwind/include/mach-o/compact_unwind_encoding.h
+   https://faultlore.com/blah/compact-unwinding/
+   https://github.com/getsentry/symbolic/blob/master/symbolic-debuginfo/src/macho/compact.rs

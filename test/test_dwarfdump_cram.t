@@ -32,11 +32,20 @@ Test help flag:
          --debug-addr
              Dump debug address information (.debug_addr section)
   
+         --debug-aranges
+             Dump debug address ranges information (.debug_aranges section)
+  
          --debug-info
              Dump debug info information (.debug_info section)
   
          --debug-line
              Dump debug line information (.debug_line section)
+  
+         --debug-line-str
+             Dump debug line string information (.debug_line_str section)
+  
+         --debug-loclists
+             Dump debug location lists information (.debug_loclists section)
   
          --debug-macro
              Dump debug macro information (.debug_macro section)

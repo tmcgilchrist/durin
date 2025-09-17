@@ -1345,40 +1345,41 @@ module CallFrame : sig
       [Debug_frame] section. *)
 end
 
-(** Accelerated name lookup parsing for DWARF 5 section 6.1.
+(** Accelerated Name Lookup parsing for .debug_names section.
 
-    The debug_names section provides accelerated access to debugging information
-    by name. It contains hash tables and indices that allow efficient lookup of
-    DIEs (Debug Information Entries) by name, without requiring linear scanning
-    through all debugging information.
+    This module provides support for parsing DWARF 5 accelerated name lookup
+    tables, which enable efficient access to debugging information by name. The
+    debug_names section contains hash tables and indices that allow fast lookup
+    of DIEs (Debug Information Entries) by name, eliminating the need for linear
+    scanning through all debugging information.
 
-    This acceleration table is particularly important for debuggers and other
-    tools that need to:
-    - Find functions by name for setting breakpoints
-    - Look up global variables by name
-    - Resolve type names during expression evaluation
-    - Locate compilation units containing specific symbols
+    The .debug_names section is crucial for debugger performance, enabling:
+    - Setting breakpoints by function name
+    - Looking up global variables by name
+    - Resolving type names during expression evaluation
+    - Locating compilation units containing specific symbols
+    - Fast symbol table operations
 
-    Structure of the debug_names section: 1. Name Index Header: Contains sizes,
-    counts, and format information 2. Compilation Unit Offsets: Array of offsets
-    to compilation unit headers 3. Type Unit Information: Local and foreign type
-    unit references 4. Hash Table: Bucket array for efficient name hashing 5.
-    Name Table: Array of string offsets into .debug_str section 6. Entry Pool:
-    Encoded entries with DIE offsets and attributes
+    Structure of the debug_names section:
+    + Name Index Header: Contains sizes, counts, and format information
+    + Compilation Unit Offsets: Array of offsets to compilation unit headers
+    + Type Unit Information: Local and foreign type unit references
+    + Hash Table: Bucket array for efficient name hashing using DJB2 algorithm
+    + Name Table: Array of string offsets into .debug_str section
+    + Entry Pool: Encoded entries with DIE offsets and attributes
 
     The hash table uses a simple chaining mechanism where each bucket contains
     an index into the name table. Multiple names can hash to the same bucket,
-    forming a chain that must be traversed during lookup.
+    forming a chain that must be traversed during lookup. Each name table entry
+    corresponds to one or more entries in the entry pool, which contain the
+    actual DIE offsets and associated attributes like DW_IDX_compile_unit,
+    DW_IDX_type_unit, DW_IDX_die_offset, DW_IDX_parent, DW_IDX_type_hash, etc.
 
-    Each name table entry corresponds to one or more entries in the entry pool,
-    which contain the actual DIE offsets and associated attributes like DW_IDX_
-    values (compile_unit, type_unit, die_offset, parent, type_hash, etc.).
+    This unified approach replaced the older debug_pubnames, debug_pubtypes,
+    debug_gnu_pubnames, and debug_gnu_pubtypes sections with a more flexible and
+    efficient design.
 
-    This implementation supports the DWARF 5 format which replaced the older
-    debug_pubnames, debug_pubtypes, debug_gnu_pubnames, and debug_gnu_pubtypes
-    sections with this unified, more flexible approach.
-
-    Reference: DWARF 5 specification, section 6.1 "Accelerated Access" *)
+    DWARF 5 Specification Reference: Section 6.1 (Accelerated Access) *)
 module DebugNames : sig
   type name_index_header = {
     unit_length : u32;  (** Total length of name index excluding this field *)
@@ -1488,18 +1489,21 @@ module DebugNames : sig
       parsing, with string offsets resolved to actual strings and all tables
       populated.
 
-      Structure layout (in section order): 1. header: Metadata about table sizes
-      and format 2. comp_unit_offsets: Maps CU indices to .debug_info offsets 3.
-      local_type_unit_offsets: Maps TU indices to local type unit offsets 4.
-      foreign_type_unit_signatures: Maps TU indices to foreign type signatures
-      5. hash_table: Bucket array for efficient name hashing 6. name_table:
-      Resolved symbol names (originally offsets into .debug_str) 7. entry_pool:
-      All entries with DIE offsets and attributes
+      Structure layout (in section order):
+      + header: Metadata about table sizes and format
+      + comp_unit_offsets: Maps CU indices to .debug_info offsets
+      + local_type_unit_offsets: Maps TU indices to local type unit offsets
+      + foreign_type_unit_signatures: Maps TU indices to foreign type signatures
+      + hash_table: Bucket array for efficient name hashing
+      + name_table: Resolved symbol names (originally offsets into .debug_str)
+      + entry_pool: All entries with DIE offsets and attributes
 
-      Name lookup algorithm: 1. Hash the target name to get bucket index 2. Use
-      hash_table[bucket] to get name_table index 3. Compare target name with
-      name_table[index] 4. If match, use index to find corresponding entries in
-      entry_pool 5. Use entries to locate DIEs in compilation/type units
+      Name lookup algorithm:
+      + Hash the target name to get bucket index
+      + Use hash_table[bucket] to get name_table index
+      + Compare target name with name_table[index]
+      + If match, use index to find corresponding entries in entry_pool
+      + Use entries to locate DIEs in compilation/type units
 
       The arrays are sized according to the counts in the header, providing O(1)
       access to compilation units and type units by index.
@@ -1582,19 +1586,30 @@ val parse_compile_units : t -> CompileUnit.t Seq.t
 val get_abbrev_table : t -> size_t -> t * (u64, abbrev) Hashtbl.t
 (** Retrieve the abbreviation table at offset [size_t]. *)
 
-(** String offset table parsing for DWARF 5 section 7.26.
+(** String Offset Tables parsing for .debug_str_offsets section.
 
-    The [.debug_str_offsets] section provides indirect access to strings in the
-    [.debug_str] section. Instead of embedding string offsets directly in DIEs,
-    DWARF 5 can use string indices that reference this offset table, enabling
-    more compact representation and better string sharing across compilation
-    units.
+    This module provides support for parsing DWARF 5 string offset tables, which
+    enable indirect access to strings in the .debug_str section. Instead of
+    embedding string offsets directly in DIEs (Debug Information Entries), DWARF
+    5 uses string indices that reference this offset table, resulting in more
+    compact representation and better string sharing across compilation units.
 
-    The section contains a header followed by an array of 32-bit offsets into
-    the [.debug_str] section. Each offset can be resolved to retrieve the actual
-    string content.
+    The .debug_str_offsets section provides several benefits:
+    - Reduced DIE size by using smaller indices instead of full offsets
+    - Better string deduplication across compilation units
+    - More efficient linking when combining object files
+    - Improved compression of debug information
 
-    Reference: DWARF 5 specification, section 7.26 "String Offsets Table" *)
+    Section structure:
+    - Header with length, version, and alignment padding
+    - Array of 32-bit offsets into the .debug_str section
+    - Each offset can be resolved to retrieve actual string content
+
+    The offset table is typically referenced via DW_FORM_strx* forms in
+    attribute values, where the form value is an index into this table rather
+    than a direct offset into .debug_str.
+
+    DWARF 5 Specification Reference: Section 7.26 (String Offsets Table) *)
 module DebugStrOffsets : sig
   type header = {
     unit_length : u32;  (** Length of this contribution excluding this field *)
@@ -1674,21 +1689,33 @@ module DebugStrOffsets : sig
       for better cache locality and simpler API usage. *)
 end
 
-(** Address table parsing for DWARF 5 section 7.27.
+(** Address table parsing for .debug_addr section.
 
-    The [.debug_addr] section provides indirect access to addresses in DWARF 5.
-    Instead of embedding full addresses directly in DIEs, DWARF 5 can use
-    address indices that reference this address table via forms like
-    [DW_FORM_addrx]. This enables more compact representation, better
-    relocatability, and improved linking performance.
+    This module provides support for parsing DWARF 5 address tables, which
+    enable indirect access to addresses in debug information. Instead of
+    embedding full addresses directly in DIEs (Debug Information Entries), DWARF
+    5 uses address indices that reference this address table via forms like
+    DW_FORM_addrx*, enabling more compact representation and better
+    relocatability.
 
-    The section contains a header followed by an array of addresses. Each
-    address can be resolved using an address index and optional addr_base
-    offset. This indirection is particularly useful for position-independent
-    code and shared libraries where actual addresses are determined at load
-    time.
+    The .debug_addr section provides several advantages:
+    - Reduced DIE size by using smaller indices instead of full addresses
+    - Better support for position-independent code (PIC)
+    - Improved linking performance for shared libraries
+    - More efficient relocation processing
+    - Enhanced support for split DWARF packages
 
-    Reference: DWARF 5 specification, section 7.27 "Address Table" *)
+    Section structure:
+    - Header with length, version, address size, and segment size
+    - Array of addresses (size determined by address_size field)
+    - Each address can be resolved using an index and optional addr_base offset
+
+    This indirection is particularly valuable for position-independent code and
+    shared libraries where actual addresses are determined at load time rather
+    than link time. The address table allows the debug information to remain
+    compact while supporting full address resolution.
+
+    DWARF 5 Specification Reference: Section 7.27 (Address Table) *)
 module DebugAddr : sig
   type header = {
     unit_length : u32;  (** Length of this contribution excluding this field *)
@@ -1769,4 +1796,175 @@ module DebugAddr : sig
       Architecture note: The [address_size] field determines the width of
       addresses read from the section. This allows the same DWARF data to
       support both 32-bit and 64-bit architectures. *)
+end
+
+(** Address range table parsing for .debug_aranges section.
+
+    This module provides support for parsing DWARF Address Range Tables, which
+    enable efficient mapping from memory addresses to compilation units. Address
+    range tables are crucial for debuggers and profilers to quickly determine
+    which compilation unit contains a given program counter address without
+    scanning through all debug information.
+
+    The .debug_aranges section contains address range tables that specify:
+    - Contiguous ranges of machine code addresses
+    - Which compilation unit each address range belongs to
+    - Fast lookup capability for address-to-unit mapping
+
+    Address range tables are particularly useful for:
+    - Stack unwinding and backtrace generation
+    - Setting breakpoints by address
+    - Source-level debugging when only addresses are available
+    - Performance profiling and address attribution
+
+    Each compilation unit can have its own address range table describing all
+    the non-contiguous memory regions that contain code belonging to that unit.
+    This is essential for optimized code where functions may be split across
+    multiple memory regions.
+
+    DWARF 5 Specification Reference: Section 6.1.2 (Address Range Table) *)
+module DebugAranges : sig
+  type header = {
+    unit_length : u32;  (** Length of this aranges set excluding this field *)
+    version : u16;  (** DWARF version number (typically 2) *)
+    debug_info_offset : u32;  (** Offset into .debug_info section *)
+    address_size : u8;  (** Size of addresses in bytes *)
+    segment_size : u8;  (** Size of segment selectors in bytes (usually 0) *)
+  }
+  (** Header structure for an address range table.
+
+      Each compilation unit can have its own address range table describing the
+      non-contiguous address ranges of code belonging to that unit. *)
+
+  type address_range = {
+    start_address : u64;  (** Beginning of address range *)
+    length : u64;  (** Length of address range *)
+  }
+  (** A single address range entry.
+
+      Represents a contiguous range of addresses belonging to a compilation
+      unit. The range covers addresses from [start_address] to
+      [start_address + length - 1]. *)
+
+  type aranges_set = {
+    header : header;  (** Header information *)
+    ranges : address_range list;  (** List of address ranges *)
+  }
+  (** Complete address range table for one compilation unit.
+
+      Contains header information identifying the compilation unit and a list of
+      all address ranges belonging to that unit. *)
+
+  val parse : Object.Buffer.t -> u32 -> aranges_set
+  (** Parse an address range table from buffer.
+
+      @param buffer Object buffer containing the DWARF data
+      @param section_offset Offset to start of .debug_aranges section
+      @return Parsed address range table
+      @raise Failure if section format is invalid *)
+end
+
+(** Location list parsing for .debug_loclists section.
+
+    This module provides support for parsing DWARF 5 Location Lists, which
+    describe where variables and parameters can be found during program
+    execution. Location lists are essential for debuggers to track variable
+    locations as they move between registers, memory locations, or become
+    temporarily unavailable during optimization.
+
+    The .debug_loclists section contains location descriptions that specify:
+    - Address ranges where variables are valid
+    - How to find variables (register, memory address, computed location)
+    - When variables are not available (optimized out, between scopes)
+
+    Each location list consists of a series of location list entries (LLE) that
+    describe contiguous ranges of program counter values and the corresponding
+    location expressions. This replaces the older .debug_loc section format used
+    in DWARF 4 and earlier.
+
+    DWARF 5 Specification Reference: Section 7.7.3 (Location Lists) *)
+module DebugLoclists : sig
+  type header = {
+    unit_length : u32;  (** Length of the location lists contribution *)
+    version : u16;  (** Version identifier (DWARF 5) *)
+    address_size : u8;  (** Size of addresses in bytes *)
+    segment_size : u8;  (** Size of segment selectors in bytes (usually 0) *)
+    offset_entry_count : u32;  (** Number of entries in the offset table *)
+  }
+  (** Header structure for a location lists contribution.
+
+      The location lists section contains location descriptions that are
+      referenced by debug information entries via DW_AT_location attributes. *)
+
+  (** Location list entry types as defined in DWARF 5 Section 7.7.3 *)
+  type location_list_entry_type =
+    | DW_LLE_end_of_list  (** 0x00 - End of location list *)
+    | DW_LLE_base_addressx  (** 0x01 - Base address from address table *)
+    | DW_LLE_startx_endx  (** 0x02 - Start/end addresses from address table *)
+    | DW_LLE_startx_length  (** 0x03 - Start from address table + length *)
+    | DW_LLE_offset_pair  (** 0x04 - Offset pair from base address *)
+    | DW_LLE_default_location  (** 0x05 - Default location for object *)
+    | DW_LLE_base_address  (** 0x06 - Base address (direct) *)
+    | DW_LLE_start_end  (** 0x07 - Start/end addresses (direct) *)
+    | DW_LLE_start_length  (** 0x08 - Start address + length (direct) *)
+
+  type location_list_entry = {
+    entry_type : location_list_entry_type;  (** Type of this entry *)
+    data : string;  (** Raw data for the entry (varies by type) *)
+  }
+  (** Individual location list entry.
+
+      Each entry describes a range of program counter values and the
+      corresponding location where a variable can be found. *)
+
+  type location_list = {
+    offset : u32;  (** Offset within the section *)
+    entries : location_list_entry list;  (** List of location entries *)
+  }
+  (** Complete location list for one object.
+
+      Contains all location entries that describe where an object can be found
+      throughout the program's execution. *)
+
+  type loclists_section = {
+    header : header;  (** Section header *)
+    offset_table : u32 array;  (** Table of offsets to location lists *)
+    location_lists : location_list list;  (** All location lists in section *)
+  }
+  (** Complete .debug_loclists section.
+
+      Contains header information and all location lists for the compilation
+      unit. *)
+
+  val parse : Object.Buffer.t -> u32 -> loclists_section
+  (** Parse location lists section from buffer.
+
+      @param buffer Object buffer containing the DWARF data
+      @param section_offset Offset to start of .debug_loclists section
+      @return Parsed location lists section
+      @raise Failure if section format is invalid *)
+end
+
+(** CompactUnwind module for Apple's Compact Unwinding Format.
+
+    This module provides support for parsing and interpreting Apple's
+    non-standard Compact Unwinding Format found in MachO binaries. The compact
+    format provides efficient stack unwinding information stored in the
+    __unwind_info section within the __TEXT segment.
+
+    This is complementary to standard DWARF CFI and is used by Apple platforms
+    for improved performance and reduced memory usage during stack unwinding. *)
+module CompactUnwind : sig
+  include module type of Compact_unwind
+
+  val find_unwind_info_section : Object.Buffer.t -> (int * int) option
+  (** Find the __unwind_info section in a MachO binary
+      @param buffer Object buffer containing the MachO binary
+      @return Optional tuple of (section_offset, section_size) *)
+
+  val parse_from_buffer : Object.Buffer.t -> (unwind_info * architecture) option
+  (** Parse compact unwind information from a MachO binary
+      @param buffer Object buffer containing the MachO binary
+      @return Optional tuple of (unwind_info, architecture) if parsing succeeds
+  *)
 end
