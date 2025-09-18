@@ -6,7 +6,8 @@
   addr2line
   dwarf_validate
   simple_debug_info
-  simple_debug_line)
+  simple_debug_line
+  gnu-objdump)
  (names
   dwprod
   dwarfdump
@@ -14,5 +15,6 @@
   addr2line
   dwarf_validate
   simple_debug_info
-  simple_debug_line)
+  simple_debug_line
+  gnu_objdump)
  (libraries durin object integers cmdliner))

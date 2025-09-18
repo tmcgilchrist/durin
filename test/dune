@@ -1,50 +1,6 @@
-; (test
-;  (name test_macho_arm64)
-;  (deps hello_world)
-;  (build_if
-;   (and
-;    (= %{system} "macosx")
-;    (= %{architecture} "arm64")))
-;  (libraries object integers alcotest cmdliner)
-;  (action
-;   (run %{exe:test_macho_arm64.exe} --binary %{dep:hello_world})))
-
-; Generate source-level debug information with dwarf version 5
-
-(rule
- (alias runtest)
- (deps hello_world.c)
- (targets hello_world hello_world.dSYM)
- (enabled_if
-  (and
-   (= %{system} "macosx")
-   (= %{architecture} "arm64")))
- (action
-  (system "cc -gdwarf-5 %{deps} -o hello_world")))
-
-(rule
- (alias runtest)
- (deps hello_world.cpp)
- (targets hello_world_cpp hello_world_cpp.dSYM)
- (enabled_if
-  (and
-   (= %{system} "macosx")
-   (= %{architecture} "arm64")))
- (action
-  (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp")))
-
-; Compile test program with macro debugging information
-
-(rule
- (alias runtest)
- (deps test_macros.c test_macros_header.h)
- (targets test_macros)
- (enabled_if
-  (and
-   (= %{system} "linux")
-   (= %{architecture} "amd64")))
- (action
-  (system "gcc -gdwarf-5 test_macros.c -o test_macros")))
+; =============================================================================
+; UNIT TESTS
+; =============================================================================
 
 (test
  (name test_line_program_header)
@@ -79,16 +35,43 @@
  (action
   (run %{exe:test_debug_names_parsing.exe})))
 
-; Cram test to compare our dwarfdump with real dwarfdump
+; =============================================================================
+; MACOS PLATFORM TESTS
+; =============================================================================
+
+; macOS Binary Compilation Rules
+
+(rule
+ (alias runtest)
+ (deps hello_world.c)
+ (targets
+   hello_world hello_world.dSYM )
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (system "cc -gdwarf-5 %{deps} -o hello_world")))
+
+(rule
+ (alias runtest)
+ (deps hello_world.cpp)
+ (targets hello_world_cpp hello_world_cpp.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp")))
+
+; macOS Cram Tests
 
 (cram
  (enabled_if
   (and
    (= %{system} "macosx")
    (= %{architecture} "arm64")))
- (deps %{bin:dwarfdump} hello_world))
-
-; Cram test for objdump functionality
+ (deps %{bin:dwarfdump}))
 
 (cram
  (deps %{bin:objdump} hello_world)
@@ -97,9 +80,11 @@
    (= %{system} "macosx")
    (= %{architecture} "arm64"))))
 
-; Test rules to compare --debug-str output with system dwarfdump
+; =============================================================================
+; DWARFDUMP COMPARISON TESTS - MACOS
+; =============================================================================
 
-; Generate output from our dwarfdump --debug-str
+; --debug-str comparison
 
 (rule
  (alias runtest)
@@ -117,8 +102,6 @@
     --debug-str
     "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Generate output from system dwarfdump --debug-str
-
 (rule
  (alias runtest)
  (target system_debug_str.out)
@@ -133,8 +116,6 @@
    (system
     "dwarfdump --debug-str hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Compare the outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_str.out system_debug_str.out)
@@ -145,9 +126,7 @@
  (action
   (diff system_debug_str.out ocaml_debug_str.out)))
 
-; Test rules to compare --debug-str-offsets output with system dwarfdump
-
-; Generate output from our dwarfdump --debug-str-offsets
+; --debug-str-offsets comparison
 
 (rule
  (alias runtest)
@@ -165,8 +144,6 @@
     --debug-str-offsets
     "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Generate output from system dwarfdump --debug-str-offsets
-
 (rule
  (alias runtest)
  (target system_debug_str_offsets.out)
@@ -181,8 +158,6 @@
    (system
     "dwarfdump --debug-str-offsets hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Compare the outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_str_offsets.out system_debug_str_offsets.out)
@@ -193,9 +168,7 @@
  (action
   (diff system_debug_str_offsets.out ocaml_debug_str_offsets.out)))
 
-; Test rules to compare --debug-abbrev output with system dwarfdump
-
-; Generate output from our dwarfdump --debug-abbrev
+; --debug-abbrev comparison
 
 (rule
  (alias runtest)
@@ -213,8 +186,6 @@
     --debug-abbrev
     "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Generate output from system dwarfdump --debug-abbrev
-
 (rule
  (alias runtest)
  (target system_debug_abbrev.out)
@@ -229,8 +200,6 @@
    (system
     "dwarfdump --debug-abbrev hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Compare the outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_abbrev.out system_debug_abbrev.out)
@@ -241,9 +210,7 @@
  (action
   (diff system_debug_abbrev.out ocaml_debug_abbrev.out)))
 
-; Test rules to compare --debug-info output with system dwarfdump
-
-; Generate output from our dwarfdump --debug-info
+; --debug-info comparison
 
 (rule
  (alias runtest)
@@ -261,8 +228,6 @@
     --debug-info
     "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Generate output from system dwarfdump --debug-info
-
 (rule
  (alias runtest)
  (target system_debug_info.out)
@@ -277,8 +242,6 @@
    (system
     "dwarfdump --debug-info hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Compare the outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_info.out system_debug_info.out)
@@ -289,9 +252,7 @@
  (action
   (diff system_debug_info.out ocaml_debug_info.out)))
 
-; Test rules to compare --debug-addr output with system dwarfdump
-
-; Generate output from our dwarfdump --debug-addr
+; --debug-addr comparison
 
 (rule
  (alias runtest)
@@ -309,8 +270,6 @@
     --debug-addr
     "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Generate output from system dwarfdump --debug-addr
-
 (rule
  (alias runtest)
  (target system_debug_addr.out)
@@ -325,8 +284,6 @@
    (system
     "dwarfdump --debug-addr hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Compare the outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_addr.out system_debug_addr.out)
@@ -337,9 +294,7 @@
  (action
   (diff system_debug_addr.out ocaml_debug_addr.out)))
 
-; Test rules to compare --debug-line output with system dwarfdump
-
-; Generate output from our dwarfdump --debug-line
+; --debug-line comparison
 
 (rule
  (alias runtest)
@@ -357,8 +312,6 @@
     --debug-line
     "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Generate output from system dwarfdump --debug-line
-
 (rule
  (alias runtest)
  (target system_debug_line.out)
@@ -373,8 +326,6 @@
    (system
     "dwarfdump --debug-line hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Compare the outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_line.out system_debug_line.out)
@@ -385,9 +336,7 @@
  (action
   (diff system_debug_line.out ocaml_debug_line.out)))
 
-; Test rules to compare --debug-names output with system dwarfdump
-
-; Generate output from our dwarfdump --debug-names
+; --debug-names comparison (C file)
 
 (rule
  (alias runtest)
@@ -405,8 +354,6 @@
     --debug-names
     "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Generate output from system dwarfdump --debug-names
-
 (rule
  (alias runtest)
  (target system_debug_names.out)
@@ -421,8 +368,6 @@
    (system
     "dwarfdump --debug-names hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Compare the outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_names.out system_debug_names.out)
@@ -433,9 +378,7 @@
  (action
   (diff system_debug_names.out ocaml_debug_names.out)))
 
-; Test rules to compare --debug-names output with system dwarfdump for C++ file
-
-; Generate output from our dwarfdump --debug-names for C++ file
+; --debug-names comparison (C++ file)
 
 (rule
  (alias runtest)
@@ -453,8 +396,6 @@
     --debug-names
     "hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
 
-; Generate output from system dwarfdump --debug-names for C++ file
-
 (rule
  (alias runtest)
  (target system_debug_names_cpp.out)
@@ -469,8 +410,6 @@
    (system
     "dwarfdump --debug-names hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
 
-; Compare the C++ outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_names_cpp.out system_debug_names_cpp.out)
@@ -481,9 +420,7 @@
  (action
   (diff system_debug_names_cpp.out ocaml_debug_names_cpp.out)))
 
-; Test rules to compare --debug-macro output with system dwarfdump
-
-; Generate output from our dwarfdump --debug-macro
+; --debug-macro comparison
 
 (rule
  (alias runtest)
@@ -491,14 +428,12 @@
  (deps %{bin:dwarfdump} test_macros)
  (enabled_if
   (and
-   (= %{system} "linux")
-   (= %{architecture} "amd64")))
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
  (action
   (with-stdout-to
-   %{target}
+    %{target}
    (run %{bin:dwarfdump} --debug-macro "test_macros"))))
-
-; Generate output from system dwarfdump --debug-macro
 
 (rule
  (alias runtest)
@@ -506,28 +441,28 @@
  (deps test_macros)
  (enabled_if
   (and
-   (= %{system} "linux")
-   (= %{architecture} "amd64")))
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
  (action
   (with-stdout-to
-   %{target}
+    %{target}
    (system "dwarfdump --debug-macro test_macros"))))
-
-; Compare the outputs using diff
 
 (rule
  (alias runtest)
  (deps ocaml_debug_macro.out system_debug_macro.out)
  (enabled_if
   (and
-   (= %{system} "linux")
-   (= %{architecture} "amd64")))
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
  (action
   (diff system_debug_macro.out ocaml_debug_macro.out)))
 
-; Test rules to compare our objdump --unwind-info output with system objdump --unwind-info
+; =============================================================================
+; OBJDUMP COMPARISON TESTS - MACOS
+; =============================================================================
 
-; Generate output from our objdump --unwind-info for hello_world
+; --unwind-info comparison (hello_world)
 
 (rule
  (alias runtest)
@@ -542,8 +477,6 @@
    %{target}
    (run %{bin:objdump} --unwind-info "hello_world"))))
 
-; Generate output from system objdump --unwind-info for hello_world
-
 (rule
  (alias runtest)
  (target system_unwind_info.out)
@@ -557,7 +490,7 @@
    %{target}
    (system "objdump --unwind-info hello_world"))))
 
-; Generate output from our objdump --unwind-info for hello_world_cpp
+; --unwind-info comparison (hello_world_cpp)
 
 (rule
  (alias runtest)
@@ -572,8 +505,6 @@
    %{target}
    (run %{bin:objdump} --unwind-info "hello_world_cpp"))))
 
-; Generate output from system objdump --unwind-info for hello_world_cpp
-
 (rule
  (alias runtest)
  (target system_unwind_info_cpp.out)
@@ -587,7 +518,7 @@
    %{target}
    (system "objdump --unwind-info hello_world_cpp"))))
 
-; Compare the unwind info outputs using diff for hello_world
+; Diff comparisons for unwind-info
 
 (rule
  (alias runtest)
@@ -599,8 +530,6 @@
  (action
   (diff system_unwind_info.out ocaml_unwind_info.out)))
 
-; Compare the unwind info outputs using diff for hello_world_cpp
-
 (rule
  (alias runtest)
  (deps ocaml_unwind_info_cpp.out system_unwind_info_cpp.out)
@@ -611,9 +540,11 @@
  (action
   (diff system_unwind_info_cpp.out ocaml_unwind_info_cpp.out)))
 
-; Test rules to compare --debug-line-str output with system dwarfdump
+; =============================================================================
+; ADDITIONAL DWARFDUMP TESTS - MACOS
+; =============================================================================
 
-; Generate output from our dwarfdump --debug-line-str
+; --debug-line-str comparison
 
 (rule
  (alias runtest)
@@ -631,8 +562,6 @@
     --debug-line-str
     "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Generate output from system dwarfdump --debug-line-str
-
 (rule
  (alias runtest)
  (target system_debug_line_str.out)
@@ -647,8 +576,6 @@
    (system
     "dwarfdump --debug-line-str hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Compare the outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_line_str.out system_debug_line_str.out)
@@ -659,9 +586,7 @@
  (action
   (diff system_debug_line_str.out ocaml_debug_line_str.out)))
 
-; Test rules to compare --debug-aranges output with system dwarfdump
-
-; Generate output from our dwarfdump --debug-aranges
+; --debug-aranges comparison
 
 (rule
  (alias runtest)
@@ -679,8 +604,6 @@
     --debug-aranges
     "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Generate output from system dwarfdump --debug-aranges
-
 (rule
  (alias runtest)
  (target system_debug_aranges.out)
@@ -695,8 +618,6 @@
    (system
     "dwarfdump --debug-aranges hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Compare the outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_aranges.out system_debug_aranges.out)
@@ -707,9 +628,7 @@
  (action
   (diff system_debug_aranges.out ocaml_debug_aranges.out)))
 
-; Test rules to compare --debug-loclists output with system dwarfdump
-
-; Generate output from our dwarfdump --debug-loclists
+; --debug-loclists comparison
 
 (rule
  (alias runtest)
@@ -727,8 +646,6 @@
     --debug-loclists
     "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Generate output from system dwarfdump --debug-loclists
-
 (rule
  (alias runtest)
  (target system_debug_loclists.out)
@@ -743,8 +660,6 @@
    (system
     "dwarfdump --debug-loclists hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
-; Compare the outputs using diff
-
 (rule
  (alias runtest)
  (deps ocaml_debug_loclists.out system_debug_loclists.out)
@@ -755,7 +670,7 @@
  (action
   (diff system_debug_loclists.out ocaml_debug_loclists.out)))
 
-; Test error handling when passing a directory instead of a file
+; Error handling test for directory input
 
 (rule
  (alias runtest)
@@ -769,3 +684,202 @@
   (with-stderr-to
    %{target}
    (system "%{bin:dwarfdump} --debug-loclists . || true"))))
+
+; =============================================================================
+; LINUX PLATFORM TESTS
+; =============================================================================
+
+; Linux Binary Compilation
+
+(rule
+ (alias runtest)
+ (deps hello_world.c)
+ (targets hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "gcc -gdwarf-5 %{deps} -o hello_world_linux")))
+
+; =============================================================================
+; GNU-OBJDUMP COMPARISON TESTS - LINUX
+; =============================================================================
+
+; --dwarf=line comparison
+
+(rule
+ (alias runtest)
+ (target ocaml_objdump_line.out)
+ (deps %{bin:gnu-objdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-objdump} --dwarf line hello_world_linux))))
+
+(rule
+ (alias runtest)
+ (target system_objdump_line.out)
+ (deps hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "objdump --dwarf=line hello_world_linux"))))
+
+(rule
+ (alias runtest)
+ (deps ocaml_objdump_line.out system_objdump_line.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_objdump_line.out ocaml_objdump_line.out)))
+
+; --dwarf=info comparison
+
+(rule
+ (alias runtest)
+ (target ocaml_objdump_info.out)
+ (deps %{bin:gnu-objdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-objdump} --dwarf info hello_world_linux))))
+
+(rule
+ (alias runtest)
+ (target system_objdump_info.out)
+ (deps hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "objdump --dwarf=info hello_world_linux"))))
+
+(rule
+ (alias runtest)
+ (deps ocaml_objdump_info.out system_objdump_info.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_objdump_info.out ocaml_objdump_info.out)))
+
+; =============================================================================
+; GNU-OBJDUMP UNSUPPORTED SECTION TESTS - LINUX
+; =============================================================================
+
+(rule
+ (alias runtest)
+ (target test_objdump_abbrev_unsupported.out)
+ (deps %{bin:gnu-objdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-accepted-exit-codes
+   1
+   (with-stdout-to
+    %{target}
+    (with-stderr-to
+     %{target}
+     (run %{bin:gnu-objdump} --dwarf abbrev hello_world_linux))))))
+
+(rule
+ (alias runtest)
+ (target test_objdump_str_unsupported.out)
+ (deps %{bin:gnu-objdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-accepted-exit-codes
+   1
+   (with-stdout-to
+    %{target}
+    (with-stderr-to
+     %{target}
+     (run %{bin:gnu-objdump} --dwarf str hello_world_linux))))))
+
+(rule
+ (alias runtest)
+ (target test_objdump_str_offsets_unsupported.out)
+ (deps %{bin:gnu-objdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-accepted-exit-codes
+   1
+   (with-stdout-to
+    %{target}
+    (with-stderr-to
+     %{target}
+     (run %{bin:gnu-objdump} --dwarf str-offsets hello_world_linux))))))
+
+(rule
+ (alias runtest)
+ (target test_objdump_addr_unsupported.out)
+ (deps %{bin:gnu-objdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-accepted-exit-codes
+   1
+   (with-stdout-to
+    %{target}
+    (with-stderr-to
+     %{target}
+     (run %{bin:gnu-objdump} --dwarf addr hello_world_linux))))))
+
+; =============================================================================
+; GNU-OBJDUMP FUNCTIONAL TESTS - LINUX
+; =============================================================================
+
+(rule
+ (alias runtest)
+ (target test_gnu_objdump_line_functional.out)
+ (deps %{bin:gnu-objdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-objdump} --dwarf line hello_world_linux))))
+
+(rule
+ (alias runtest)
+ (target test_gnu_objdump_info_functional.out)
+ (deps %{bin:gnu-objdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-objdump} --dwarf info hello_world_linux))))
