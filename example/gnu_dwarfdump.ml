@@ -234,6 +234,74 @@ let dump_debug_info filename =
         (Printexc.to_string exn);
       exit 1
 
+let dump_debug_str filename =
+  try
+    let actual_filename, is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output header similar to dwarfdump --debug-str *)
+    Printf.printf "\n.debug_str\n";
+
+    (* Try to get the debug_str section offset and size *)
+    match get_section_offset buffer Dwarf.Debug_str with
+    | None ->
+        Printf.printf "No .debug_str section found in file\n";
+        if not is_debug then (
+          Printf.printf
+            "Note: For ELF binaries, debug info might be in separate .debug files\n";
+          let debug_path = filename ^ ".debug" in
+          if Sys.file_exists debug_path then Printf.printf "Try: %s\n" debug_path)
+    | Some (section_offset, section_size) ->
+        (* Create cursor at the debug_str section offset *)
+        let cursor = Object.Buffer.cursor buffer ~at:(Unsigned.UInt64.to_int section_offset) in
+
+        (* Parse strings from the section *)
+        let section_end =
+          Unsigned.UInt64.to_int section_offset
+          + Unsigned.UInt64.to_int section_size
+        in
+        let current_pos = ref (Unsigned.UInt64.to_int section_offset) in
+        let string_offset = ref 0 in
+
+        while !current_pos < section_end do
+          (* Read null-terminated string *)
+          let start_pos = !current_pos in
+          let str_buffer = Stdlib.Buffer.create 256 in
+          let rec read_string () =
+            if !current_pos >= section_end then ()
+            else
+              let byte = Object.Buffer.Read.u8 cursor in
+              if Unsigned.UInt8.to_int byte = 0 then incr current_pos
+              else (
+                Stdlib.Buffer.add_char str_buffer
+                  (char_of_int (Unsigned.UInt8.to_int byte));
+                incr current_pos;
+                read_string ())
+          in
+          read_string ();
+
+          let str_content = Stdlib.Buffer.contents str_buffer in
+          let str_length = String.length str_content in
+          if str_length > 0 then
+            Printf.printf "name at offset 0x%08x, length %4d is '%s'\n"
+              !string_offset str_length str_content
+          else if !current_pos < section_end then
+            (* Empty string, but not at end of section *)
+            Printf.printf "name at offset 0x%08x, length %4d is ''\n"
+              !string_offset 0;
+
+          string_offset := !string_offset + (!current_pos - start_pos)
+        done;
+        Printf.printf "\n"
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
 (* Command line interface matching dwarfdump's --debug-* options *)
 let filename =
   let doc = "ELF binary file to analyze for DWARF debug information" in
@@ -263,9 +331,29 @@ let debug_addr_flag =
   let doc = "Dump the .debug_addr section" in
   Cmdliner.Arg.(value & flag & info [ "debug-addr" ] ~doc)
 
-let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev debug_addr filename =
+let debug_names_flag =
+  let doc = "Dump the .debug_names section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-names" ] ~doc)
+
+let debug_macro_flag =
+  let doc = "Dump the .debug_macro section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-macro" ] ~doc)
+
+let debug_line_str_flag =
+  let doc = "Dump the .debug_line_str section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-line-str" ] ~doc)
+
+let debug_aranges_flag =
+  let doc = "Dump the .debug_aranges section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-aranges" ] ~doc)
+
+let debug_loclists_flag =
+  let doc = "Dump the .debug_loclists section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-loclists" ] ~doc)
+
+let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev debug_addr debug_names debug_macro debug_line_str debug_aranges debug_loclists filename =
   let count =
-    [debug_line; debug_info; debug_str; debug_str_offsets; debug_abbrev; debug_addr]
+    [debug_line; debug_info; debug_str; debug_str_offsets; debug_abbrev; debug_addr; debug_names; debug_macro; debug_line_str; debug_aranges; debug_loclists]
     |> List.filter (fun x -> x)
     |> List.length
   in
@@ -279,8 +367,34 @@ let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev
     dump_debug_line filename
   else if debug_info then
     dump_debug_info filename
-  else (
-    Printf.eprintf "Error: Unsupported DWARF section. Supported: line, info, abbrev, str, str-offsets, addr\n";
+  else if debug_str then
+    dump_debug_str filename
+  else if debug_str_offsets then (
+    Printf.eprintf "Unimplemented\n";
+    exit 1
+  ) else if debug_abbrev then (
+    Printf.eprintf "Unimplemented\n";
+    exit 1
+  ) else if debug_addr then (
+    Printf.eprintf "Unimplemented\n";
+    exit 1
+  ) else if debug_names then (
+    Printf.eprintf "Unimplemented\n";
+    exit 1
+  ) else if debug_macro then (
+    Printf.eprintf "Unimplemented\n";
+    exit 1
+  ) else if debug_line_str then (
+    Printf.eprintf "Unimplemented\n";
+    exit 1
+  ) else if debug_aranges then (
+    Printf.eprintf "Unimplemented\n";
+    exit 1
+  ) else if debug_loclists then (
+    Printf.eprintf "Unimplemented\n";
+    exit 1
+  ) else (
+    Printf.eprintf "Error: Unknown debug section\n";
     exit 1
   )
 
@@ -288,6 +402,6 @@ let cmd =
   let doc = "Display DWARF debugging information from ELF object files" in
   let info = Cmdliner.Cmd.info "gnu-dwarfdump" ~doc in
   Cmdliner.Cmd.v info
-    Cmdliner.Term.(const dwarfdump_cmd $ debug_line_flag $ debug_info_flag $ debug_str_flag $ debug_str_offsets_flag $ debug_abbrev_flag $ debug_addr_flag $ filename)
+    Cmdliner.Term.(const dwarfdump_cmd $ debug_line_flag $ debug_info_flag $ debug_str_flag $ debug_str_offsets_flag $ debug_abbrev_flag $ debug_addr_flag $ debug_names_flag $ debug_macro_flag $ debug_line_str_flag $ debug_aranges_flag $ debug_loclists_flag $ filename)
 
 let () = exit (Cmdliner.Cmd.eval cmd)
