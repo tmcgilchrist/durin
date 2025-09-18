@@ -7,7 +7,7 @@
   dwarf_validate
   simple_debug_info
   simple_debug_line
-  gnu-objdump)
+  gnu-dwarfdump)
  (names
   dwprod
   dwarfdump
@@ -16,5 +16,5 @@
   dwarf_validate
   simple_debug_info
   simple_debug_line
-  gnu_objdump)
+  gnu_dwarfdump)
  (libraries durin object integers cmdliner))

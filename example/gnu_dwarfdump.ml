@@ -1,4 +1,4 @@
-(* An implementation of the "objdump" utility for DWARF debugging information on Linux ELF files *)
+(* An implementation of the "dwarfdump" utility for DWARF debugging information on Linux ELF files *)
 open Durin
 
 (* Helper function to get section offset and size for ELF files *)
@@ -112,7 +112,7 @@ let dump_debug_line filename =
     let buffer = Object.Buffer.parse actual_filename in
     let format_str = Dwarf.detect_format_and_arch buffer in
 
-    (* Output header similar to objdump --dwarf=line *)
+    (* Output header similar to dwarfdump --debug-line *)
     Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
     Printf.printf "Contents of the .debug_line section:\n\n";
 
@@ -208,7 +208,7 @@ let dump_debug_info filename =
     let buffer = Object.Buffer.parse actual_filename in
     let format_str = Dwarf.detect_format_and_arch buffer in
 
-    (* Output header similar to objdump --dwarf=info *)
+    (* Output header similar to dwarfdump --debug-info *)
     Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
     Printf.printf "Contents of the .debug_info section:\n\n";
 
@@ -224,7 +224,7 @@ let dump_debug_info filename =
     | Some (debug_info_offset, section_size) ->
         Printf.printf "  Note: Simplified debug_info parsing (section at offset 0x%x, size 0x%x)\n"
           (Unsigned.UInt64.to_int debug_info_offset) (Unsigned.UInt64.to_int section_size);
-        Printf.printf "  Use 'objdump --dwarf=info' or dwarfdump for complete output\n"
+        Printf.printf "  Use 'dwarfdump --debug-info' for complete output\n"
   with
   | Sys_error msg ->
       Printf.eprintf "Error: %s\n" msg;
@@ -234,30 +234,60 @@ let dump_debug_info filename =
         (Printexc.to_string exn);
       exit 1
 
-(* Command line interface matching objdump's --dwarf options *)
+(* Command line interface matching dwarfdump's --debug-* options *)
 let filename =
   let doc = "ELF binary file to analyze for DWARF debug information" in
   Cmdliner.Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
-let dwarf_flag =
-  let doc = "Dump DWARF debug information. Supported sections: line, info, abbrev, str, str-offsets, addr" in
-  Cmdliner.Arg.(value & opt (some string) None & info [ "dwarf" ] ~docv:"SECTION" ~doc)
+let debug_line_flag =
+  let doc = "Dump the .debug_line section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-line" ] ~doc)
 
-let objdump_cmd dwarf filename =
-  match dwarf with
-  | Some "line" -> dump_debug_line filename
-  | Some "info" -> dump_debug_info filename
-  | Some _ ->
-      Printf.eprintf "Error: Unsupported DWARF section. Supported: line, info, abbrev, str, str-offsets, addr\n";
-      exit 1
-  | None ->
-      Printf.eprintf "Error: --dwarf option requires a section name\n";
-      exit 1
+let debug_info_flag =
+  let doc = "Dump the .debug_info section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-info" ] ~doc)
+
+let debug_str_flag =
+  let doc = "Dump the .debug_str section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-str" ] ~doc)
+
+let debug_str_offsets_flag =
+  let doc = "Dump the .debug_str_offsets section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-str-offsets" ] ~doc)
+
+let debug_abbrev_flag =
+  let doc = "Dump the .debug_abbrev section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-abbrev" ] ~doc)
+
+let debug_addr_flag =
+  let doc = "Dump the .debug_addr section" in
+  Cmdliner.Arg.(value & flag & info [ "debug-addr" ] ~doc)
+
+let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev debug_addr filename =
+  let count =
+    [debug_line; debug_info; debug_str; debug_str_offsets; debug_abbrev; debug_addr]
+    |> List.filter (fun x -> x)
+    |> List.length
+  in
+  if count = 0 then (
+    Printf.eprintf "Error: No debug section specified. Use --debug-line, --debug-info, etc.\n";
+    exit 1
+  ) else if count > 1 then (
+    Printf.eprintf "Error: Only one debug section can be specified at a time\n";
+    exit 1
+  ) else if debug_line then
+    dump_debug_line filename
+  else if debug_info then
+    dump_debug_info filename
+  else (
+    Printf.eprintf "Error: Unsupported DWARF section. Supported: line, info, abbrev, str, str-offsets, addr\n";
+    exit 1
+  )
 
 let cmd =
-  let doc = "Display information from ELF object files with DWARF debugging information" in
-  let info = Cmdliner.Cmd.info "gnu-objdump" ~doc in
+  let doc = "Display DWARF debugging information from ELF object files" in
+  let info = Cmdliner.Cmd.info "gnu-dwarfdump" ~doc in
   Cmdliner.Cmd.v info
-    Cmdliner.Term.(const objdump_cmd $ dwarf_flag $ filename)
+    Cmdliner.Term.(const dwarfdump_cmd $ debug_line_flag $ debug_info_flag $ debug_str_flag $ debug_str_offsets_flag $ debug_abbrev_flag $ debug_addr_flag $ filename)
 
 let () = exit (Cmdliner.Cmd.eval cmd)
