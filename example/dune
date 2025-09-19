@@ -1,7 +1,7 @@
 (executables
  (public_names
   dwprod
-  ; dwarfdump TODO Change to conditionally compile this file, clashes with linux dwarfdump on $PATH
+
   objdump
   addr2line
   dwarf_validate
@@ -10,11 +10,15 @@
   gnu-dwarfdump)
  (names
   dwprod
-  ; dwarfdump
   objdump
   addr2line
   dwarf_validate
   simple_debug_info
   simple_debug_line
   gnu_dwarfdump)
+ (libraries durin object integers cmdliner))
+
+(executable
+  (public_name dwarfdump)
+  (name dwarfdump)
  (libraries durin object integers cmdliner))
