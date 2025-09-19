@@ -102,7 +102,7 @@ let object_format_to_section_name format section =
       | Debug_loclists -> "__debug_loclists"
       | Debug_rnglists -> "__debug_rnglists"
       | Debug_str -> "__debug_str"
-      | Debug_str_offs -> "__debug_str_offs"
+      | Debug_str_offs -> "__debug_str_offsets"
       | Debug_names -> "__debug_names"
       | Debug_addr -> "__debug_addr"
       | Debug_macro -> "__debug_macro")
@@ -116,7 +116,7 @@ let object_format_to_section_name format section =
       | Debug_loclists -> ".debug_loclists"
       | Debug_rnglists -> ".debug_rnglists"
       | Debug_str -> ".debug_str"
-      | Debug_str_offs -> ".debug_str_offs"
+      | Debug_str_offs -> ".debug_str_offsets"
       | Debug_names -> ".debug_names"
       | Debug_addr -> ".debug_addr"
       | Debug_macro -> ".debug_macro")

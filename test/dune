@@ -44,8 +44,7 @@
 (rule
  (alias runtest)
  (deps hello_world.c)
- (targets
-   hello_world hello_world.dSYM )
+ (targets hello_world hello_world.dSYM)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -432,7 +431,7 @@
    (= %{architecture} "arm64")))
  (action
   (with-stdout-to
-    %{target}
+   %{target}
    (run %{bin:dwarfdump} --debug-macro "test_macros"))))
 
 (rule
@@ -445,7 +444,7 @@
    (= %{architecture} "arm64")))
  (action
   (with-stdout-to
-    %{target}
+   %{target}
    (system "dwarfdump --debug-macro test_macros"))))
 
 (rule
@@ -701,14 +700,13 @@
 (rule
  (alias runtest)
  (deps hello_world.cpp)
- (targets hello_world_linux_cpp)
+ (targets hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
    (= %{architecture} "amd64")))
  (action
-  (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_linux_cpp")))
-
+  (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp_linux")))
 
 ; =============================================================================
 ; GNU-DWARFDUMP COMPARISON TESTS - LINUX
@@ -716,41 +714,41 @@
 
 ; --debug-line comparison
 
-; (rule
-;  (alias runtest)
-;  (target ocaml_dwarfdump_line.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (with-stdout-to
-;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-line hello_world_linux))))
+(rule
+ (alias runtest)
+ (target ocaml_dwarfdump_line.out)
+ (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-dwarfdump} --debug-line hello_world_linux))))
 
-; (rule
-;  (alias runtest)
-;  (target system_dwarfdump_line.out)
-;  (deps hello_world_linux)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (with-stdout-to
-;    %{target}
-;    (system "dwarfdump --print-lines hello_world_linux"))))
+(rule
+ (alias runtest)
+ (target system_dwarfdump_line.out)
+ (deps hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "dwarfdump --print-lines hello_world_linux"))))
 
-; (rule
-;  (alias runtest)
-;  (deps ocaml_dwarfdump_line.out system_dwarfdump_line.out)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (diff system_dwarfdump_line.out ocaml_dwarfdump_line.out)))
+(rule
+ (alias runtest)
+ (deps ocaml_dwarfdump_line.out system_dwarfdump_line.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_dwarfdump_line.out ocaml_dwarfdump_line.out)))
 
 ; --debug-info comparison
 
@@ -816,7 +814,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump -s hello_world_linux"))))
+   (system "dwarfdump --print-strings hello_world_linux"))))
 
 (rule
  (alias runtest)
@@ -828,43 +826,81 @@
  (action
   (diff system_dwarfdump_str.out ocaml_dwarfdump_str.out)))
 
-; ; --debug-str-offsets comparison
+; --debug-str comparison (C++ binary)
 
-; (rule
-;  (alias runtest)
-;  (target ocaml_dwarfdump_str_offsets.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (with-stdout-to
-;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-str-offsets hello_world_linux))))
+(rule
+ (alias runtest)
+ (target ocaml_dwarfdump_str_cpp.out)
+ (deps %{bin:gnu-dwarfdump} hello_world_cpp_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-dwarfdump} --debug-str hello_world_cpp_linux))))
 
-; (rule
-;  (alias runtest)
-;  (target system_dwarfdump_str_offsets.out)
-;  (deps hello_world_linux)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (with-stdout-to
-;    %{target}
-;    (system "dwarfdump --print-str-offsets hello_world_linux"))))
+(rule
+ (alias runtest)
+ (target system_dwarfdump_str_cpp.out)
+ (deps hello_world_cpp_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "dwarfdump --print-strings hello_world_cpp_linux"))))
 
-; (rule
-;  (alias runtest)
-;  (deps ocaml_dwarfdump_str_offsets.out system_dwarfdump_str_offsets.out)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (diff system_dwarfdump_str_offsets.out ocaml_dwarfdump_str_offsets.out)))
+(rule
+ (alias runtest)
+ (deps ocaml_dwarfdump_str_cpp.out system_dwarfdump_str_cpp.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_dwarfdump_str_cpp.out ocaml_dwarfdump_str_cpp.out)))
+
+; --debug-str-offsets comparison
+
+(rule
+ (alias runtest)
+ (target ocaml_dwarfdump_str_offsets.out)
+ (deps %{bin:gnu-dwarfdump} hello_world_cpp_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-dwarfdump} --debug-str-offsets hello_world_cpp_linux))))
+
+(rule
+ (alias runtest)
+ (target system_dwarfdump_str_offsets.out)
+ (deps hello_world_cpp_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "dwarfdump --print-str-offsets hello_world_cpp_linux"))))
+
+(rule
+ (alias runtest)
+ (deps ocaml_dwarfdump_str_offsets.out system_dwarfdump_str_offsets.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_dwarfdump_str_offsets.out ocaml_dwarfdump_str_offsets.out)))
 
 ; ; --debug-abbrev comparison
 
@@ -903,7 +939,6 @@
 ;    (= %{architecture} "amd64")))
 ;  (action
 ;   (diff system_dwarfdump_abbrev.out ocaml_dwarfdump_abbrev.out)))
-
 
 ; ; --debug-names comparison
 
