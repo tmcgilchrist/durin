@@ -977,7 +977,7 @@ module CompileUnit : sig
   type t
   (** A compilation unit with parsed content. *)
 
-  val make : int -> span -> Object.Buffer.t -> header -> t
+  val make : int -> span -> Object_file.t -> header -> t
   (** Create a new compilation unit. *)
 
   val dwarf_info : t -> int
@@ -1604,10 +1604,10 @@ end
 
 (** Line string table parsing for .debug_line_str section.
 
-    This module provides support for parsing DWARF line string tables, which contain
-    null-terminated strings specifically used by the line number program. These strings
-    are typically file names and directory paths referenced by line table entries via
-    DW_FORM_line_strp form. *)
+    This module provides support for parsing DWARF line string tables, which
+    contain null-terminated strings specifically used by the line number
+    program. These strings are typically file names and directory paths
+    referenced by line table entries via DW_FORM_line_strp form. *)
 module DebugLineStr : sig
   type string_entry = {
     offset : int;  (** Offset of string in debug_line_str section *)
@@ -1911,12 +1911,14 @@ module DebugAranges : sig
       Contains header information identifying the compilation unit and a list of
       all address ranges belonging to that unit. *)
 
-  val parse : Object.Buffer.t -> u32 -> aranges_set
+  val parse : Object.Buffer.t -> aranges_set option
   (** Parse an address range table from buffer.
 
+      Automatically detects and handles both ELF (.debug_aranges) and MachO
+      (__debug_aranges) section naming conventions.
+
       @param buffer Object buffer containing the DWARF data
-      @param section_offset Offset to start of .debug_aranges section
-      @return Parsed address range table
+      @return Optional parsed address range table, None if section not found
       @raise Failure if section format is invalid *)
 end
 

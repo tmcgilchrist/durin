@@ -871,12 +871,12 @@ let dump_debug_str filename =
       | None -> handle_section_not_found "__debug_str section" filename is_dsym
       | Some str_table ->
           (* Output each string entry in dwarfdump format *)
-          Array.iter (fun (entry : Dwarf.DebugStr.string_entry) ->
-            if entry.length > 0 then
-              Printf.printf "0x%08x: \"%s\"\n" entry.offset entry.content
-            else
-              Printf.printf "0x%08x: \"\"\n" entry.offset
-          ) str_table.entries)
+          Array.iter
+            (fun (entry : Dwarf.DebugStr.string_entry) ->
+              if entry.length > 0 then
+                Printf.printf "0x%08x: \"%s\"\n" entry.offset entry.content
+              else Printf.printf "0x%08x: \"\"\n" entry.offset)
+            str_table.entries)
 
 let dump_debug_line_str filename =
   handle_dwarf_errors (fun () ->
@@ -892,12 +892,12 @@ let dump_debug_line_str filename =
           handle_section_not_found "__debug_line_str section" filename is_dsym
       | Some line_str_table ->
           (* Output each string entry in dwarfdump format *)
-          Array.iter (fun (entry : Dwarf.DebugLineStr.string_entry) ->
-            if entry.length > 0 then
-              Printf.printf "0x%08x: \"%s\"\n" entry.offset entry.content
-            else
-              Printf.printf "0x%08x: \"\"\n" entry.offset
-          ) line_str_table.entries)
+          Array.iter
+            (fun (entry : Dwarf.DebugLineStr.string_entry) ->
+              if entry.length > 0 then
+                Printf.printf "0x%08x: \"%s\"\n" entry.offset entry.content
+              else Printf.printf "0x%08x: \"\"\n" entry.offset)
+            line_str_table.entries)
 
 let dump_debug_addr filename =
   handle_dwarf_errors (fun () ->
@@ -938,22 +938,17 @@ let dump_debug_addr filename =
 
 let dump_debug_aranges filename =
   handle_dwarf_errors (fun () ->
-      let actual_filename, is_dsym, buffer, format_str, object_format =
+      let actual_filename, is_dsym, buffer, format_str, _object_format =
         init_dwarf_context filename
       in
       Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
       Printf.printf ".debug_aranges contents:\n";
 
-      (* Try to find the debug_aranges section *)
-      let debug_aranges_section_name =
-        Dwarf.object_format_to_section_name object_format Dwarf.Debug_aranges
-      in
-      match find_debug_section buffer debug_aranges_section_name with
+      (* Use DebugAranges.parse to get address range table *)
+      match Dwarf.DebugAranges.parse buffer with
       | None ->
-          handle_section_not_found debug_aranges_section_name filename is_dsym
-      | Some (section_offset, _section_size) ->
-          (* Parse the debug_aranges section *)
-          let aranges_set = Dwarf.DebugAranges.parse buffer section_offset in
+          handle_section_not_found "__debug_aranges section" filename is_dsym
+      | Some aranges_set ->
           let header = aranges_set.Dwarf.DebugAranges.header in
 
           (* Print header information matching system dwarfdump format *)

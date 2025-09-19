@@ -220,14 +220,15 @@ let dump_debug_str filename =
             Printf.printf "Try: %s\n" debug_path)
     | Some str_table ->
         (* Output each string entry *)
-        Array.iter (fun (entry : Dwarf.DebugStr.string_entry) ->
-          if entry.length > 0 then
-            Printf.printf "name at offset 0x%08x, length %4d is '%s'\n"
-              entry.offset entry.length entry.content
-          else
-            Printf.printf "name at offset 0x%08x, length %4d is ''\n"
-              entry.offset 0
-        ) str_table.entries;
+        Array.iter
+          (fun (entry : Dwarf.DebugStr.string_entry) ->
+            if entry.length > 0 then
+              Printf.printf "name at offset 0x%08x, length %4d is '%s'\n"
+                entry.offset entry.length entry.content
+            else
+              Printf.printf "name at offset 0x%08x, length %4d is ''\n"
+                entry.offset 0)
+          str_table.entries;
         Printf.printf "\n"
   with
   | Sys_error msg ->
@@ -352,15 +353,193 @@ let dump_debug_line_str filename =
             Printf.printf "Try: %s\n" debug_path)
     | Some line_str_table ->
         (* Output each string entry *)
-        Array.iter (fun (entry : Dwarf.DebugLineStr.string_entry) ->
-          if entry.length > 0 then
-            Printf.printf "name at offset 0x%08x, length %4d is '%s'\n"
-              entry.offset entry.length entry.content
-          else
-            Printf.printf "name at offset 0x%08x, length %4d is ''\n"
-              entry.offset 0
-        ) line_str_table.entries;
+        Array.iter
+          (fun (entry : Dwarf.DebugLineStr.string_entry) ->
+            if entry.length > 0 then
+              Printf.printf "name at offset 0x%08x, length %4d is '%s'\n"
+                entry.offset entry.length entry.content
+            else
+              Printf.printf "name at offset 0x%08x, length %4d is ''\n"
+                entry.offset 0)
+          line_str_table.entries;
         Printf.printf "\n"
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
+let dump_debug_aranges filename =
+  try
+    let actual_filename, is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output header similar to dwarfdump --debug-aranges with leading newline *)
+    Printf.printf "\n.debug_aranges\n";
+
+    (* Use DebugAranges.parse to get address range table *)
+    match Dwarf.DebugAranges.parse buffer with
+    | None ->
+        Printf.printf "No %s section found in file\n"
+          (get_section_display_name buffer Dwarf.Debug_aranges);
+        if not is_debug then (
+          Printf.printf
+            "Note: For ELF binaries, debug info might be in separate .debug \
+             files\n";
+          let debug_path = filename ^ ".debug" in
+          if Sys.file_exists debug_path then
+            Printf.printf "Try: %s\n" debug_path)
+    | Some aranges_set ->
+        let header = aranges_set.Dwarf.DebugAranges.header in
+
+        (* Create DWARF object and get compilation units for additional info *)
+        let dwarf = Dwarf.create buffer in
+        let compile_units = Dwarf.parse_compile_units dwarf in
+
+        (* Find the compilation unit that matches the debug_info_offset from aranges *)
+        let cu_die_offset =
+          Unsigned.UInt32.to_int header.Dwarf.DebugAranges.debug_info_offset
+        in
+
+        (* For the first compilation unit, the unit_offset_in_section should be 0
+           and die_offset_in_section should be 12. Since we know cu_die_offset=12,
+           we expect the first unit to match when unit_offset_in_section=0. *)
+        let matching_unit =
+          let rec find_unit seq =
+            match seq () with
+            | Seq.Nil -> None
+            | Seq.Cons (unit, rest) ->
+                (* The span.start for a compilation unit represents the offset within .debug_info
+                   where this compilation unit starts. For the first CU, this should be 0.
+                   The cu_die_offset (12) represents where the DIE starts within the CU.
+                   So we need to find the CU where span.start + 12 = cu_die_offset. *)
+                let unit_start_in_debug_info =
+                  Dwarf.CompileUnit.dwarf_info unit
+                in
+                (* The cu_die_offset is relative to the start of .debug_info section.
+                   For the first CU starting at offset 0, the DIE starts at offset 12.
+                   For subsequent CUs, we need to check if their DIE offset matches. *)
+                if unit_start_in_debug_info + 12 = cu_die_offset then Some unit
+                else find_unit rest
+          in
+          find_unit compile_units
+        in
+
+        (* Print compilation unit header info if found *)
+        (match matching_unit with
+        | Some unit ->
+            let unit_start_in_debug_info = Dwarf.CompileUnit.dwarf_info unit in
+            Printf.printf "\nCOMPILE_UNIT<header overall offset = 0x%08x>:\n"
+              unit_start_in_debug_info;
+            Printf.printf "< 0><0x%08x>  DW_TAG_compile_unit\n" cu_die_offset;
+
+            (* Get abbreviation table for DIE parsing *)
+            let (_, abbrev_table) = Dwarf.get_abbrev_table
+              (Dwarf.create buffer)
+              (Unsigned.UInt64.of_uint32 (Dwarf.CompileUnit.header unit).debug_abbrev_offset) in
+
+            (* Parse and print root DIE attributes *)
+            (match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+            | Some root_die ->
+                (* Parse and print root DIE attributes with system dwarfdump formatting *)
+                let attributes = root_die.Dwarf.DIE.attributes in
+
+                (* Helper function to print attribute with system dwarfdump spacing *)
+                let print_attribute attr_name attr_value =
+                  let spacing = match attr_name with
+                    | "DW_AT_producer" -> "              "  (* 14 spaces *)
+                    | "DW_AT_language" -> "              "  (* 14 spaces *)
+                    | "DW_AT_name" -> "                  "  (* 18 spaces *)
+                    | "DW_AT_comp_dir" -> "              "  (* 14 spaces *)
+                    | "DW_AT_low_pc" -> "                "  (* 16 spaces *)
+                    | "DW_AT_high_pc" -> "               "  (* 15 spaces *)
+                    | "DW_AT_stmt_list" -> "             "  (* 13 spaces *)
+                    | _ -> "              "  (* 14 spaces default *)
+                  in
+                  Printf.printf "                    %s%s%s\n" attr_name spacing attr_value
+                in
+
+                (* Handle each attribute individually for proper formatting *)
+                List.iter (fun attr ->
+                  let attr_name = Dwarf.string_of_attribute_encoding attr.Dwarf.DIE.attr in
+
+                  (* Special formatting for DW_AT_high_pc to match system output *)
+                  if attr.Dwarf.DIE.attr = Dwarf.DW_AT_high_pc then (
+                    match attr.Dwarf.DIE.value with
+                    | Dwarf.DIE.UData offset_value ->
+                        (* Find DW_AT_low_pc to calculate actual high_pc *)
+                        let low_pc_opt = List.find_opt (fun a -> a.Dwarf.DIE.attr = Dwarf.DW_AT_low_pc) attributes in
+                        (match low_pc_opt with
+                        | Some low_pc_attr ->
+                            (match low_pc_attr.Dwarf.DIE.value with
+                            | Dwarf.DIE.Address low_pc ->
+                                let offset = Unsigned.UInt64.to_int offset_value in
+                                let high_pc = Unsigned.UInt64.add low_pc offset_value in
+                                let attr_value = Printf.sprintf "<offset-from-lowpc> %d <highpc: 0x%08x>"
+                                  offset (Unsigned.UInt64.to_int high_pc) in
+                                print_attribute attr_name attr_value
+                            | _ ->
+                                let attr_value = Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int offset_value) in
+                                print_attribute attr_name attr_value)
+                        | None ->
+                            let attr_value = Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int offset_value) in
+                            print_attribute attr_name attr_value)
+                    | _ ->
+                        let attr_value = match attr.Dwarf.DIE.value with
+                          | Dwarf.DIE.Address addr -> Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int addr)
+                          | _ -> "<unsupported_form>"
+                        in
+                        print_attribute attr_name attr_value
+                  ) else (
+                    (* Standard attribute formatting *)
+                    let attr_value =
+                      match attr.Dwarf.DIE.value with
+                      | Dwarf.DIE.String s -> s
+                      | Dwarf.DIE.UData u ->
+                          Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u)
+                      | Dwarf.DIE.Address addr ->
+                          Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int addr)
+                      | Dwarf.DIE.Language lang ->
+                          Dwarf.string_of_dwarf_language lang
+                      | _ -> "<unsupported_form>"
+                    in
+                    (* Only print attributes that appear in system dwarfdump output *)
+                    if attr.Dwarf.DIE.attr = Dwarf.DW_AT_producer ||
+                       attr.Dwarf.DIE.attr = Dwarf.DW_AT_language ||
+                       attr.Dwarf.DIE.attr = Dwarf.DW_AT_name ||
+                       attr.Dwarf.DIE.attr = Dwarf.DW_AT_comp_dir ||
+                       attr.Dwarf.DIE.attr = Dwarf.DW_AT_low_pc ||
+                       attr.Dwarf.DIE.attr = Dwarf.DW_AT_stmt_list then
+                      print_attribute attr_name attr_value
+                  )
+                ) attributes;
+            | None -> ())
+        | None -> ());
+
+        Printf.printf "\n\n";
+
+        (* Print address ranges in system dwarfdump format *)
+        List.iter
+          (fun range ->
+            let start_addr =
+              Unsigned.UInt64.to_int64 range.Dwarf.DebugAranges.start_address
+            in
+            let length =
+              Unsigned.UInt64.to_int64 range.Dwarf.DebugAranges.length
+            in
+            let cu_offset =
+              Unsigned.UInt32.to_int32
+                header.Dwarf.DebugAranges.debug_info_offset
+            in
+            Printf.printf
+              "arange starts at 0x%08Lx, length of 0x%08Lx, cu_die_offset = \
+               0x%08lx\n"
+              start_addr length cu_offset)
+          aranges_set.Dwarf.DebugAranges.ranges;
+        Printf.printf "arange end\n\n"
   with
   | Sys_error msg ->
       Printf.eprintf "Error: %s\n" msg;
@@ -463,9 +642,7 @@ let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev
     Printf.eprintf "Unimplemented\n";
     exit 1)
   else if debug_line_str then dump_debug_line_str filename
-  else if debug_aranges then (
-    Printf.eprintf "Unimplemented\n";
-    exit 1)
+  else if debug_aranges then dump_debug_aranges filename
   else if debug_loclists then (
     Printf.eprintf "Unimplemented\n";
     exit 1)

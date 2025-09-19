@@ -16,10 +16,6 @@
 (test
  (name test_debug_str_offsets)
  (libraries durin object alcotest cmdliner)
- (build_if
-  (and
-   (= %{system} "macosx")
-   (= %{architecture} "arm64")))
  (action
   (run %{exe:test_debug_str_offsets.exe})))
 
@@ -65,12 +61,12 @@
 
 ; macOS Cram Tests
 
-; (cram
-;  (enabled_if
-;   (and
-;    (= %{system} "macosx")
-;    (= %{architecture} "arm64")))
-;  (deps %{bin:dwarfdump}))
+(cram
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (deps %{bin:dwarfdump}))
 
 (cram
  (deps %{bin:objdump} hello_world)
@@ -750,7 +746,7 @@
  (action
   (diff system_dwarfdump_line.out ocaml_dwarfdump_line.out)))
 
-; --debug-info comparison
+; ; --debug-info comparison
 
 ; (rule
 ;  (alias runtest)
@@ -1016,7 +1012,9 @@
 ;  (action
 ;   (diff system_dwarfdump_macro.out ocaml_dwarfdump_macro.out)))
 
-; ; --debug-line-str comparison
+; --debug-line-str comparison
+; NOTE: System dwarfdump does not have a specific flag for .debug_line_str section
+; The -l flag outputs .debug_line (line number program), not .debug_line_str (line string table)
 
 ; (rule
 ;  (alias runtest)
@@ -1054,43 +1052,43 @@
 ;  (action
 ;   (diff system_dwarfdump_line_str.out ocaml_dwarfdump_line_str.out)))
 
-; ; --debug-aranges comparison
+; --debug-aranges comparison
 
-; (rule
-;  (alias runtest)
-;  (target ocaml_dwarfdump_aranges.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (with-stdout-to
-;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-aranges hello_world_linux))))
+(rule
+ (alias runtest)
+ (target ocaml_dwarfdump_aranges.out)
+ (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-dwarfdump} --debug-aranges hello_world_linux))))
 
-; (rule
-;  (alias runtest)
-;  (target system_dwarfdump_aranges.out)
-;  (deps hello_world_linux)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (with-stdout-to
-;    %{target}
-;    (system "dwarfdump -r hello_world_linux"))))
+(rule
+ (alias runtest)
+ (target system_dwarfdump_aranges.out)
+ (deps hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "dwarfdump -r hello_world_linux"))))
 
-; (rule
-;  (alias runtest)
-;  (deps ocaml_dwarfdump_aranges.out system_dwarfdump_aranges.out)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (diff system_dwarfdump_aranges.out ocaml_dwarfdump_aranges.out)))
+(rule
+ (alias runtest)
+ (deps ocaml_dwarfdump_aranges.out system_dwarfdump_aranges.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_dwarfdump_aranges.out ocaml_dwarfdump_aranges.out)))
 
 ; ; --debug-loclists comparison
 
