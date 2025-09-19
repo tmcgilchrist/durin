@@ -1,7 +1,6 @@
 (executables
  (public_names
   dwprod
-
   objdump
   addr2line
   dwarf_validate
@@ -19,6 +18,6 @@
  (libraries durin object integers cmdliner))
 
 (executable
-  (public_name dwarfdump)
-  (name dwarfdump)
+ (public_name dwarfdump)
+ (name dwarfdump)
  (libraries durin object integers cmdliner))

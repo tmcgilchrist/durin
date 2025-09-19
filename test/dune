@@ -428,7 +428,10 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:dwarfdump} --debug-macro "hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
+   (run
+    %{bin:dwarfdump}
+    --debug-macro
+    "hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
 
 (rule
  (alias runtest)
@@ -441,7 +444,8 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump --debug-macro hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
+   (system
+    "dwarfdump --debug-macro hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
 
 (rule
  (alias runtest)
@@ -746,43 +750,43 @@
  (action
   (diff system_dwarfdump_line.out ocaml_dwarfdump_line.out)))
 
-; ; --debug-info comparison
+; --debug-info comparison
 
-; (rule
-;  (alias runtest)
-;  (target ocaml_dwarfdump_info.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (with-stdout-to
-;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-info hello_world_linux))))
+(rule
+ (alias runtest)
+ (target ocaml_dwarfdump_info.out)
+ (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-dwarfdump} --debug-info hello_world_linux))))
 
-; (rule
-;  (alias runtest)
-;  (target system_dwarfdump_info.out)
-;  (deps hello_world_linux)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (with-stdout-to
-;    %{target}
-;    (system "dwarfdump --print-info hello_world_linux"))))
+(rule
+ (alias runtest)
+ (target system_dwarfdump_info.out)
+ (deps hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "dwarfdump --print-info hello_world_linux"))))
 
-; (rule
-;  (alias runtest)
-;  (deps ocaml_dwarfdump_info.out system_dwarfdump_info.out)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (diff system_dwarfdump_info.out ocaml_dwarfdump_info.out)))
+(rule
+ (alias runtest)
+ (deps ocaml_dwarfdump_info.out system_dwarfdump_info.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_dwarfdump_info.out ocaml_dwarfdump_info.out)))
 
 ; --debug-str comparison
 

@@ -2449,15 +2449,18 @@ module DIE = struct
     | DW_FORM_string ->
         let str = Object.Buffer.Read.zero_string cur () in
         String (match str with Some s -> s | None -> "")
-    | DW_FORM_strp ->
+    | DW_FORM_strp -> (
         (* String pointer to Debug_str section *)
         let offset = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
-        (match find_debug_section_by_type full_buffer Debug_str with
-         | Some (str_section_offset, _) ->
-             (match read_string_from_section full_buffer offset (Unsigned.UInt64.to_int str_section_offset) with
-              | Some s -> String s
-              | None -> String (Printf.sprintf "<strp_offset:%d>" offset))
-         | None -> String (Printf.sprintf "<strp_offset:%d>" offset))
+        match find_debug_section_by_type full_buffer Debug_str with
+        | Some (str_section_offset, _) -> (
+            match
+              read_string_from_section full_buffer offset
+                (Unsigned.UInt64.to_int str_section_offset)
+            with
+            | Some s -> String s
+            | None -> String (Printf.sprintf "<strp_offset:%d>" offset))
+        | None -> String (Printf.sprintf "<strp_offset:%d>" offset))
     | DW_FORM_udata ->
         let value = Object.Buffer.Read.uleb128 cur in
         UData (Unsigned.UInt64.of_int value)
@@ -2564,15 +2567,18 @@ module DIE = struct
         let index = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
         let resolved_string = resolve_string_index full_buffer index in
         String resolved_string
-    | DW_FORM_line_strp ->
+    | DW_FORM_line_strp -> (
         (* String pointer to Debug_line_str section *)
         let offset = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
-        (match find_debug_section_by_type full_buffer Debug_line_str with
-         | Some (str_section_offset, _) ->
-             (match read_string_from_section full_buffer offset (Unsigned.UInt64.to_int str_section_offset) with
-              | Some s -> String s
-              | None -> String (Printf.sprintf "<line_strp_offset:%d>" offset))
-         | None -> String (Printf.sprintf "<line_strp_offset:%d>" offset))
+        match find_debug_section_by_type full_buffer Debug_line_str with
+        | Some (str_section_offset, _) -> (
+            match
+              read_string_from_section full_buffer offset
+                (Unsigned.UInt64.to_int str_section_offset)
+            with
+            | Some s -> String s
+            | None -> String (Printf.sprintf "<line_strp_offset:%d>" offset))
+        | None -> String (Printf.sprintf "<line_strp_offset:%d>" offset))
     | _ ->
         (* For unsupported forms, skip and return placeholder *)
         String "<unsupported_form>"
