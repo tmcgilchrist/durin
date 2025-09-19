@@ -860,110 +860,44 @@ let dump_debug_str_offsets filename =
 
 let dump_debug_str filename =
   handle_dwarf_errors (fun () ->
-      let actual_filename, is_dsym, buffer, format_str, object_format =
+      let actual_filename, is_dsym, buffer, format_str, _object_format =
         init_dwarf_context filename
       in
       Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
       Printf.printf ".debug_str contents:\n";
 
-      (* Try to find the debug_str section *)
-      let debug_str_section_name =
-        Dwarf.object_format_to_section_name object_format Dwarf.Debug_str
-      in
-      match find_debug_section buffer debug_str_section_name with
+      (* Use DebugStr.parse to get string table *)
+      match Dwarf.DebugStr.parse buffer with
       | None -> handle_section_not_found "__debug_str section" filename is_dsym
-      | Some (section_offset, section_size) ->
-          (* Create cursor at the debug_str section offset *)
-          let cursor = create_section_cursor buffer section_offset in
-
-          (* Parse strings from the section *)
-          let section_end =
-            Unsigned.UInt32.to_int section_offset
-            + Unsigned.UInt64.to_int section_size
-          in
-          let current_pos = ref (Unsigned.UInt32.to_int section_offset) in
-          let string_offset = ref 0 in
-
-          while !current_pos < section_end do
-            (* Read null-terminated string *)
-            let start_pos = !current_pos in
-            let str_buffer = Stdlib.Buffer.create 256 in
-            let rec read_string () =
-              if !current_pos >= section_end then ()
-              else
-                let byte = Object.Buffer.Read.u8 cursor in
-                if Unsigned.UInt8.to_int byte = 0 then incr current_pos
-                else (
-                  Stdlib.Buffer.add_char str_buffer
-                    (char_of_int (Unsigned.UInt8.to_int byte));
-                  incr current_pos;
-                  read_string ())
-            in
-            read_string ();
-
-            let str_content = Stdlib.Buffer.contents str_buffer in
-            if String.length str_content > 0 then
-              Printf.printf "0x%08x: \"%s\"\n" !string_offset str_content
-            else if !current_pos < section_end then
-              (* Empty string, but not at end of section *)
-              Printf.printf "0x%08x: \"\"\n" !string_offset;
-
-            string_offset := !string_offset + (!current_pos - start_pos)
-          done)
+      | Some str_table ->
+          (* Output each string entry in dwarfdump format *)
+          Array.iter (fun (entry : Dwarf.DebugStr.string_entry) ->
+            if entry.length > 0 then
+              Printf.printf "0x%08x: \"%s\"\n" entry.offset entry.content
+            else
+              Printf.printf "0x%08x: \"\"\n" entry.offset
+          ) str_table.entries)
 
 let dump_debug_line_str filename =
   handle_dwarf_errors (fun () ->
-      let actual_filename, is_dsym, buffer, format_str, object_format =
+      let actual_filename, is_dsym, buffer, format_str, _object_format =
         init_dwarf_context filename
       in
       Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
       Printf.printf ".debug_line_str contents:\n";
 
-      (* Try to find the debug_line_str section *)
-      let debug_line_str_section_name =
-        Dwarf.object_format_to_section_name object_format Dwarf.Debug_line_str
-      in
-      match find_debug_section buffer debug_line_str_section_name with
+      (* Use DebugLineStr.parse to get line string table *)
+      match Dwarf.DebugLineStr.parse buffer with
       | None ->
           handle_section_not_found "__debug_line_str section" filename is_dsym
-      | Some (section_offset, section_size) ->
-          (* Create cursor at the debug_line_str section offset *)
-          let cursor = create_section_cursor buffer section_offset in
-
-          (* Parse strings from the section *)
-          let section_end =
-            Unsigned.UInt32.to_int section_offset
-            + Unsigned.UInt64.to_int section_size
-          in
-          let current_pos = ref (Unsigned.UInt32.to_int section_offset) in
-          let string_offset = ref 0 in
-
-          while !current_pos < section_end do
-            (* Read null-terminated string *)
-            let start_pos = !current_pos in
-            let str_buffer = Stdlib.Buffer.create 256 in
-            let rec read_string () =
-              if !current_pos >= section_end then ()
-              else
-                let byte = Object.Buffer.Read.u8 cursor in
-                if Unsigned.UInt8.to_int byte = 0 then incr current_pos
-                else (
-                  Stdlib.Buffer.add_char str_buffer
-                    (char_of_int (Unsigned.UInt8.to_int byte));
-                  incr current_pos;
-                  read_string ())
-            in
-            read_string ();
-
-            let str_content = Stdlib.Buffer.contents str_buffer in
-            if String.length str_content > 0 then
-              Printf.printf "0x%08x: \"%s\"\n" !string_offset str_content
-            else if !current_pos < section_end then
-              (* Empty string, but not at end of section *)
-              Printf.printf "0x%08x: \"\"\n" !string_offset;
-
-            string_offset := !string_offset + (!current_pos - start_pos)
-          done)
+      | Some line_str_table ->
+          (* Output each string entry in dwarfdump format *)
+          Array.iter (fun (entry : Dwarf.DebugLineStr.string_entry) ->
+            if entry.length > 0 then
+              Printf.printf "0x%08x: \"%s\"\n" entry.offset entry.content
+            else
+              Printf.printf "0x%08x: \"\"\n" entry.offset
+          ) line_str_table.entries)
 
 let dump_debug_addr filename =
   handle_dwarf_errors (fun () ->

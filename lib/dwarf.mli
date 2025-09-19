@@ -1574,6 +1574,62 @@ module DebugNames : sig
   (** Calculate entry pool offset based on header information *)
 end
 
+(** String table parsing for .debug_str section.
+
+    This module provides support for parsing DWARF string tables, which contain
+    null-terminated strings referenced by other sections via offsets. The string
+    table centralizes string storage and enables efficient string sharing across
+    debug information entries. *)
+module DebugStr : sig
+  type string_entry = {
+    offset : int;  (** Offset of string in debug_str section *)
+    length : int;  (** Length of string excluding null terminator *)
+    content : string;  (** The actual string content *)
+  }
+  (** Individual string entry with location and content information *)
+
+  type t = {
+    entries : string_entry array;  (** Array of all strings in the section *)
+    total_size : int;  (** Total size of the debug_str section *)
+  }
+  (** Complete parsed debug_str section *)
+
+  val parse : Object.Buffer.t -> t option
+  (** Parse the complete .debug_str section from buffer.
+
+      @param buffer Object buffer containing the DWARF data
+      @return Optional parsed string table, None if section not found
+      @raise Failure if section format is invalid *)
+end
+
+(** Line string table parsing for .debug_line_str section.
+
+    This module provides support for parsing DWARF line string tables, which contain
+    null-terminated strings specifically used by the line number program. These strings
+    are typically file names and directory paths referenced by line table entries via
+    DW_FORM_line_strp form. *)
+module DebugLineStr : sig
+  type string_entry = {
+    offset : int;  (** Offset of string in debug_line_str section *)
+    length : int;  (** Length of string excluding null terminator *)
+    content : string;  (** The actual string content *)
+  }
+  (** Individual string entry with location and content information *)
+
+  type t = {
+    entries : string_entry array;  (** Array of all strings in the section *)
+    total_size : int;  (** Total size of the debug_line_str section *)
+  }
+  (** Complete parsed debug_line_str section *)
+
+  val parse : Object.Buffer.t -> t option
+  (** Parse the complete .debug_line_str section from buffer.
+
+      @param buffer Object buffer containing the DWARF data
+      @return Optional parsed line string table, None if section not found
+      @raise Failure if section format is invalid *)
+end
+
 val object_format_to_section_name : object_format -> dwarf_section -> string
 (** Textual representation of section name in [object_format] *)
 

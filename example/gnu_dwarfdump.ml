@@ -84,76 +84,13 @@ let dump_debug_line filename =
         (* Parse the line program and display entries *)
         let entries = Dwarf.LineTable.parse_line_program cursor header in
 
-        (* Helper function to resolve line_strp offsets using object format detection *)
-        let resolve_line_strp_offset_proper buffer offset =
-          match get_section_offset buffer Dwarf.Debug_line_str with
-          | None ->
-              Printf.sprintf "<line_strp:0x%08lx>"
-                (Unsigned.UInt32.to_int32 offset)
-          | Some (section_offset, _) -> (
-              try
-                let string_cursor =
-                  Object.Buffer.cursor buffer
-                    ~at:
-                      (Unsigned.UInt64.to_int section_offset
-                      + Unsigned.UInt32.to_int offset)
-                in
-                let str_buffer = Stdlib.Buffer.create 256 in
-                let rec read_string () =
-                  let byte = Object.Buffer.Read.u8 string_cursor in
-                  if Unsigned.UInt8.to_int byte = 0 then ()
-                  else (
-                    Stdlib.Buffer.add_char str_buffer
-                      (char_of_int (Unsigned.UInt8.to_int byte));
-                    read_string ())
-                in
-                read_string ();
-                Stdlib.Buffer.contents str_buffer
-              with _ ->
-                Printf.sprintf "<line_strp:0x%08lx>"
-                  (Unsigned.UInt32.to_int32 offset))
-        in
-
-        (* Get the resolved filename from header for first file if available *)
+        (* Get the filename from header for first file (line_strp references now resolved by library) *)
         let get_filename () =
           if Array.length header.file_names > 0 then
             let file_entry = header.file_names.(0) in
-            (* Resolve line_strp references if they exist *)
-            let resolved_name =
-              if String.contains file_entry.name '<' then
-                (* Parse <line_strp:0x...> format *)
-                let name_str = file_entry.name in
-                if String.sub name_str 0 11 = "<line_strp:" then
-                  let hex_part =
-                    String.sub name_str 11 (String.length name_str - 12)
-                  in
-                  let offset =
-                    Scanf.sscanf hex_part "0x%08lx" (fun x ->
-                        Unsigned.UInt32.of_int32 x)
-                  in
-                  resolve_line_strp_offset_proper buffer offset
-                else file_entry.name
-              else file_entry.name
-            in
-            let resolved_dir =
-              if String.contains file_entry.directory '<' then
-                (* Parse <line_strp:0x...> format *)
-                let dir_str = file_entry.directory in
-                if String.sub dir_str 0 11 = "<line_strp:" then
-                  let hex_part =
-                    String.sub dir_str 11 (String.length dir_str - 12)
-                  in
-                  let offset =
-                    Scanf.sscanf hex_part "0x%08lx" (fun x ->
-                        Unsigned.UInt32.of_int32 x)
-                  in
-                  resolve_line_strp_offset_proper buffer offset
-                else file_entry.directory
-              else file_entry.directory
-            in
             let full_path =
-              if resolved_dir = "" then resolved_name
-              else resolved_dir ^ "/" ^ resolved_name
+              if file_entry.directory = "" then file_entry.name
+              else file_entry.directory ^ "/" ^ file_entry.name
             in
             Some full_path
           else None
@@ -269,8 +206,8 @@ let dump_debug_str filename =
     (* Output header similar to dwarfdump --debug-str *)
     Printf.printf "%s" (format_section_header buffer Dwarf.Debug_str None);
 
-    (* Try to get the debug_str section offset and size *)
-    match get_section_offset buffer Dwarf.Debug_str with
+    (* Use DebugStr.parse to get string table *)
+    match Dwarf.DebugStr.parse buffer with
     | None ->
         Printf.printf "No %s section found in file\n"
           (get_section_display_name buffer Dwarf.Debug_str);
@@ -281,50 +218,16 @@ let dump_debug_str filename =
           let debug_path = filename ^ ".debug" in
           if Sys.file_exists debug_path then
             Printf.printf "Try: %s\n" debug_path)
-    | Some (section_offset, section_size) ->
-        (* Create cursor at the debug_str section offset *)
-        let cursor =
-          Object.Buffer.cursor buffer
-            ~at:(Unsigned.UInt64.to_int section_offset)
-        in
-
-        (* Parse strings from the section *)
-        let section_end =
-          Unsigned.UInt64.to_int section_offset
-          + Unsigned.UInt64.to_int section_size
-        in
-        let current_pos = ref (Unsigned.UInt64.to_int section_offset) in
-        let string_offset = ref 0 in
-
-        while !current_pos < section_end do
-          (* Read null-terminated string *)
-          let start_pos = !current_pos in
-          let str_buffer = Stdlib.Buffer.create 256 in
-          let rec read_string () =
-            if !current_pos >= section_end then ()
-            else
-              let byte = Object.Buffer.Read.u8 cursor in
-              if Unsigned.UInt8.to_int byte = 0 then incr current_pos
-              else (
-                Stdlib.Buffer.add_char str_buffer
-                  (char_of_int (Unsigned.UInt8.to_int byte));
-                incr current_pos;
-                read_string ())
-          in
-          read_string ();
-
-          let str_content = Stdlib.Buffer.contents str_buffer in
-          let str_length = String.length str_content in
-          if str_length > 0 then
+    | Some str_table ->
+        (* Output each string entry *)
+        Array.iter (fun (entry : Dwarf.DebugStr.string_entry) ->
+          if entry.length > 0 then
             Printf.printf "name at offset 0x%08x, length %4d is '%s'\n"
-              !string_offset str_length str_content
-          else if !current_pos < section_end then
-            (* Empty string, but not at end of section *)
+              entry.offset entry.length entry.content
+          else
             Printf.printf "name at offset 0x%08x, length %4d is ''\n"
-              !string_offset 0;
-
-          string_offset := !string_offset + (!current_pos - start_pos)
-        done;
+              entry.offset 0
+        ) str_table.entries;
         Printf.printf "\n"
   with
   | Sys_error msg ->
@@ -427,6 +330,46 @@ let dump_debug_str_offsets filename =
         (Printexc.to_string exn);
       exit 1
 
+let dump_debug_line_str filename =
+  try
+    let actual_filename, is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output header similar to dwarfdump --debug-line-str *)
+    Printf.printf "%s" (format_section_header buffer Dwarf.Debug_line_str None);
+
+    (* Use DebugLineStr.parse to get line string table *)
+    match Dwarf.DebugLineStr.parse buffer with
+    | None ->
+        Printf.printf "No %s section found in file\n"
+          (get_section_display_name buffer Dwarf.Debug_line_str);
+        if not is_debug then (
+          Printf.printf
+            "Note: For ELF binaries, debug info might be in separate .debug \
+             files\n";
+          let debug_path = filename ^ ".debug" in
+          if Sys.file_exists debug_path then
+            Printf.printf "Try: %s\n" debug_path)
+    | Some line_str_table ->
+        (* Output each string entry *)
+        Array.iter (fun (entry : Dwarf.DebugLineStr.string_entry) ->
+          if entry.length > 0 then
+            Printf.printf "name at offset 0x%08x, length %4d is '%s'\n"
+              entry.offset entry.length entry.content
+          else
+            Printf.printf "name at offset 0x%08x, length %4d is ''\n"
+              entry.offset 0
+        ) line_str_table.entries;
+        Printf.printf "\n"
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
 (* Command line interface matching dwarfdump's --debug-* options *)
 let filename =
   let doc = "ELF binary file to analyze for DWARF debug information" in
@@ -519,9 +462,7 @@ let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev
   else if debug_macro then (
     Printf.eprintf "Unimplemented\n";
     exit 1)
-  else if debug_line_str then (
-    Printf.eprintf "Unimplemented\n";
-    exit 1)
+  else if debug_line_str then dump_debug_line_str filename
   else if debug_aranges then (
     Printf.eprintf "Unimplemented\n";
     exit 1)
