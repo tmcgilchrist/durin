@@ -33,6 +33,11 @@ jobs:
           opam-repositories: |
              default: https://github.com/ocaml/opam-repository.git
 
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt install dwarfdump
+
       - name: Install dependencies
         run: |
           opam install . --deps-only --with-test --with-dev-setup
