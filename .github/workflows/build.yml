@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          # - ubuntu-latest
+          - ubuntu-latest
           # - ubuntu-24.04-arm
           - macos-latest
           # - macos-13
@@ -32,6 +32,11 @@ jobs:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
           opam-repositories: |
              default: https://github.com/ocaml/opam-repository.git
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt install dwarfdump llvm
 
       - name: Install dependencies
         run: |
