@@ -2666,6 +2666,7 @@ module CompileUnit = struct
     unit_type : u8;
     debug_abbrev_offset : u32;
     address_size : u8;
+    header_span : span;
   }
 
   type t = {
@@ -2684,7 +2685,6 @@ module CompileUnit = struct
 
   let root_die t abbrev_table full_buffer =
     (* Create cursor positioned after the compilation unit header *)
-    (* let _parsed = parsed_data t in *)
     (* DWARF 5 header: unit_length(4) + version(2) + unit_type(1) + address_size(1) + debug_abbrev_offset(4) = 12 bytes *)
     let cur =
       Object.Buffer.cursor t.raw_buffer_.buffer
@@ -2734,6 +2734,16 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
   if address_size <> Unsigned.UInt8.of_int 8 then
     failwith "Invalid address size of DWARF";
 
+  (* Calculate header size: unit_length(4) + version(2) + unit_type(1) + address_size(1) + debug_abbrev_offset(4) = 12 bytes *)
+  let header_end = cur.position in
+  let header_size = header_end - start in
+  let header_span =
+    {
+      start = Unsigned.UInt64.of_int start;
+      size = Unsigned.UInt64.of_int header_size;
+    }
+  in
+
   (* Total size includes the length field itself *)
   let total_size =
     start + 4
@@ -2745,7 +2755,15 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
       size = Unsigned.UInt64.of_int total_size;
     }
   in
-  (span, { unit_length; version; unit_type; debug_abbrev_offset; address_size })
+  ( span,
+    {
+      unit_length;
+      version;
+      unit_type;
+      debug_abbrev_offset;
+      address_size;
+      header_span;
+    } )
 
 let parse_compile_unit (object_file : Object_file.t)
     (cur : Object.Buffer.cursor) : CompileUnit.t =
@@ -4323,14 +4341,22 @@ let get_compile_units t =
 
 (** String Offset Tables (.debug_str_offsets section) - DWARF 5 Section 7.26 *)
 module DebugStrOffsets = struct
-  type header = { unit_length : u32; version : u16; padding : u16 }
+  type header = { unit_length : u32; version : u16; padding : u16; header_span : span }
   type offset_entry = { offset : u32; resolved_string : string option }
   type t = { header : header; offsets : offset_entry array }
 
   let parse_header (cursor : Object.Buffer.cursor) : header =
+    let start_pos = cursor.position in
     let unit_length = Object.Buffer.Read.u32 cursor in
     let version = Object.Buffer.Read.u16 cursor in
     let padding = Object.Buffer.Read.u16 cursor in
+    let end_pos = cursor.position in
+
+    (* Calculate header span *)
+    let header_span = {
+      start = Unsigned.UInt64.of_int start_pos;
+      size = Unsigned.UInt64.of_int (end_pos - start_pos);
+    } in
 
     (* Validate DWARF version 5 *)
     if Unsigned.UInt16.to_int version != 5 then
@@ -4338,7 +4364,7 @@ module DebugStrOffsets = struct
         (Printf.sprintf "Expected DWARF version 5, got %d"
            (Unsigned.UInt16.to_int version));
 
-    { unit_length; version; padding }
+    { unit_length; version; padding; header_span }
 
   let parse_offsets (cursor : Object.Buffer.cursor) (header : header)
       (debug_str_section : (u32 * u64) option) (buffer : Object.Buffer.t) :
@@ -4632,26 +4658,35 @@ module DebugAranges = struct
     debug_info_offset : u32;
     address_size : u8;
     segment_size : u8;
+    header_span : span;
   }
 
   type address_range = { start_address : u64; length : u64 }
   type aranges_set = { header : header; ranges : address_range list }
 
   let parse_header cursor =
+    let start_pos = cursor.position in
     let unit_length = Object.Buffer.Read.u32 cursor in
     let version = Object.Buffer.Read.u16 cursor in
     let debug_info_offset = Object.Buffer.Read.u32 cursor in
     let address_size = Object.Buffer.Read.u8 cursor in
     let segment_size = Object.Buffer.Read.u8 cursor in
+    let end_pos = cursor.position in
 
-    { unit_length; version; debug_info_offset; address_size; segment_size }
+    (* Calculate header span *)
+    let header_span = {
+      start = Unsigned.UInt64.of_int start_pos;
+      size = Unsigned.UInt64.of_int (end_pos - start_pos);
+    } in
+
+    { unit_length; version; debug_info_offset; address_size; segment_size; header_span }
 
   let parse_ranges cursor header =
     let address_size = Unsigned.UInt8.to_int header.address_size in
     let segment_size = Unsigned.UInt8.to_int header.segment_size in
 
     (* DWARF spec requires alignment to 2*address_size after the header.
-       The header is 10 bytes. For proper alignment with 8-byte addresses (16-byte alignment),
+       The header size is tracked in header_span. For proper alignment with 8-byte addresses (16-byte alignment),
        we observe that 4 bytes of padding are needed in practice. *)
     for _i = 0 to 3 do
       ignore (Object.Buffer.Read.u8 cursor)

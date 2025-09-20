@@ -970,6 +970,7 @@ module CompileUnit : sig
     unit_type : u8;
     debug_abbrev_offset : u32;  (** Offset into debug abbreviation table *)
     address_size : u8;  (** Size of addresses in bytes (must be 8) *)
+    header_span : span;  (** Span indicating the header's position and size *)
   }
   (** Parsed header data from a compilation unit. This contains the essential
       metadata needed to interpret the unit's content. *)
@@ -996,6 +997,11 @@ module CompileUnit : sig
   (* (\** Get abbreviation table for this compilation unit. TODO: Implementation *)
   (*     needs to return actual abbreviation table. *\) *)
 end
+
+val parse_compile_unit_header :
+  Object.Buffer.cursor -> span * CompileUnit.header
+(** Parse the header of a compilation unit from a buffer cursor. Returns both
+    the unit span and the parsed header with header_span included. *)
 
 (** Line number information parsing for DWARF 5 section 6.2.
 
@@ -1671,6 +1677,7 @@ module DebugStrOffsets : sig
     unit_length : u32;  (** Length of this contribution excluding this field *)
     version : u16;  (** DWARF version number (typically 5) *)
     padding : u16;  (** Reserved padding field, must be zero *)
+    header_span : span;  (** Span indicating the header's position and size *)
   }
   (** Header structure for a string offsets contribution.
 
@@ -1886,6 +1893,7 @@ module DebugAranges : sig
     debug_info_offset : u32;  (** Offset into .debug_info section *)
     address_size : u8;  (** Size of addresses in bytes *)
     segment_size : u8;  (** Size of segment selectors in bytes (usually 0) *)
+    header_span : span;  (** Span indicating the header's position and size *)
   }
   (** Header structure for an address range table.
 

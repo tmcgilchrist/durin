@@ -841,7 +841,7 @@ let dump_debug_str_offsets filename =
             (Unsigned.UInt16.to_int header.version);
 
           (* Print each offset with its resolved string *)
-          let header_size = 8 in
+          let header_size = Unsigned.UInt64.to_int header.header_span.size in
           let offset_size = 4 in
           Array.iteri
             (fun i offset_entry ->

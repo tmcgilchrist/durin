@@ -1,6 +1,8 @@
 (* An implementation of the "dwarfdump" utility for DWARF debugging information on Linux ELF files *)
 open Durin
 
+
+
 (* Helper function to get section offset and size for ELF files *)
 let get_section_offset buffer section_type =
   let object_format = Dwarf.detect_format buffer in
@@ -61,8 +63,23 @@ let dump_debug_line filename =
         Printf.printf "%s"
           (format_section_header buffer Dwarf.Debug_line
              (Some "line number info for a single cu"));
-        Printf.printf "Source lines (from CU-DIE at %s offset 0x0000000c):\n\n"
-          (get_section_display_name buffer Dwarf.Debug_info);
+
+        (* Get the header size from the first compilation unit *)
+        let header_size =
+          match get_section_offset buffer Dwarf.Debug_info with
+          | Some (debug_info_offset, _) ->
+              let cursor =
+                Object.Buffer.cursor buffer
+                  ~at:(Unsigned.UInt64.to_int debug_info_offset)
+              in
+              let _span, header = Dwarf.parse_compile_unit_header cursor in
+              Unsigned.UInt64.to_int header.header_span.size
+          | None -> failwith "No debug_info section found - cannot determine header size"
+        in
+
+        Printf.printf "Source lines (from CU-DIE at %s offset 0x%08x):\n\n"
+          (get_section_display_name buffer Dwarf.Debug_info)
+          header_size;
         Printf.printf
           "            NS new statement, BB new basic block, ET end of text \
            sequence\n";
@@ -164,15 +181,16 @@ let string_of_abbreviation_tag tag =
   Dwarf.(uint64_of_abbreviation_tag tag |> string_of_abbreviation_tag)
 
 (* Helper function to format DIE output in system dwarfdump format *)
-let rec print_die_system_format die depth buffer dwarf unit_start_offset =
+let rec print_die_system_format die depth buffer dwarf unit_start_offset
+    debug_info_offset stmt_list_offset header_size ~print_children =
   (* Calculate relative offset within debug_info section *)
   let relative_offset =
     if depth = 0 then
-      (* For root DIE, the offset is unit_start + 12 (DWARF 5 header size) *)
-      unit_start_offset + 12
+      (* For root DIE, the offset is unit_start + header size *)
+      unit_start_offset + header_size
     else
-      (* For child DIEs, die.offset is already relative to the debug_info section *)
-      die.Dwarf.DIE.offset
+      (* For child DIEs, subtract debug_info section offset to get relative offset *)
+      die.Dwarf.DIE.offset - debug_info_offset
   in
   let offset_str = Printf.sprintf "0x%08x" relative_offset in
   let tag_str = string_of_abbreviation_tag die.Dwarf.DIE.tag in
@@ -210,7 +228,7 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset =
               | None -> Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u)
             else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_decl_file then
               Printf.sprintf "0x%08x %s" (Unsigned.UInt64.to_int u)
-                (match resolve_file_reference buffer dwarf u with
+                (match resolve_file_reference buffer stmt_list_offset u with
                 | Some filename -> filename
                 | None -> "")
             else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_decl_line then
@@ -243,28 +261,60 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset =
         if depth = 0 then "                    " else "                      "
       in
       (* Use specific spacing to match system dwarfdump exactly *)
-      let spacing = match attr_name with
-        | "DW_AT_producer" -> "              "  (* 14 spaces *)
-        | "DW_AT_language" -> "              "  (* 14 spaces *)
-        | "DW_AT_name" -> "                  "  (* 18 spaces *)
-        | "DW_AT_comp_dir" -> "              "  (* 14 spaces *)
-        | "DW_AT_low_pc" -> "                "  (* 16 spaces *)
-        | "DW_AT_high_pc" -> "               "  (* 15 spaces *)
-        | "DW_AT_stmt_list" -> "             "  (* 13 spaces *)
-        | _ -> "              "  (* 14 spaces default *)
+      let spacing =
+        match attr_name with
+        | "DW_AT_producer" -> "              " (* 14 spaces *)
+        | "DW_AT_language" -> "              " (* 14 spaces *)
+        | "DW_AT_name" -> "                  " (* 18 spaces *)
+        | "DW_AT_comp_dir" -> "              " (* 14 spaces *)
+        | "DW_AT_low_pc" -> "                " (* 16 spaces *)
+        | "DW_AT_high_pc" -> "               " (* 15 spaces *)
+        | "DW_AT_stmt_list" -> "             " (* 13 spaces *)
+        | "DW_AT_byte_size" -> "             " (* 13 spaces *)
+        | "DW_AT_encoding" -> "              " (* 14 spaces *)
+        | "DW_AT_external" -> "              " (* 14 spaces *)
+        | "DW_AT_decl_file" -> "             " (* 13 spaces *)
+        | "DW_AT_decl_line" -> "             " (* 13 spaces *)
+        | "DW_AT_decl_column" -> "           " (* 11 spaces *)
+        | "DW_AT_type" -> "                  " (* 18 spaces *)
+        | "DW_AT_frame_base" -> "            " (* 12 spaces *)
+        | "DW_AT_call_all_tail_calls" -> "   " (* 3 spaces *)
+        | _ -> "              " (* 14 spaces default *)
       in
       Printf.printf "%s%s%s%s\n" attr_spacing attr_name spacing attr_value)
-    die.Dwarf.DIE.attributes
+    die.Dwarf.DIE.attributes;
+
+  (* Print children only if requested *)
+  if print_children then
+    Seq.iter
+      (fun child ->
+        print_die_system_format child (depth + 1) buffer dwarf unit_start_offset
+          debug_info_offset stmt_list_offset header_size ~print_children:true)
+      die.Dwarf.DIE.children
 
 (* Helper function to resolve file references for decl_file attributes *)
-and resolve_file_reference _buffer _dwarf file_index =
-  (* This is a simplified implementation - a full implementation would
-     parse the line table to resolve file indices to filenames *)
+and resolve_file_reference buffer stmt_list_offset file_index =
+  (* Parse the line table to resolve file index to actual filename *)
   try
-    (* Simple fallback - just return the build directory path for file 1 *)
-    if Unsigned.UInt64.equal file_index (Unsigned.UInt64.of_int 1) then
-      Some "/home/tsmc/code/ocaml/durin/_build/default/test/hello_world.c"
-    else None
+    match get_section_offset buffer Dwarf.Debug_line with
+    | None -> None
+    | Some (debug_line_offset, _size) ->
+        (* Calculate absolute offset in debug_line section *)
+        let absolute_offset =
+          Unsigned.UInt64.to_int debug_line_offset
+          + Unsigned.UInt64.to_int stmt_list_offset
+        in
+        let cursor = Object.Buffer.cursor buffer ~at:absolute_offset in
+        let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
+        let file_index_int = Unsigned.UInt64.to_int file_index in
+        if file_index_int < Array.length header.file_names then
+          let file_entry = header.file_names.(file_index_int) in
+          let full_path =
+            if file_entry.directory = "" then file_entry.name
+            else file_entry.directory ^ "/" ^ file_entry.name
+          in
+          Some full_path
+        else None
   with _ -> None
 
 (* Helper function to format block data as hex *)
@@ -275,13 +325,17 @@ and format_block_hex block_data =
 
 (* Helper function to format frame base blocks *)
 and format_frame_base_block block_data =
+
+  (* DWARF expression opcodes *)
+  let dw_op_call_frame_cfa = 0x9c in
+
   if String.length block_data > 0 then
     let opcode = Char.code block_data.[0] in
     match opcode with
-    | 0x9c ->
+    | x when x = dw_op_call_frame_cfa ->
         Printf.sprintf
-          "len 0x%04x: 0x9c: \n                          DW_OP_call_frame_cfa"
-          (String.length block_data)
+          "len 0x%04x: 0x%02x: \n                          DW_OP_call_frame_cfa"
+          (String.length block_data) dw_op_call_frame_cfa
     | _ ->
         Printf.sprintf "len 0x%04x: %s" (String.length block_data)
           (format_block_hex block_data)
@@ -293,8 +347,7 @@ let dump_debug_info filename =
     let buffer = Object.Buffer.parse actual_filename in
 
     (* Output header similar to system dwarfdump --print-info *)
-    Printf.printf "\n%s\n\n"
-      (get_section_display_name buffer Dwarf.Debug_info);
+    Printf.printf "\n%s\n\n" (get_section_display_name buffer Dwarf.Debug_info);
 
     (* Try to get the debug_info section offset and size *)
     match get_section_offset buffer Dwarf.Debug_info with
@@ -308,7 +361,7 @@ let dump_debug_info filename =
           let debug_path = filename ^ ".debug" in
           if Sys.file_exists debug_path then
             Printf.printf "Try: %s\n" debug_path)
-    | Some (_debug_info_offset, _section_size) ->
+    | Some (debug_info_offset, _section_size) ->
         (* Create DWARF context and parse compile units *)
         let dwarf = Dwarf.create buffer in
         let compile_units = Dwarf.parse_compile_units dwarf in
@@ -334,13 +387,40 @@ let dump_debug_info filename =
             | None ->
                 Printf.printf "  No root DIE found for this compilation unit\n"
             | Some root_die ->
-                (* Print the compilation unit DIE with system dwarfdump formatting *)
-                print_die_system_format root_die 0 buffer dwarf
-                  unit_start_in_debug_info;
+                (* Extract DW_AT_stmt_list offset for file index resolution *)
+                let stmt_list_offset =
+                  match
+                    List.find_opt
+                      (fun attr -> attr.Dwarf.DIE.attr = Dwarf.DW_AT_stmt_list)
+                      root_die.Dwarf.DIE.attributes
+                  with
+                  | Some attr -> (
+                      match attr.Dwarf.DIE.value with
+                      | Dwarf.DIE.UData offset -> offset
+                      | _ -> Unsigned.UInt64.zero)
+                  | None -> Unsigned.UInt64.zero
+                in
 
-                (* TODO: LOCAL_SYMBOLS section for child DIEs will be implemented later *)
+                (* Print the compilation unit DIE without children first *)
+                print_die_system_format root_die 0 buffer dwarf
+                  unit_start_in_debug_info
+                  (Unsigned.UInt64.to_int debug_info_offset)
+                  stmt_list_offset
+                  (Unsigned.UInt64.to_int header.header_span.size)
+                  ~print_children:false;
+
+                (* Print LOCAL_SYMBOLS header and child DIEs *)
                 Printf.printf "\nLOCAL_SYMBOLS:\n";
-                Printf.printf "(child DIE parsing not yet implemented)\n")
+                Seq.iter
+                  (fun child ->
+                    print_die_system_format child 1 buffer dwarf
+                      unit_start_in_debug_info
+                      (Unsigned.UInt64.to_int debug_info_offset)
+                      stmt_list_offset
+                      (Unsigned.UInt64.to_int header.header_span.size)
+                      ~print_children:true)
+                  root_die.Dwarf.DIE.children;
+                Printf.printf "\n")
           compile_units
   with
   | Sys_error msg ->
@@ -413,23 +493,23 @@ let dump_debug_str_offsets filename =
             ~at:(Unsigned.UInt64.to_int section_offset)
         in
 
-        (* Parse header manually for ELF format *)
-        let unit_length = Object.Buffer.Read.u32 cursor in
-        let version = Object.Buffer.Read.u16 cursor in
-        let padding = Object.Buffer.Read.u16 cursor in
+        (* Parse header using DebugStrOffsets module *)
+        let header = Dwarf.DebugStrOffsets.parse_header cursor in
 
         (* Print table header information *)
+        let table_start_offset = 0 in
+        let header_size = Unsigned.UInt64.to_int header.header_span.size in
         Printf.printf " table 0\n";
-        Printf.printf " tableheader 0x%08x\n" 0;
-        Printf.printf " arrayoffset 0x%08x\n" 8;
+        Printf.printf " tableheader 0x%08x\n" table_start_offset;
+        Printf.printf " arrayoffset 0x%08x\n" header_size;
         Printf.printf " unit length 0x%08x\n"
-          (Unsigned.UInt32.to_int unit_length);
+          (Unsigned.UInt32.to_int header.unit_length);
         Printf.printf " entry size  4\n";
-        Printf.printf " version     %d\n" (Unsigned.UInt16.to_int version);
-        Printf.printf " padding     0x%x\n" (Unsigned.UInt16.to_int padding);
+        Printf.printf " version     %d\n" (Unsigned.UInt16.to_int header.version);
+        Printf.printf " padding     0x%x\n" (Unsigned.UInt16.to_int header.padding);
 
         (* Calculate number of offsets *)
-        let data_size = Unsigned.UInt32.to_int unit_length - 4 in
+        let data_size = Unsigned.UInt32.to_int header.unit_length - 4 in
         (* unit_length excludes itself *)
         let offset_size = 4 in
         let num_offsets = data_size / offset_size in
@@ -567,15 +647,20 @@ let dump_debug_aranges filename =
             | Seq.Cons (unit, rest) ->
                 (* The span.start for a compilation unit represents the offset within .debug_info
                    where this compilation unit starts. For the first CU, this should be 0.
-                   The cu_die_offset (12) represents where the DIE starts within the CU.
-                   So we need to find the CU where span.start + 12 = cu_die_offset. *)
+                   The cu_die_offset represents where the DIE starts within the CU.
+                   So we need to find the CU where span.start + header_size = cu_die_offset. *)
                 let unit_start_in_debug_info =
                   Dwarf.CompileUnit.dwarf_info unit
                 in
+                let unit_header = Dwarf.CompileUnit.header unit in
+                let header_size =
+                  Unsigned.UInt64.to_int unit_header.header_span.size
+                in
                 (* The cu_die_offset is relative to the start of .debug_info section.
-                   For the first CU starting at offset 0, the DIE starts at offset 12.
+                   For the first CU starting at offset 0, the DIE starts at header size offset.
                    For subsequent CUs, we need to check if their DIE offset matches. *)
-                if unit_start_in_debug_info + 12 = cu_die_offset then Some unit
+                if unit_start_in_debug_info + header_size = cu_die_offset then
+                  Some unit
                 else find_unit rest
           in
           find_unit compile_units
@@ -688,15 +773,7 @@ let dump_debug_aranges filename =
                             Dwarf.string_of_dwarf_language lang
                         | _ -> "<unsupported_form>"
                       in
-                      (* Only print attributes that appear in system dwarfdump output *)
-                      if
-                        attr.Dwarf.DIE.attr = Dwarf.DW_AT_producer
-                        || attr.Dwarf.DIE.attr = Dwarf.DW_AT_language
-                        || attr.Dwarf.DIE.attr = Dwarf.DW_AT_name
-                        || attr.Dwarf.DIE.attr = Dwarf.DW_AT_comp_dir
-                        || attr.Dwarf.DIE.attr = Dwarf.DW_AT_low_pc
-                        || attr.Dwarf.DIE.attr = Dwarf.DW_AT_stmt_list
-                      then print_attribute attr_name attr_value)
+                      print_attribute attr_name attr_value)
                   attributes
             | None -> ())
         | None -> ());
