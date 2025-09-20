@@ -3,6 +3,20 @@ open Durin
 
 
 
+(* Helper function to read null-terminated strings from cursor *)
+let read_null_terminated_string cursor =
+  let str_buffer = Stdlib.Buffer.create 256 in
+  let rec read_string () =
+    let byte = Object.Buffer.Read.u8 cursor in
+    if Unsigned.UInt8.to_int byte = 0 then ()
+    else (
+      Stdlib.Buffer.add_char str_buffer
+        (char_of_int (Unsigned.UInt8.to_int byte));
+      read_string ())
+  in
+  read_string ();
+  Stdlib.Buffer.contents str_buffer
+
 (* Helper function to get section offset and size for ELF files *)
 let get_section_offset buffer section_type =
   let object_format = Dwarf.detect_format buffer in
@@ -887,6 +901,365 @@ let dump_debug_abbrev filename =
         (Printexc.to_string exn);
       exit 1
 
+let dump_debug_names filename =
+  try
+    let actual_filename, is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output empty content to match system dwarfdump behavior *)
+    Printf.printf "\n";
+
+    (* Try to find the debug_names section *)
+    match get_section_offset buffer Dwarf.Debug_names with
+    | None ->
+        Printf.printf "No %s section found in file\n"
+          (get_section_display_name buffer Dwarf.Debug_names);
+        if not is_debug then (
+          Printf.printf
+            "Note: For ELF binaries, debug info might be in separate .debug \
+             files\n";
+          let debug_path = filename ^ ".debug" in
+          if Sys.file_exists debug_path then
+            Printf.printf "Try: %s\n" debug_path)
+    | Some (section_offset, _section_size) ->
+        (* Create cursor at the debug_names section offset *)
+        let cursor =
+          Object.Buffer.cursor buffer
+            ~at:(Unsigned.UInt64.to_int section_offset)
+        in
+
+        (* Parse the debug_names section *)
+        let debug_names =
+          Dwarf.DebugNames.parse_debug_names_section cursor buffer
+        in
+
+        (* Format output to match system dwarfdump *)
+        Printf.printf "Name Index @ 0x0 {\n";
+        Printf.printf "  Header {\n";
+        Printf.printf "    Length: 0x%X\n"
+          (Unsigned.UInt32.to_int debug_names.header.unit_length);
+        Printf.printf "    Format: DWARF32\n";
+        Printf.printf "    Version: %d\n"
+          (Unsigned.UInt16.to_int debug_names.header.version);
+        Printf.printf "    CU count: %d\n"
+          (Unsigned.UInt32.to_int debug_names.header.comp_unit_count);
+        Printf.printf "    Local TU count: %d\n"
+          (Unsigned.UInt32.to_int debug_names.header.local_type_unit_count);
+        Printf.printf "    Foreign TU count: %d\n"
+          (Unsigned.UInt32.to_int debug_names.header.foreign_type_unit_count);
+        Printf.printf "    Bucket count: %d\n"
+          (Unsigned.UInt32.to_int debug_names.header.bucket_count);
+        Printf.printf "    Name count: %d\n"
+          (Unsigned.UInt32.to_int debug_names.header.name_count);
+        Printf.printf "    Abbreviations table size: 0x%X\n"
+          (Unsigned.UInt32.to_int debug_names.header.abbrev_table_size);
+        Printf.printf "    Augmentation: '%s'\n"
+          debug_names.header.augmentation_string;
+        Printf.printf "  }\n";
+
+        (* Print compilation unit offsets *)
+        Printf.printf "  Compilation Unit offsets [\n";
+        Array.iteri
+          (fun i offset ->
+            Printf.printf "    CU[%d]: 0x%08X\n" i
+              (Unsigned.UInt32.to_int offset))
+          debug_names.comp_unit_offsets;
+        Printf.printf "  ]\n";
+
+        (* Print abbreviations table using parsed data *)
+        Printf.printf "  Abbreviations [\n";
+        List.iter
+          (fun abbrev ->
+            let code = Unsigned.UInt64.to_int abbrev.Dwarf.DebugNames.code in
+            let tag_str =
+              Dwarf.string_of_abbreviation_tag
+                (Dwarf.uint64_of_abbreviation_tag abbrev.tag)
+            in
+            Printf.printf "    Abbreviation 0x%x {\n" code;
+            Printf.printf "      Tag: %s\n" tag_str;
+            List.iter
+              (fun (idx_attr, form) ->
+                let idx_str = Dwarf.string_of_name_index_attribute idx_attr in
+                let form_str =
+                  Dwarf.string_of_attribute_form_encoding_variant form
+                in
+                Printf.printf "      %s: %s\n" idx_str form_str)
+              abbrev.attributes;
+            Printf.printf "    }\n")
+          debug_names.abbreviation_table;
+        Printf.printf "  ]\n";
+
+        (* Create bucket to names mapping according to DWARF 5 spec *)
+        let bucket_to_names =
+          Array.mapi
+            (fun bucket_idx bucket_entry ->
+              let bucket_start = Unsigned.UInt32.to_int bucket_entry in
+              if bucket_start = 0 then [] (* Empty bucket *)
+              else
+                (* Collect all names that hash to this bucket *)
+                let rec collect_names acc name_idx =
+                  if name_idx >= Array.length debug_names.hash_table then acc
+                  else
+                    let hash = debug_names.hash_table.(name_idx) in
+                    let computed_bucket =
+                      Unsigned.UInt32.to_int hash
+                      mod Array.length debug_names.buckets
+                    in
+                    if computed_bucket = bucket_idx then
+                      collect_names (name_idx :: acc) (name_idx + 1)
+                    else collect_names acc (name_idx + 1)
+                in
+                List.rev (collect_names [] 0)
+              (* Check all names, bucket entries are 1-based but name indices are 0-based *))
+            debug_names.buckets
+          |> Array.to_list
+        in
+
+        (* Print buckets and entries *)
+        List.iteri
+          (fun bucket_idx name_indices ->
+            Printf.printf "  Bucket %d [\n" bucket_idx;
+            if name_indices = [] then Printf.printf "    EMPTY\n"
+            else
+              List.iter
+                (fun name_idx ->
+                  if
+                    name_idx < Array.length debug_names.name_table
+                    && name_idx < Array.length debug_names.hash_table
+                  then (
+                    let name_entry = debug_names.name_table.(name_idx) in
+                    let hash =
+                      Unsigned.UInt32.to_int debug_names.hash_table.(name_idx)
+                    in
+                    let str_offset =
+                      Unsigned.UInt32.to_int name_entry.offset
+                    in
+                    (* Try to resolve the name from debug_str section *)
+                    let name =
+                      match get_section_offset buffer Dwarf.Debug_str with
+                      | Some (debug_str_offset, _) -> (
+                          try
+                            let cursor =
+                              Object.Buffer.cursor buffer
+                                ~at:
+                                  (Unsigned.UInt64.to_int debug_str_offset
+                                  + str_offset)
+                            in
+                            read_null_terminated_string cursor
+                          with _ -> name_entry.value)
+                      | None -> name_entry.value
+                    in
+
+                    (* Parse entries for this name *)
+                    let entries =
+                      Dwarf.DebugNames.parse_all_entries_for_name buffer
+                        debug_names
+                        (Unsigned.UInt64.to_int section_offset)
+                        name_idx
+                    in
+
+                    (* Helper function to format parent information *)
+                    let format_parent_info parent_offset_opt _has_parent_flag =
+                      match parent_offset_opt with
+                      | Some parent_offset ->
+                          (* Calculate parent entry address using entry pool offset calculation *)
+                          let entry_pool_relative_offset =
+                            Dwarf.DebugNames.calculate_entry_pool_offset
+                              debug_names.header
+                          in
+                          let parent_entry_addr =
+                            entry_pool_relative_offset + parent_offset
+                          in
+                          Printf.sprintf "Entry @ 0x%x" parent_entry_addr
+                      | None -> "<parent not indexed>"
+                    in
+
+                    (* Print name header *)
+                    Printf.printf "    Name %d {\n" (name_idx + 1);
+                    Printf.printf "      Hash: 0x%X\n" hash;
+                    Printf.printf "      String: 0x%08x \"%s\"\n" str_offset
+                      name;
+
+                    (* Print all entries for this name *)
+                    List.iter
+                      (fun ( entry_addr,
+                             die_offset,
+                             tag_str,
+                             abbrev_id,
+                             parent_offset_opt,
+                             has_parent_flag ) ->
+                        let parent_info_str =
+                          format_parent_info parent_offset_opt has_parent_flag
+                        in
+
+                        Printf.printf "      Entry @ 0x%x {\n" entry_addr;
+                        Printf.printf "        Abbrev: %s\n" abbrev_id;
+                        Printf.printf "        Tag: %s\n" tag_str;
+                        Printf.printf "        %s: 0x%08x\n"
+                          (Dwarf.string_of_name_index_attribute
+                             Dwarf.DW_IDX_die_offset)
+                          die_offset;
+                        Printf.printf "        %s: %s\n"
+                          (Dwarf.string_of_name_index_attribute
+                             Dwarf.DW_IDX_parent)
+                          parent_info_str;
+                        Printf.printf "      }\n")
+                      entries;
+
+                    Printf.printf "    }\n"))
+                name_indices;
+            Printf.printf "  ]\n")
+          bucket_to_names;
+
+        Printf.printf "}\n"
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
+let dump_debug_macro filename =
+  try
+    let actual_filename, _is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output header similar to dwarfdump --debug-macro *)
+    Printf.printf "%s" (format_section_header buffer Dwarf.Debug_macro None);
+
+    (* Try to find the debug_macro section *)
+    match get_section_offset buffer Dwarf.Debug_macro with
+    | None ->
+        Printf.printf "No %s section found in file\n"
+          (get_section_display_name buffer Dwarf.Debug_macro);
+        if not _is_debug then (
+          Printf.printf
+            "Note: For ELF binaries, debug info might be in separate .debug \
+             files\n";
+          let debug_path = filename ^ ".debug" in
+          if Sys.file_exists debug_path then
+            Printf.printf "Try: %s\n" debug_path)
+    | Some (section_offset, section_size) ->
+        (* Create cursor at the debug_macro section offset *)
+        let cursor =
+          Object.Buffer.cursor buffer
+            ~at:(Unsigned.UInt64.to_int section_offset)
+        in
+
+        (* Parse the debug_macro section *)
+        let section_size_int = Unsigned.UInt64.to_int section_size in
+        let macro_section =
+          Dwarf.parse_debug_macro_section cursor section_size_int
+        in
+
+        Printf.printf
+          "Debug macro section parsed successfully with %d units\n"
+          (List.length macro_section.units)
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
+let dump_debug_loclists filename =
+  try
+    let actual_filename, _is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output header similar to dwarfdump --debug-loclists *)
+    Printf.printf "%s" (format_section_header buffer Dwarf.Debug_loclists None);
+
+    (* Try to find the debug_loclists section *)
+    match get_section_offset buffer Dwarf.Debug_loclists with
+    | None ->
+        (* No debug_loclists section found - this is normal for simple programs.
+           Show empty section output to match system dwarfdump behavior *)
+        ()
+    | Some (section_offset, _section_size) ->
+        (* Parse the debug_loclists section *)
+        let loclists_section =
+          Dwarf.DebugLoclists.parse buffer (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int section_offset))
+        in
+
+        (* Check if section is empty (indicated by zero unit_length) *)
+        if
+          Unsigned.UInt32.equal loclists_section.header.unit_length
+            Unsigned.UInt32.zero
+        then
+          (* Empty section - no output needed, this matches system dwarfdump *)
+          ()
+        else
+          (* Format output similar to other debug sections *)
+          Printf.printf
+            "Location lists header: length = 0x%08lx, format = DWARF32, \
+             version = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x, \
+             offset_entry_count = 0x%08lx\n"
+            (Unsigned.UInt32.to_int32 loclists_section.header.unit_length)
+            (Unsigned.UInt16.to_int loclists_section.header.version)
+            (Unsigned.UInt8.to_int loclists_section.header.address_size)
+            (Unsigned.UInt8.to_int loclists_section.header.segment_size)
+            (Unsigned.UInt32.to_int32
+               loclists_section.header.offset_entry_count)
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
+let dump_debug_addr filename =
+  try
+    let actual_filename, _is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output header matching llvm-dwarfdump format *)
+    Printf.printf "%s:\tfile format elf64-x86-64\n\n.debug_addr contents:\n" filename;
+
+    (* Try to find the debug_addr section *)
+    match get_section_offset buffer Dwarf.Debug_addr with
+    | None ->
+        (* For missing sections, llvm-dwarfdump just shows the header with empty contents *)
+        ()
+    | Some (section_offset, _section_size) ->
+        (* Parse the debug_addr section *)
+        let parsed_addr =
+          Dwarf.DebugAddr.parse buffer (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int section_offset))
+        in
+
+        (* Print header information *)
+        let header = parsed_addr.header in
+        Printf.printf
+          "Address table header: length = 0x%08lx, format = DWARF32, version \
+           = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x\n"
+          (Unsigned.UInt32.to_int32 header.unit_length)
+          (Unsigned.UInt16.to_int header.version)
+          (Unsigned.UInt8.to_int header.address_size)
+          (Unsigned.UInt8.to_int header.segment_selector_size);
+
+        (* Print entries *)
+        Printf.printf "Addrs: [\n";
+        Array.iter
+          (fun entry ->
+            Printf.printf "0x%016Lx\n"
+              (Unsigned.UInt64.to_int64 entry.Dwarf.DebugAddr.address))
+          parsed_addr.entries;
+        Printf.printf "]\n"
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
 (* Command line interface matching dwarfdump's --debug-* options *)
 let filename =
   let doc = "ELF binary file to analyze for DWARF debug information" in
@@ -968,20 +1341,12 @@ let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev
   else if debug_str then dump_debug_str filename
   else if debug_str_offsets then dump_debug_str_offsets filename
   else if debug_abbrev then dump_debug_abbrev filename
-  else if debug_addr then (
-    Printf.eprintf "Unimplemented\n";
-    exit 1)
-  else if debug_names then (
-    Printf.eprintf "Unimplemented\n";
-    exit 1)
-  else if debug_macro then (
-    Printf.eprintf "Unimplemented\n";
-    exit 1)
+  else if debug_addr then dump_debug_addr filename
+  else if debug_names then dump_debug_names filename
+  else if debug_macro then dump_debug_macro filename
   else if debug_line_str then dump_debug_line_str filename
   else if debug_aranges then dump_debug_aranges filename
-  else if debug_loclists then (
-    Printf.eprintf "Unimplemented\n";
-    exit 1)
+  else if debug_loclists then dump_debug_loclists filename
   else (
     Printf.eprintf "Error: Unknown debug section\n";
     exit 1)

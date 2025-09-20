@@ -940,7 +940,12 @@
  (action
   (diff system_dwarfdump_abbrev.out ocaml_dwarfdump_abbrev.out)))
 
-; ; --debug-names comparison
+; --debug-names comparison
+; TODO: Find or create a program that generates .debug_names section
+; .debug_names is a DWARF 5 accelerated name lookup table that requires
+; specific compiler flags and optimization levels to be generated.
+; Need example program with: complex symbol table, multiple compilation units,
+; or built with -gdwarf-5 -O2 and linker that generates name acceleration.
 
 ; (rule
 ;  (alias runtest)
@@ -978,7 +983,50 @@
 ;  (action
 ;   (diff system_dwarfdump_names.out ocaml_dwarfdump_names.out)))
 
-; ; --debug-macro comparison
+; --debug-names comparison (C++ file)
+; TODO: Same as above - need program that generates .debug_names section
+
+; (rule
+;  (alias runtest)
+;  (target ocaml_dwarfdump_names_cpp.out)
+;  (deps %{bin:gnu-dwarfdump} hello_world_cpp_linux)
+;  (enabled_if
+;   (and
+;    (= %{system} "linux")
+;    (= %{architecture} "amd64")))
+;  (action
+;   (with-stdout-to
+;    %{target}
+;    (run %{bin:gnu-dwarfdump} --debug-names hello_world_cpp_linux))))
+
+; (rule
+;  (alias runtest)
+;  (target system_dwarfdump_names_cpp.out)
+;  (deps hello_world_cpp_linux)
+;  (enabled_if
+;   (and
+;    (= %{system} "linux")
+;    (= %{architecture} "amd64")))
+;  (action
+;   (with-stdout-to
+;    %{target}
+;    (system "dwarfdump --print-debug-names hello_world_cpp_linux"))))
+
+; (rule
+;  (alias runtest)
+;  (deps ocaml_dwarfdump_names_cpp.out system_dwarfdump_names_cpp.out)
+;  (enabled_if
+;   (and
+;    (= %{system} "linux")
+;    (= %{architecture} "amd64")))
+;  (action
+;   (diff system_dwarfdump_names_cpp.out ocaml_dwarfdump_names_cpp.out)))
+
+; --debug-macro comparison
+; TODO: Find or create a program that generates .debug_macro section
+; .debug_macro contains macro definition information from preprocessor.
+; Need example program with: #define macros, #include with macro usage,
+; built with -gdwarf-5 -g3 to include macro information.
 
 ; (rule
 ;  (alias runtest)
@@ -1094,7 +1142,11 @@
  (action
   (diff system_dwarfdump_aranges.out ocaml_dwarfdump_aranges.out)))
 
-; ; --debug-loclists comparison
+; --debug-loclists comparison
+; TODO: Find or create a program that generates .debug_loclists section
+; .debug_loclists contains location list information for variables with
+; complex lifetime/scope. Need example program with: optimized code,
+; variables that move between registers/memory, built with -gdwarf-5 -O2.
 
 ; (rule
 ;  (alias runtest)
@@ -1131,6 +1183,82 @@
 ;    (= %{architecture} "amd64")))
 ;  (action
 ;   (diff system_dwarfdump_loclists.out ocaml_dwarfdump_loclists.out)))
+
+; --debug-addr comparison
+
+(rule
+ (alias runtest)
+ (target ocaml_dwarfdump_addr.out)
+ (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-dwarfdump} --debug-addr hello_world_linux))))
+
+(rule
+ (alias runtest)
+ (target system_dwarfdump_addr.out)
+ (deps hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "llvm-dwarfdump --debug-addr hello_world_linux"))))
+
+(rule
+ (alias runtest)
+ (deps ocaml_dwarfdump_addr.out system_dwarfdump_addr.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_dwarfdump_addr.out ocaml_dwarfdump_addr.out)))
+
+; --debug-addr comparison (C++ file)
+
+(rule
+ (alias runtest)
+ (target ocaml_dwarfdump_addr_cpp.out)
+ (deps %{bin:gnu-dwarfdump} hello_world_cpp_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-dwarfdump} --debug-addr hello_world_cpp_linux))))
+
+(rule
+ (alias runtest)
+ (target system_dwarfdump_addr_cpp.out)
+ (deps hello_world_cpp_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "llvm-dwarfdump --debug-addr hello_world_cpp_linux"))))
+
+(rule
+ (alias runtest)
+ (deps ocaml_dwarfdump_addr_cpp.out system_dwarfdump_addr_cpp.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_dwarfdump_addr_cpp.out ocaml_dwarfdump_addr_cpp.out)))
 
 ; ; =============================================================================
 ; ; GNU-DWARFDUMP UNSUPPORTED SECTION TESTS - LINUX
