@@ -808,6 +808,85 @@ let dump_debug_aranges filename =
         (Printexc.to_string exn);
       exit 1
 
+let dump_debug_abbrev filename =
+  try
+    let actual_filename, is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output header similar to dwarfdump --debug-abbrev *)
+    Printf.printf "%s" (format_section_header buffer Dwarf.Debug_abbrev None);
+
+    (* Try to find the debug_abbrev section *)
+    match get_section_offset buffer Dwarf.Debug_abbrev with
+    | None ->
+        Printf.printf "No %s section found in file\n"
+          (get_section_display_name buffer Dwarf.Debug_abbrev);
+        if not is_debug then (
+          Printf.printf
+            "Note: For ELF binaries, debug info might be in separate .debug \
+             files\n";
+          let debug_path = filename ^ ".debug" in
+          if Sys.file_exists debug_path then
+            Printf.printf "Try: %s\n" debug_path)
+    | Some (_offset, _size) ->
+
+        (* Create DWARF context and parse abbreviation table *)
+        let dwarf = Dwarf.create buffer in
+        let _dwarf, abbrev_table =
+          Dwarf.get_abbrev_table dwarf (Unsigned.UInt64.of_int 0)
+        in
+
+        (* Convert abbreviation table to sorted list for consistent output *)
+        let abbrevs =
+          Hashtbl.fold
+            (fun code abbrev acc -> (code, abbrev) :: acc)
+            abbrev_table []
+        in
+        let sorted_abbrevs =
+          List.sort
+            (fun (c1, _) (c2, _) -> Unsigned.UInt64.compare c1 c2)
+            abbrevs
+        in
+
+        (* Output each abbreviation in system dwarfdump format *)
+        let current_offset = ref 0 in
+        List.iter
+          (fun (code, abbrev) ->
+            let code_int = Unsigned.UInt64.to_int code in
+            let children_str = if abbrev.Dwarf.has_children then "DW_children_yes" else "DW_children_no" in
+            let tag_str = Dwarf.string_of_abbreviation_tag abbrev.Dwarf.tag in
+
+            Printf.printf "<%5d><0x%08x><code:%4d> %-27s %s\n"
+              code_int !current_offset code_int tag_str children_str;
+
+            current_offset := !current_offset + 3; (* Approximate: uleb128 code + uleb128 tag + has_children byte *)
+
+            (* Print attributes with offset tracking *)
+            List.iter
+              (fun attr_spec ->
+                let attr_str = Dwarf.string_of_attribute_code attr_spec.Dwarf.attr in
+                let form_str = Dwarf.string_of_attribute_form_encoding attr_spec.Dwarf.form in
+                Printf.printf "       <0x%08x>              %-27s %s\n"
+                  !current_offset attr_str form_str;
+                current_offset := !current_offset + 2) (* Approximate: uleb128 attr + uleb128 form *)
+              abbrev.Dwarf.attr_specs;
+
+            (* Add null terminator for attribute list *)
+            current_offset := !current_offset + 2)
+          sorted_abbrevs;
+
+        (* Add the final null abbrev entry *)
+        Printf.printf "<%5d><0x%08x><code:%4d> Abbrev 0: null abbrev entry\n\n%!"
+          5 !current_offset 0
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
 (* Command line interface matching dwarfdump's --debug-* options *)
 let filename =
   let doc = "ELF binary file to analyze for DWARF debug information" in
@@ -888,9 +967,7 @@ let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev
   else if debug_info then dump_debug_info filename
   else if debug_str then dump_debug_str filename
   else if debug_str_offsets then dump_debug_str_offsets filename
-  else if debug_abbrev then (
-    Printf.eprintf "Unimplemented\n";
-    exit 1)
+  else if debug_abbrev then dump_debug_abbrev filename
   else if debug_addr then (
     Printf.eprintf "Unimplemented\n";
     exit 1)

@@ -902,43 +902,43 @@
  (action
   (diff system_dwarfdump_str_offsets.out ocaml_dwarfdump_str_offsets.out)))
 
-; ; --debug-abbrev comparison
+; --debug-abbrev comparison
 
-; (rule
-;  (alias runtest)
-;  (target ocaml_dwarfdump_abbrev.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (with-stdout-to
-;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-abbrev hello_world_linux))))
+(rule
+ (alias runtest)
+ (target ocaml_dwarfdump_abbrev.out)
+ (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:gnu-dwarfdump} --debug-abbrev hello_world_linux))))
 
-; (rule
-;  (alias runtest)
-;  (target system_dwarfdump_abbrev.out)
-;  (deps hello_world_linux)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (with-stdout-to
-;    %{target}
-;    (system "dwarfdump -b hello_world_linux"))))
+(rule
+ (alias runtest)
+ (target system_dwarfdump_abbrev.out)
+ (deps hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "dwarfdump -b hello_world_linux"))))
 
-; (rule
-;  (alias runtest)
-;  (deps ocaml_dwarfdump_abbrev.out system_dwarfdump_abbrev.out)
-;  (enabled_if
-;   (and
-;    (= %{system} "linux")
-;    (= %{architecture} "amd64")))
-;  (action
-;   (diff system_dwarfdump_abbrev.out ocaml_dwarfdump_abbrev.out)))
+(rule
+ (alias runtest)
+ (deps ocaml_dwarfdump_abbrev.out system_dwarfdump_abbrev.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_dwarfdump_abbrev.out ocaml_dwarfdump_abbrev.out)))
 
 ; ; --debug-names comparison
 
