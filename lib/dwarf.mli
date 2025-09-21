@@ -797,6 +797,7 @@ type dwarf_section =
   | Debug_names
   | Debug_addr
   | Debug_macro
+  | Debug_frame
 
 (** Call frame instructions. Table 7.29: Call frame instruction encodings *)
 type call_frame_instruction =
@@ -1316,11 +1317,12 @@ module CallFrame : sig
   type frame_description_entry = {
     length : u32;
     cie_pointer : u32;
-    initial_location : u64;
-    address_range : u64;
+    initial_location : u32;
+    address_range : u32;
     augmentation_length : u64 option;
     augmentation_data : string option;
     instructions : string;
+    offset : u32; (* File offset where this FDE starts *)
   }
   (** Frame Description Entry (FDE) from DWARF 5 section 6.4.1.
 
@@ -1349,6 +1351,86 @@ module CallFrame : sig
       A CIE contains information shared among many Frame Description Entries.
       The cursor should be positioned at the start of a CIE entry in the
       [Debug_frame] section. *)
+end
+
+(** EH Frame Header parsing for .eh_frame_hdr section.
+
+    The .eh_frame_hdr section provides a sorted table for fast lookup of Frame
+    Description Entries in the .eh_frame section. This is used by the runtime
+    exception handling mechanism for efficient stack unwinding.
+
+    Reference: LSB specification and ELF exception handling ABI *)
+module EHFrameHdr : sig
+  type encoding =
+    | DW_EH_PE_absptr
+    | DW_EH_PE_omit
+    | DW_EH_PE_uleb128
+    | DW_EH_PE_udata2
+    | DW_EH_PE_udata4
+    | DW_EH_PE_udata8
+    | DW_EH_PE_sleb128
+    | DW_EH_PE_sdata2
+    | DW_EH_PE_sdata4
+    | DW_EH_PE_sdata8
+    | DW_EH_PE_pcrel
+    | DW_EH_PE_datarel
+    | DW_EH_PE_funcrel
+    | DW_EH_PE_aligned
+    | DW_EH_PE_indirect
+
+  type search_table_entry = { initial_location : u64; fde_address : u64 }
+
+  type header = {
+    version : u8;
+    eh_frame_ptr_enc : encoding;
+    fde_count_enc : encoding;
+    table_enc : encoding;
+    eh_frame_ptr : u64;
+    fde_count : u32;
+    search_table : search_table_entry array;
+  }
+
+  val parse_header : Object.Buffer.cursor -> u64 -> header
+  (** Parse the .eh_frame_hdr header and search table.
+
+      The second parameter is the base address of the section for relative
+      address calculations. *)
+
+  val parse_section : Object.Buffer.cursor -> u64 -> header
+  (** Parse complete .eh_frame_hdr section - alias for parse_header. *)
+end
+
+(** EH Frame parsing for .eh_frame section.
+
+    The .eh_frame section contains Call Frame Information used by the runtime
+    exception handling mechanism. While similar to .debug_frame, it has some
+    format differences optimized for runtime performance.
+
+    Reference: LSB specification and ELF exception handling ABI *)
+module EHFrame : sig
+  type eh_frame_entry =
+    | EH_CIE of CallFrame.common_information_entry
+    | EH_FDE of CallFrame.frame_description_entry
+
+  type section = { entries : eh_frame_entry list }
+
+  val parse_eh_cie :
+    Object.Buffer.cursor -> u32 -> CallFrame.common_information_entry
+  (** Parse a Common Information Entry adapted for .eh_frame format.
+
+      The second parameter is the expected length from the length field. *)
+
+  val parse_eh_fde :
+    Object.Buffer.cursor -> u32 -> int -> CallFrame.frame_description_entry
+  (** Parse a Frame Description Entry adapted for .eh_frame format.
+
+      The second parameter is the expected length from the length field. The
+      third parameter is the file offset where this FDE starts. *)
+
+  val parse_section : Object.Buffer.cursor -> int -> section
+  (** Parse the .eh_frame section.
+
+      The second parameter is the section size in bytes. *)
 end
 
 (** Accelerated Name Lookup parsing for .debug_names section.
@@ -2034,3 +2116,6 @@ module CompactUnwind : sig
       @return Optional tuple of (unwind_info, architecture) if parsing succeeds
   *)
 end
+
+val parse_cfi_instructions_basic : string -> (int * string) list
+(** Parse basic CFI instructions from instruction bytes *)

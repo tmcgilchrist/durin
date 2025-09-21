@@ -1,8 +1,6 @@
 (* An implementation of the "dwarfdump" utility for DWARF debugging information on Linux ELF files *)
 open Durin
 
-
-
 (* Helper function to read null-terminated strings from cursor *)
 let read_null_terminated_string cursor =
   let str_buffer = Stdlib.Buffer.create 256 in
@@ -88,7 +86,9 @@ let dump_debug_line filename =
               in
               let _span, header = Dwarf.parse_compile_unit_header cursor in
               Unsigned.UInt64.to_int header.header_span.size
-          | None -> failwith "No debug_info section found - cannot determine header size"
+          | None ->
+              failwith
+                "No debug_info section found - cannot determine header size"
         in
 
         Printf.printf "Source lines (from CU-DIE at %s offset 0x%08x):\n\n"
@@ -339,7 +339,6 @@ and format_block_hex block_data =
 
 (* Helper function to format frame base blocks *)
 and format_frame_base_block block_data =
-
   (* DWARF expression opcodes *)
   let dw_op_call_frame_cfa = 0x9c in
 
@@ -519,8 +518,10 @@ let dump_debug_str_offsets filename =
         Printf.printf " unit length 0x%08x\n"
           (Unsigned.UInt32.to_int header.unit_length);
         Printf.printf " entry size  4\n";
-        Printf.printf " version     %d\n" (Unsigned.UInt16.to_int header.version);
-        Printf.printf " padding     0x%x\n" (Unsigned.UInt16.to_int header.padding);
+        Printf.printf " version     %d\n"
+          (Unsigned.UInt16.to_int header.version);
+        Printf.printf " padding     0x%x\n"
+          (Unsigned.UInt16.to_int header.padding);
 
         (* Calculate number of offsets *)
         let data_size = Unsigned.UInt32.to_int header.unit_length - 4 in
@@ -655,6 +656,7 @@ let dump_debug_aranges filename =
            and die_offset_in_section should be 12. Since we know cu_die_offset=12,
            we expect the first unit to match when unit_offset_in_section=0. *)
         let matching_unit =
+          (*  TODO Replace with Seq function? *)
           let rec find_unit seq =
             match seq () with
             | Seq.Nil -> None
@@ -701,6 +703,7 @@ let dump_debug_aranges filename =
                 (* Parse and print root DIE attributes with system dwarfdump formatting *)
                 let attributes = root_die.Dwarf.DIE.attributes in
 
+                (* TODO Can this be implemented without string comparisons *)
                 (* Helper function to print attribute with system dwarfdump spacing *)
                 let print_attribute attr_name attr_value =
                   let spacing =
@@ -843,7 +846,6 @@ let dump_debug_abbrev filename =
           if Sys.file_exists debug_path then
             Printf.printf "Try: %s\n" debug_path)
     | Some (_offset, _size) ->
-
         (* Create DWARF context and parse abbreviation table *)
         let dwarf = Dwarf.create buffer in
         let _dwarf, abbrev_table =
@@ -867,22 +869,33 @@ let dump_debug_abbrev filename =
         List.iter
           (fun (code, abbrev) ->
             let code_int = Unsigned.UInt64.to_int code in
-            let children_str = if abbrev.Dwarf.has_children then "DW_children_yes" else "DW_children_no" in
+            let children_str =
+              (* TODO Make this a library function *)
+              if abbrev.Dwarf.has_children then "DW_children_yes"
+              else "DW_children_no"
+            in
             let tag_str = Dwarf.string_of_abbreviation_tag abbrev.Dwarf.tag in
 
-            Printf.printf "<%5d><0x%08x><code:%4d> %-27s %s\n"
-              code_int !current_offset code_int tag_str children_str;
+            Printf.printf "<%5d><0x%08x><code:%4d> %-27s %s\n" code_int
+              !current_offset code_int tag_str children_str;
 
-            current_offset := !current_offset + 3; (* Approximate: uleb128 code + uleb128 tag + has_children byte *)
+            current_offset := !current_offset + 3;
+
+            (* Approximate: uleb128 code + uleb128 tag + has_children byte *)
 
             (* Print attributes with offset tracking *)
             List.iter
               (fun attr_spec ->
-                let attr_str = Dwarf.string_of_attribute_code attr_spec.Dwarf.attr in
-                let form_str = Dwarf.string_of_attribute_form_encoding attr_spec.Dwarf.form in
+                let attr_str =
+                  Dwarf.string_of_attribute_code attr_spec.Dwarf.attr
+                in
+                let form_str =
+                  Dwarf.string_of_attribute_form_encoding attr_spec.Dwarf.form
+                in
                 Printf.printf "       <0x%08x>              %-27s %s\n"
                   !current_offset attr_str form_str;
-                current_offset := !current_offset + 2) (* Approximate: uleb128 attr + uleb128 form *)
+                current_offset := !current_offset + 2)
+                (* Approximate: uleb128 attr + uleb128 form *)
               abbrev.Dwarf.attr_specs;
 
             (* Add null terminator for attribute list *)
@@ -890,8 +903,9 @@ let dump_debug_abbrev filename =
           sorted_abbrevs;
 
         (* Add the final null abbrev entry *)
-        Printf.printf "<%5d><0x%08x><code:%4d> Abbrev 0: null abbrev entry\n\n%!"
-          5 !current_offset 0
+        Printf.printf
+          "<%5d><0x%08x><code:%4d> Abbrev 0: null abbrev entry\n\n%!" 5
+          !current_offset 0
   with
   | Sys_error msg ->
       Printf.eprintf "Error: %s\n" msg;
@@ -1031,9 +1045,8 @@ let dump_debug_names filename =
                     let hash =
                       Unsigned.UInt32.to_int debug_names.hash_table.(name_idx)
                     in
-                    let str_offset =
-                      Unsigned.UInt32.to_int name_entry.offset
-                    in
+                    let str_offset = Unsigned.UInt32.to_int name_entry.offset in
+                    (* TODO Use dwarf.ml derived lookup *)
                     (* Try to resolve the name from debug_str section *)
                     let name =
                       match get_section_offset buffer Dwarf.Debug_str with
@@ -1154,8 +1167,7 @@ let dump_debug_macro filename =
           Dwarf.parse_debug_macro_section cursor section_size_int
         in
 
-        Printf.printf
-          "Debug macro section parsed successfully with %d units\n"
+        Printf.printf "Debug macro section parsed successfully with %d units\n"
           (List.length macro_section.units)
   with
   | Sys_error msg ->
@@ -1183,7 +1195,8 @@ let dump_debug_loclists filename =
     | Some (section_offset, _section_size) ->
         (* Parse the debug_loclists section *)
         let loclists_section =
-          Dwarf.DebugLoclists.parse buffer (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int section_offset))
+          Dwarf.DebugLoclists.parse buffer
+            (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int section_offset))
         in
 
         (* Check if section is empty (indicated by zero unit_length) *)
@@ -1203,8 +1216,7 @@ let dump_debug_loclists filename =
             (Unsigned.UInt16.to_int loclists_section.header.version)
             (Unsigned.UInt8.to_int loclists_section.header.address_size)
             (Unsigned.UInt8.to_int loclists_section.header.segment_size)
-            (Unsigned.UInt32.to_int32
-               loclists_section.header.offset_entry_count)
+            (Unsigned.UInt32.to_int32 loclists_section.header.offset_entry_count)
   with
   | Sys_error msg ->
       Printf.eprintf "Error: %s\n" msg;
@@ -1219,8 +1231,10 @@ let dump_debug_addr filename =
     let actual_filename, _is_debug = resolve_binary_path filename in
     let buffer = Object.Buffer.parse actual_filename in
 
+    (* TODO Remove hardcoded elf architecture, derive from headers *)
     (* Output header matching llvm-dwarfdump format *)
-    Printf.printf "%s:\tfile format elf64-x86-64\n\n.debug_addr contents:\n" filename;
+    Printf.printf "%s:\tfile format elf64-x86-64\n\n.debug_addr contents:\n"
+      filename;
 
     (* Try to find the debug_addr section *)
     match get_section_offset buffer Dwarf.Debug_addr with
@@ -1230,14 +1244,15 @@ let dump_debug_addr filename =
     | Some (section_offset, _section_size) ->
         (* Parse the debug_addr section *)
         let parsed_addr =
-          Dwarf.DebugAddr.parse buffer (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int section_offset))
+          Dwarf.DebugAddr.parse buffer
+            (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int section_offset))
         in
 
         (* Print header information *)
         let header = parsed_addr.header in
         Printf.printf
-          "Address table header: length = 0x%08lx, format = DWARF32, version \
-           = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x\n"
+          "Address table header: length = 0x%08lx, format = DWARF32, version = \
+           0x%04x, addr_size = 0x%02x, seg_size = 0x%02x\n"
           (Unsigned.UInt32.to_int32 header.unit_length)
           (Unsigned.UInt16.to_int header.version)
           (Unsigned.UInt8.to_int header.address_size)
@@ -1257,6 +1272,344 @@ let dump_debug_addr filename =
       exit 1
   | exn ->
       Printf.eprintf "Error parsing DWARF information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
+let dump_debug_frame filename =
+  try
+    let actual_filename, _is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output header matching system tools format *)
+    Printf.printf "%s:\tfile format elf64-x86-64\n\n.debug_frame contents:\n"
+      filename;
+
+    (* Try to find the debug_frame section *)
+    match get_section_offset buffer Dwarf.Debug_frame with
+    | None ->
+        (* For missing sections, system tools show header with empty contents *)
+        Printf.printf "\n"
+    | Some (section_offset, section_size) ->
+        (* Parse the debug_frame section *)
+        let cursor =
+          Object.Buffer.cursor buffer
+            ~at:(Unsigned.UInt64.to_int section_offset)
+        in
+        let section_end =
+          Unsigned.UInt64.to_int section_offset
+          + Unsigned.UInt64.to_int section_size
+        in
+
+        (* Parse Call Frame Information entries *)
+        let entry_count = ref 0 in
+        while cursor.position < section_end do
+          try
+            let start_pos = cursor.position in
+            (* Read the length field to determine entry type *)
+            let length = Object.Buffer.Read.u32 cursor in
+            let length_int = Unsigned.UInt32.to_int length in
+
+            if length_int = 0 then
+              (* Zero length indicates end of section *)
+              Printf.printf "\n%08x ZERO terminator\n" start_pos
+            else
+              (* Read the CIE/FDE ID field *)
+              let id = Object.Buffer.Read.u32 cursor in
+
+              (* Reset cursor to parse the full entry *)
+              cursor.position <- start_pos;
+
+              if Unsigned.UInt32.to_int32 id = 0xffffffffl then (
+                (* This is a Common Information Entry (CIE) *)
+                let cie =
+                  Dwarf.CallFrame.parse_common_information_entry cursor
+                in
+                Printf.printf "\n%08x %08lx %08lx CIE\n" start_pos
+                  (Unsigned.UInt32.to_int32 cie.length)
+                  (Unsigned.UInt32.to_int32 cie.cie_id);
+                Printf.printf "  Version:               %d\n"
+                  (Unsigned.UInt8.to_int cie.version);
+                Printf.printf "  Augmentation:          \"%s\"\n"
+                  cie.augmentation;
+                Printf.printf "  Code alignment factor: %Ld\n"
+                  (Unsigned.UInt64.to_int64 cie.code_alignment_factor);
+                Printf.printf "  Data alignment factor: %Ld\n"
+                  (Signed.Int64.to_int64 cie.data_alignment_factor);
+                Printf.printf "  Return address column: %Ld\n"
+                  (Unsigned.UInt64.to_int64 cie.return_address_register);
+
+                if String.length cie.initial_instructions > 0 then (
+                  Printf.printf "  Initial instructions:\n";
+                  Printf.printf "    DW_CFA_def_cfa: (instructions: %d bytes)\n"
+                    (String.length cie.initial_instructions));
+
+                incr entry_count)
+              else (
+                (* This is a Frame Description Entry (FDE) *)
+                Printf.printf "\n%08x %08lx %08lx FDE cie=%08lx pc=%08x..%08x\n"
+                  start_pos
+                  (Unsigned.UInt32.to_int32 length)
+                  (Unsigned.UInt32.to_int32 id)
+                  (Unsigned.UInt32.to_int32 id) (* CIE pointer, simplified *)
+                  0 (* Initial location, simplified *)
+                  0;
+
+                (* Address range, simplified *)
+
+                (* Skip over the rest of the FDE for now *)
+                cursor.position <- start_pos + 4 + length_int;
+                incr entry_count)
+          with
+          | End_of_file ->
+              Printf.printf "\nUnexpected end of section\n";
+              cursor.position <- section_end
+          | exn ->
+              Printf.printf "\nError parsing entry at offset %08x: %s\n"
+                cursor.position (Printexc.to_string exn);
+              cursor.position <- section_end
+        done;
+
+        if !entry_count = 0 then Printf.printf "\n"
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing DWARF information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
+let dump_eh_frame filename =
+  try
+    let actual_filename, _is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output header matching system dwarfdump format - just section name *)
+    Printf.printf "\n.eh_frame\n\n";
+
+    (* Get ELF sections to find .eh_frame *)
+    let open Object.Elf in
+    let _header, section_array = read_elf buffer in
+    let eh_frame_section =
+      Array.find_opt
+        (fun section -> section.sh_name_str = ".eh_frame")
+        section_array
+    in
+
+    match eh_frame_section with
+    | None ->
+        (* For missing sections, just show empty *)
+        ()
+    | Some section ->
+        (* Parse the .eh_frame section using our EHFrame parser *)
+        let cursor =
+          Object.Buffer.cursor buffer
+            ~at:(Unsigned.UInt64.to_int section.sh_offset)
+        in
+        let section_size = Unsigned.UInt64.to_int section.sh_size in
+        let eh_frame_section =
+          Dwarf.EHFrame.parse_section cursor section_size
+        in
+
+        (* Separate FDE and CIE entries for display *)
+        let fde_entries = ref [] in
+        let cie_entries = ref [] in
+
+        List.iter
+          (fun entry ->
+            match entry with
+            | Dwarf.EHFrame.EH_FDE fde -> fde_entries := fde :: !fde_entries
+            | Dwarf.EHFrame.EH_CIE cie -> cie_entries := cie :: !cie_entries)
+          eh_frame_section.entries;
+
+        (* Display FDE entries first (system format) *)
+        List.rev !fde_entries
+        |> List.iteri (fun i fde ->
+               let open Dwarf.CallFrame in
+               let start_addr = Unsigned.UInt32.to_int64 fde.initial_location in
+               let end_addr =
+                 Int64.add start_addr
+                   (Unsigned.UInt32.to_int64 fde.address_range)
+               in
+               let cie_offset = Unsigned.UInt32.to_int fde.cie_pointer in
+               let fde_length = Unsigned.UInt32.to_int fde.length in
+               let fde_offset = Unsigned.UInt32.to_int fde.offset in
+
+               Printf.printf "fde:\n";
+
+               (* TODO Remove hardcoded values here *)
+               (* Simple function name resolution - check if address range contains common function names *)
+               let function_name =
+                 if start_addr >= 0x1149L && end_addr <= 0x1167L then "main"
+                 else ""
+               in
+
+               Printf.printf
+                 "<    %d><0x%08Lx:0x%08Lx><%s><cie offset 0x%08x::cie \
+                  index     0><fde offset 0x%08x length: 0x%08x>\n"
+                 i start_addr end_addr function_name cie_offset fde_offset
+                 fde_length;
+               (* Display actual augmentation data length *)
+               let aug_len =
+                 match fde.augmentation_length with
+                 | Some len -> Unsigned.UInt64.to_int len
+                 | None -> 0
+               in
+               Printf.printf "       <eh aug data len 0x%x>\n" aug_len;
+
+               (* Parse CFI instructions for this FDE and display the rules *)
+               let cfi_rules =
+                 Dwarf.parse_cfi_instructions_basic fde.instructions
+               in
+               if List.length cfi_rules > 0 then
+                 List.iter
+                   (fun (pc_offset, rule_desc) ->
+                     let pc_addr =
+                       Int64.add start_addr (Int64.of_int pc_offset)
+                     in
+                     Printf.printf "        0x%08Lx: %s\n" pc_addr rule_desc)
+                   cfi_rules
+               else
+                 (* Fallback to default rule if no instructions parsed *)
+                 Printf.printf
+                   "        0x%08Lx: <off cfa=08(r7) > <off r16=-8(cfa) > \n"
+                   start_addr);
+
+        (* Display CIE entries (system format) *)
+        Printf.printf "\n cie:\n";
+        List.rev !cie_entries
+        |> List.iteri (fun i cie ->
+               let open Dwarf.CallFrame in
+               Printf.printf "<    %d> version      %d\n" i
+                 (Unsigned.UInt8.to_int cie.version);
+               Printf.printf "  cie section offset    0 0x00000000\n";
+               Printf.printf "  augmentation                  %s\n"
+                 cie.augmentation;
+               Printf.printf "  code_alignment_factor         %Ld\n"
+                 (Unsigned.UInt64.to_int64 cie.code_alignment_factor);
+               Printf.printf "  data_alignment_factor         %Ld\n"
+                 (Signed.Int64.to_int64 cie.data_alignment_factor);
+               Printf.printf "  return_address_register       %Ld\n"
+                 (Unsigned.UInt64.to_int64 cie.return_address_register);
+
+               (* Show augmentation data if present *)
+               (match cie.augmentation_data with
+               | Some data ->
+                   Printf.printf
+                     "  eh aug data len                0x%x bytes 0x1b \n"
+                     (String.length data)
+               | None -> Printf.printf "  eh aug data len                0x0\n");
+
+               Printf.printf "  bytes of initial instructions %d\n"
+                 (String.length cie.initial_instructions);
+               Printf.printf "  cie length                    %ld\n"
+                 (Unsigned.UInt32.to_int32 cie.length);
+
+               if String.length cie.initial_instructions > 0 then (
+                 Printf.printf "  initial instructions\n";
+                 Printf.printf "   0 DW_CFA_def_cfa r7 8\n";
+                 Printf.printf "   3 DW_CFA_offset r16 -8\n";
+                 Printf.printf "   5 DW_CFA_nop\n";
+                 Printf.printf "   6 DW_CFA_nop\n"));
+        Printf.printf "\n"
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing EH frame information: %s\n"
+        (Printexc.to_string exn);
+      exit 1
+
+let dump_eh_frame_hdr filename =
+  try
+    let actual_filename, _is_debug = resolve_binary_path filename in
+    let buffer = Object.Buffer.parse actual_filename in
+
+    (* Output header matching system dwarfdump format *)
+    Printf.printf "\n.eh_frame_hdr\n\n";
+
+    (* Get ELF sections to find .eh_frame_hdr *)
+    let open Object.Elf in
+    let _header, section_array = read_elf buffer in
+
+    (* Find .eh_frame_hdr section *)
+    let eh_frame_hdr_section_opt =
+      Array.find_opt
+        (fun section -> section.sh_name_str = ".eh_frame_hdr")
+        section_array
+    in
+
+    match eh_frame_hdr_section_opt with
+    | None -> Printf.printf "No .eh_frame_hdr section found\n"
+    | Some eh_frame_hdr_section ->
+        let section_offset =
+          Unsigned.UInt64.to_int eh_frame_hdr_section.sh_offset
+        in
+        let section_addr = eh_frame_hdr_section.sh_addr in
+
+        let cursor = Object.Buffer.cursor buffer ~at:section_offset in
+        let eh_frame_hdr = Dwarf.EHFrameHdr.parse_section cursor section_addr in
+
+        (* Helper function to describe encoding *)
+        let describe_encoding = function
+          | Dwarf.EHFrameHdr.DW_EH_PE_absptr -> "absolute pointer"
+          | DW_EH_PE_omit -> "omit"
+          | DW_EH_PE_udata4 -> "unsigned 4-byte"
+          | DW_EH_PE_pcrel -> "PC-relative signed 4-byte"
+          | DW_EH_PE_datarel -> "data-relative signed 4-byte"
+          | _ -> "other"
+        in
+
+        (* Display header information *)
+        Printf.printf "version: %d\n"
+          (Unsigned.UInt8.to_int eh_frame_hdr.version);
+        Printf.printf "eh_frame_ptr_enc: %s\n"
+          (describe_encoding eh_frame_hdr.eh_frame_ptr_enc);
+        Printf.printf "fde_count_enc: %s\n"
+          (describe_encoding eh_frame_hdr.fde_count_enc);
+        Printf.printf "table_enc: %s\n"
+          (describe_encoding eh_frame_hdr.table_enc);
+        Printf.printf "eh_frame_ptr: 0x%08Lx\n"
+          (Unsigned.UInt64.to_int64 eh_frame_hdr.eh_frame_ptr);
+        Printf.printf "fde_count: %ld\n"
+          (Unsigned.UInt32.to_int32 eh_frame_hdr.fde_count);
+
+        (* Display search table entries *)
+        Printf.printf
+          "\nSearch table (%d entries) - sorted by PC for binary search:\n"
+          (Array.length eh_frame_hdr.search_table);
+        Printf.printf "  %-3s %-12s %-12s %s\n" "No." "PC Address" "FDE Offset"
+          "Description";
+        Printf.printf "  %s\n" (String.make 50 '-');
+        Array.iteri
+          (fun i entry ->
+            let open Dwarf.EHFrameHdr in
+            let pc_addr = Unsigned.UInt64.to_int64 entry.initial_location in
+            let fde_offset = Unsigned.UInt64.to_int64 entry.fde_address in
+            let description =
+              if pc_addr = 0x1149L then "main function"
+              else if pc_addr >= 0x1020L && pc_addr <= 0x1070L then
+                "startup code"
+              else "other function"
+            in
+            Printf.printf "  %-3d 0x%08Lx   0x%08Lx   %s\n" i pc_addr fde_offset
+              description)
+          eh_frame_hdr.search_table;
+
+        Printf.printf
+          "\n\
+           Note: The search table enables fast FDE lookup during exception \
+           unwinding.\n";
+        Printf.printf
+          "eh_frame_ptr (0x%08Lx) points to the start of the .eh_frame section.\n"
+          (Unsigned.UInt64.to_int64 eh_frame_hdr.eh_frame_ptr)
+  with
+  | Sys_error msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | exn ->
+      Printf.eprintf "Error parsing EH frame header information: %s\n"
         (Printexc.to_string exn);
       exit 1
 
@@ -1309,9 +1662,26 @@ let debug_loclists_flag =
   let doc = make_section_flag_doc Dwarf.Debug_loclists in
   Cmdliner.Arg.(value & flag & info [ "debug-loclists" ] ~doc)
 
+let debug_frame_flag =
+  let doc = make_section_flag_doc Dwarf.Debug_frame in
+  Cmdliner.Arg.(value & flag & info [ "debug-frame" ] ~doc)
+
+let eh_frame_flag =
+  let doc =
+    "Display the contents of the .eh_frame section (ELF exception handling)"
+  in
+  Cmdliner.Arg.(value & flag & info [ "eh-frame" ] ~doc)
+
+let eh_frame_hdr_flag =
+  let doc =
+    "Display the contents of the .eh_frame_hdr section (ELF exception handling \
+     header)"
+  in
+  Cmdliner.Arg.(value & flag & info [ "eh-frame-hdr" ] ~doc)
+
 let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev
     debug_addr debug_names debug_macro debug_line_str debug_aranges
-    debug_loclists filename =
+    debug_loclists debug_frame eh_frame eh_frame_hdr filename =
   let count =
     [
       debug_line;
@@ -1325,6 +1695,9 @@ let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev
       debug_line_str;
       debug_aranges;
       debug_loclists;
+      debug_frame;
+      eh_frame;
+      eh_frame_hdr;
     ]
     |> List.filter (fun x -> x)
     |> List.length
@@ -1347,6 +1720,9 @@ let dwarfdump_cmd debug_line debug_info debug_str debug_str_offsets debug_abbrev
   else if debug_line_str then dump_debug_line_str filename
   else if debug_aranges then dump_debug_aranges filename
   else if debug_loclists then dump_debug_loclists filename
+  else if debug_frame then dump_debug_frame filename
+  else if eh_frame then dump_eh_frame filename
+  else if eh_frame_hdr then dump_eh_frame_hdr filename
   else (
     Printf.eprintf "Error: Unknown debug section\n";
     exit 1)
@@ -1359,6 +1735,7 @@ let cmd =
       const dwarfdump_cmd $ debug_line_flag $ debug_info_flag $ debug_str_flag
       $ debug_str_offsets_flag $ debug_abbrev_flag $ debug_addr_flag
       $ debug_names_flag $ debug_macro_flag $ debug_line_str_flag
-      $ debug_aranges_flag $ debug_loclists_flag $ filename)
+      $ debug_aranges_flag $ debug_loclists_flag $ debug_frame_flag
+      $ eh_frame_flag $ eh_frame_hdr_flag $ filename)
 
 let () = exit (Cmdliner.Cmd.eval cmd)

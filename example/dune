@@ -21,6 +21,5 @@
  (public_name dwarfdump)
  (name dwarfdump)
  (enabled_if
-  (= %{system} "macosx")
- )
+  (= %{system} "macosx"))
  (libraries durin object integers cmdliner))

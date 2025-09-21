@@ -15,6 +15,7 @@ type dwarf_section =
   | Debug_names
   | Debug_addr
   | Debug_macro
+  | Debug_frame
 
 type object_format = MachO | ELF
 
@@ -105,7 +106,8 @@ let object_format_to_section_name format section =
       | Debug_str_offs -> "__debug_str_offsets"
       | Debug_names -> "__debug_names"
       | Debug_addr -> "__debug_addr"
-      | Debug_macro -> "__debug_macro")
+      | Debug_macro -> "__debug_macro"
+      | Debug_frame -> "__debug_frame")
   | ELF -> (
       match section with
       | Debug_info -> ".debug_info"
@@ -119,7 +121,8 @@ let object_format_to_section_name format section =
       | Debug_str_offs -> ".debug_str_offsets"
       | Debug_names -> ".debug_names"
       | Debug_addr -> ".debug_addr"
-      | Debug_macro -> ".debug_macro")
+      | Debug_macro -> ".debug_macro"
+      | Debug_frame -> ".debug_frame")
 
 type abbreviation_tag =
   | DW_TAG_null
@@ -2183,6 +2186,75 @@ type call_frame_instruction =
   | DW_CFA_lo_user
   | DW_CFA_hi_user
 
+(* CFI instruction decoder *)
+let decode_cfa_opcode = function
+  | 0x00 -> DW_CFA_nop
+  | 0x01 -> DW_CFA_set_loc
+  | 0x02 -> DW_CFA_advance_loc1
+  | 0x03 -> DW_CFA_advance_loc2
+  | 0x04 -> DW_CFA_advance_loc4
+  | 0x05 -> DW_CFA_offset_extended
+  | 0x06 -> DW_CFA_restore_extended
+  | 0x07 -> DW_CFA_undefined
+  | 0x08 -> DW_CFA_same_value
+  | 0x09 -> DW_CFA_register
+  | 0x0a -> DW_CFA_remember_state
+  | 0x0b -> DW_CFA_restore_state
+  | 0x0c -> DW_CFA_def_cfa
+  | 0x0d -> DW_CFA_def_cfa_register
+  | 0x0e -> DW_CFA_def_cfa_offset
+  | 0x0f -> DW_CFA_def_cfa_expression
+  | 0x10 -> DW_CFA_expression
+  | 0x11 -> DW_CFA_offset_extended_sf
+  | 0x12 -> DW_CFA_def_cfa_sf
+  | 0x13 -> DW_CFA_def_cfa_offset_sf
+  | 0x14 -> DW_CFA_val_offset
+  | 0x15 -> DW_CFA_val_offset_sf
+  | 0x16 -> DW_CFA_val_expression
+  | 0x1c -> DW_CFA_lo_user
+  | 0x3f -> DW_CFA_hi_user
+  | n when n >= 0x40 && n <= 0x7f -> DW_CFA_advance_loc (* + delta *)
+  | n when n >= 0x80 && n <= 0xbf -> DW_CFA_offset (* + register *)
+  | n when n >= 0xc0 && n <= 0xff -> DW_CFA_restore (* + register *)
+  | _ -> DW_CFA_nop (* Unknown instruction, treat as nop *)
+
+(* Basic CFI instruction parser - extracts info from instruction bytes *)
+let parse_cfi_instructions_basic (instructions : string) : (int * string) list =
+  let rec parse_byte_stream bytes pos pc_offset acc =
+    if pos >= String.length bytes then List.rev acc
+    else
+      let opcode = Char.code bytes.[pos] in
+      let instruction = decode_cfa_opcode opcode in
+      match instruction with
+      | DW_CFA_def_cfa ->
+          (* DW_CFA_def_cfa takes register and offset *)
+          if pos + 2 < String.length bytes then
+            let reg = Char.code bytes.[pos + 1] in
+            let offset = Char.code bytes.[pos + 2] in
+            let desc = Printf.sprintf "<off cfa=%02d(r%d) >" offset reg in
+            parse_byte_stream bytes (pos + 3) pc_offset
+              ((pc_offset, desc) :: acc)
+          else List.rev acc
+      | DW_CFA_offset ->
+          (* DW_CFA_offset with embedded register number *)
+          let reg = opcode land 0x3f in
+          if pos + 1 < String.length bytes then
+            let offset = Char.code bytes.[pos + 1] in
+            let desc = Printf.sprintf "<off r%d=-%d(cfa) >" reg (offset * 8) in
+            parse_byte_stream bytes (pos + 2) pc_offset
+              ((pc_offset, desc) :: acc)
+          else List.rev acc
+      | DW_CFA_advance_loc ->
+          (* DW_CFA_advance_loc with embedded delta *)
+          let delta = opcode land 0x3f in
+          parse_byte_stream bytes (pos + 1) (pc_offset + delta) acc
+      | DW_CFA_nop -> parse_byte_stream bytes (pos + 1) pc_offset acc
+      | _ ->
+          (* Skip unknown instructions for now *)
+          parse_byte_stream bytes (pos + 1) pc_offset acc
+  in
+  parse_byte_stream instructions 0 0 []
+
 type range_list_entry =
   | DW_RLE_end_of_list
   | DW_RLE_base_addressx
@@ -3385,11 +3457,12 @@ module CallFrame = struct
   type frame_description_entry = {
     length : u32;
     cie_pointer : u32;
-    initial_location : u64;
-    address_range : u64;
+    initial_location : u32;
+    address_range : u32;
     augmentation_length : u64 option;
     augmentation_data : string option;
     instructions : string;
+    offset : u32; (* File offset where this FDE starts *)
   }
 
   (** Parse a null-terminated augmentation string from a cursor *)
@@ -3487,6 +3560,333 @@ module CallFrame = struct
       augmentation_data;
       initial_instructions;
     }
+end
+
+(** EH Frame Header (.eh_frame_hdr section) - ELF exception handling support *)
+module EHFrameHdr = struct
+  type encoding =
+    | DW_EH_PE_absptr (* 0x00 *)
+    | DW_EH_PE_omit (* 0xff *)
+    | DW_EH_PE_uleb128 (* 0x01 *)
+    | DW_EH_PE_udata2 (* 0x02 *)
+    | DW_EH_PE_udata4 (* 0x03 *)
+    | DW_EH_PE_udata8 (* 0x04 *)
+    | DW_EH_PE_sleb128 (* 0x09 *)
+    | DW_EH_PE_sdata2 (* 0x0a *)
+    | DW_EH_PE_sdata4 (* 0x0b *)
+    | DW_EH_PE_sdata8 (* 0x0c *)
+    | DW_EH_PE_pcrel (* 0x10 - PC relative *)
+    | DW_EH_PE_datarel (* 0x30 - data relative *)
+    | DW_EH_PE_funcrel (* 0x40 - function relative *)
+    | DW_EH_PE_aligned (* 0x50 - aligned *)
+    | DW_EH_PE_indirect (* 0x80 - indirect *)
+
+  type search_table_entry = {
+    initial_location : u64; (* PC value *)
+    fde_address : u64; (* Address of FDE *)
+  }
+
+  type header = {
+    version : u8;
+    eh_frame_ptr_enc : encoding;
+    fde_count_enc : encoding;
+    table_enc : encoding;
+    eh_frame_ptr : u64;
+    fde_count : u32;
+    search_table : search_table_entry array;
+  }
+
+  let encoding_of_u8 = function
+    | 0x00 -> DW_EH_PE_absptr
+    | 0xff -> DW_EH_PE_omit
+    | 0x01 -> DW_EH_PE_uleb128
+    | 0x02 -> DW_EH_PE_udata2
+    | 0x03 -> DW_EH_PE_udata4
+    | 0x04 -> DW_EH_PE_udata8
+    | 0x09 -> DW_EH_PE_sleb128
+    | 0x0a -> DW_EH_PE_sdata2
+    | 0x0b -> DW_EH_PE_sdata4
+    | 0x0c -> DW_EH_PE_sdata8
+    | 0x10 -> DW_EH_PE_pcrel
+    | 0x30 -> DW_EH_PE_datarel
+    | 0x40 -> DW_EH_PE_funcrel
+    | 0x50 -> DW_EH_PE_aligned
+    | 0x80 -> DW_EH_PE_indirect
+    (* Handle common combined encodings *)
+    | 0x1b -> DW_EH_PE_pcrel (* 0x10 | 0x0b = PC-relative signed 4-byte *)
+    | 0x3b -> DW_EH_PE_datarel (* 0x30 | 0x0b = Data-relative signed 4-byte *)
+    | n -> failwith (Printf.sprintf "Unknown EH encoding: 0x%02x" n)
+
+  let read_encoded_value cursor encoding _base_addr =
+    match encoding with
+    | DW_EH_PE_absptr -> Object.Buffer.Read.u64 cursor
+    | DW_EH_PE_udata4 ->
+        Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
+    | DW_EH_PE_sdata4 ->
+        let value = Object.Buffer.Read.u32 cursor in
+        let signed_value = Unsigned.UInt32.to_int32 value in
+        Unsigned.UInt64.of_int64 (Int64.of_int32 signed_value)
+    | DW_EH_PE_pcrel ->
+        (* PC-relative: value is relative to current position *)
+        let current_pos = Unsigned.UInt64.of_int cursor.position in
+        let offset = Object.Buffer.Read.u32 cursor in
+        let signed_offset = Unsigned.UInt32.to_int32 offset in
+        Unsigned.UInt64.add current_pos
+          (Unsigned.UInt64.of_int64 (Int64.of_int32 signed_offset))
+    | DW_EH_PE_datarel ->
+        (* Data-relative: value is relative to section base *)
+        let offset = Object.Buffer.Read.u32 cursor in
+        let signed_offset = Unsigned.UInt32.to_int32 offset in
+        Unsigned.UInt64.add _base_addr
+          (Unsigned.UInt64.of_int64 (Int64.of_int32 signed_offset))
+    | _ -> failwith "Unsupported encoding in read_encoded_value"
+
+  let parse_header cursor section_base_addr =
+    let version = Object.Buffer.Read.u8 cursor in
+    let eh_frame_ptr_enc =
+      encoding_of_u8 (Unsigned.UInt8.to_int (Object.Buffer.Read.u8 cursor))
+    in
+    let fde_count_enc =
+      encoding_of_u8 (Unsigned.UInt8.to_int (Object.Buffer.Read.u8 cursor))
+    in
+    let table_enc =
+      encoding_of_u8 (Unsigned.UInt8.to_int (Object.Buffer.Read.u8 cursor))
+    in
+
+    let eh_frame_ptr =
+      read_encoded_value cursor eh_frame_ptr_enc section_base_addr
+    in
+    let fde_count_raw =
+      read_encoded_value cursor fde_count_enc section_base_addr
+    in
+    let fde_count =
+      Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 fde_count_raw)
+    in
+
+    (* Parse search table *)
+    let search_table =
+      Array.init (Unsigned.UInt32.to_int fde_count) (fun _i ->
+          let initial_location =
+            read_encoded_value cursor table_enc section_base_addr
+          in
+          let fde_address =
+            read_encoded_value cursor table_enc section_base_addr
+          in
+          { initial_location; fde_address })
+    in
+
+    {
+      version;
+      eh_frame_ptr_enc;
+      fde_count_enc;
+      table_enc;
+      eh_frame_ptr;
+      fde_count;
+      search_table;
+    }
+
+  (** Parse complete .eh_frame_hdr section *)
+  let parse_section cursor section_base_addr =
+    parse_header cursor section_base_addr
+end
+
+(** EH Frame (.eh_frame section) - ELF exception handling call frame information
+*)
+module EHFrame = struct
+  (* Reuse the CallFrame types but add EH-specific handling *)
+  type eh_frame_entry =
+    | EH_CIE of CallFrame.common_information_entry
+    | EH_FDE of CallFrame.frame_description_entry
+
+  type section = { entries : eh_frame_entry list }
+
+  (* Parse CIE adapted for .eh_frame format *)
+  let parse_eh_cie cursor _expected_length =
+    let length = Object.Buffer.Read.u32 cursor in
+    let cie_id_start = cursor.position in
+    (* Track where CIE content starts *)
+    let cie_id = Object.Buffer.Read.u32 cursor in
+
+    (* In .eh_frame, CIE ID is 0 (not 0xffffffff like in .debug_frame) *)
+    if Unsigned.UInt32.to_int32 cie_id <> 0x00000000l then
+      failwith "Invalid EH CIE: cie_id is not 0";
+
+    let version = Object.Buffer.Read.u8 cursor in
+    let augmentation = CallFrame.parse_augmentation_string cursor in
+
+    (* EH frame may not have address_size and segment_selector_size for older versions *)
+    let address_size, segment_selector_size =
+      if Unsigned.UInt8.to_int version >= 4 then
+        (Object.Buffer.Read.u8 cursor, Object.Buffer.Read.u8 cursor)
+      else (Unsigned.UInt8.of_int 8, Unsigned.UInt8.of_int 0)
+      (* Default values *)
+    in
+
+    let code_alignment_factor_int = Object.Buffer.Read.uleb128 cursor in
+    let code_alignment_factor =
+      Unsigned.UInt64.of_int code_alignment_factor_int
+    in
+    let data_alignment_factor_int = Object.Buffer.Read.sleb128 cursor in
+    let data_alignment_factor = Signed.Int64.of_int data_alignment_factor_int in
+    let return_address_register_int = Object.Buffer.Read.uleb128 cursor in
+    let return_address_register =
+      Unsigned.UInt64.of_int return_address_register_int
+    in
+
+    (* Parse augmentation data if present *)
+    let augmentation_length, augmentation_data =
+      match CallFrame.parse_augmentation_data cursor augmentation with
+      | Some (len, data) -> (Some len, Some data)
+      | None -> (None, None)
+    in
+
+    (* Calculate initial instructions length correctly *)
+    let current_pos = cursor.position in
+    let bytes_read_from_cie_id = current_pos - cie_id_start in
+    let total_cie_size = Unsigned.UInt32.to_int length in
+    (* Length field covers cie_id onwards *)
+
+    let instructions_length = max 0 (total_cie_size - bytes_read_from_cie_id) in
+    let initial_instructions =
+      if instructions_length > 0 then
+        CallFrame.parse_instructions cursor instructions_length
+      else ""
+    in
+
+    {
+      CallFrame.length;
+      cie_id;
+      version;
+      augmentation;
+      address_size;
+      segment_selector_size;
+      code_alignment_factor;
+      data_alignment_factor;
+      return_address_register;
+      augmentation_length;
+      augmentation_data;
+      initial_instructions;
+    }
+
+  (* Parse FDE adapted for .eh_frame format *)
+  let parse_eh_fde cursor _expected_length fde_offset =
+    let length = Object.Buffer.Read.u32 cursor in
+    let fde_start = cursor.position in
+    (* Track where FDE content starts *)
+    let cie_pointer = Object.Buffer.Read.u32 cursor in
+
+    (* In .eh_frame, cie_pointer is a relative offset backwards to the CIE *)
+    (* For now, we'll store it as-is and calculate the actual CIE reference later *)
+
+    (* Read initial_location (PC start address) - in .eh_frame usually 32-bit PC-relative *)
+    let initial_location_field_pos = cursor.position in
+    let initial_location_raw = Object.Buffer.Read.u32 cursor in
+
+    (* In .eh_frame, initial_location is PC-relative to the field position.
+       Convert signed 32-bit to int32 first, then add field position to get absolute address *)
+    let initial_location_offset =
+      Int32.of_int (Unsigned.UInt32.to_int initial_location_raw)
+    in
+    let initial_location =
+      Unsigned.UInt32.of_int
+        (Int32.to_int
+           (Int32.add initial_location_offset
+              (Int32.of_int initial_location_field_pos)))
+    in
+
+    (* Read address_range (length of code covered) - in .eh_frame usually 32-bit *)
+    let address_range = Object.Buffer.Read.u32 cursor in
+
+    (* Parse augmentation data if present - check if remaining bytes suggest augmentation *)
+    let current_pos = cursor.position in
+    let bytes_read_from_fde = current_pos - fde_start in
+    let total_fde_size = Unsigned.UInt32.to_int length in
+    let remaining_bytes = total_fde_size - bytes_read_from_fde in
+
+    (* Try to parse augmentation data if there are enough bytes and first byte looks like length *)
+    let augmentation_length, augmentation_data, instructions_start =
+      if remaining_bytes > 0 then (
+        let saved_pos = cursor.position in
+        try
+          (* Try to read augmentation length as ULEB128 *)
+          let aug_len = Object.Buffer.Read.uleb128 cursor in
+          if aug_len >= 0 && aug_len < remaining_bytes then (
+            (* Read augmentation data *)
+            let data = Bytes.create aug_len in
+            for i = 0 to aug_len - 1 do
+              Bytes.set data i
+                (Char.chr
+                   (Unsigned.UInt8.to_int (Object.Buffer.Read.u8 cursor)))
+            done;
+            ( Some (Unsigned.UInt64.of_int aug_len),
+              Some (Bytes.to_string data),
+              cursor.position ))
+          else (
+            (* Not valid augmentation data, reset position *)
+            cursor.position <- saved_pos;
+            (None, None, saved_pos))
+        with _ ->
+          (* Error reading, reset position *)
+          cursor.position <- saved_pos;
+          (None, None, saved_pos))
+      else (None, None, current_pos)
+    in
+
+    (* Parse remaining bytes as instructions *)
+    let instructions_length =
+      max 0 (total_fde_size - (instructions_start - fde_start))
+    in
+    let instructions =
+      if instructions_length > 0 then
+        CallFrame.parse_instructions cursor instructions_length
+      else ""
+    in
+
+    {
+      CallFrame.length;
+      cie_pointer;
+      initial_location;
+      address_range;
+      augmentation_length;
+      augmentation_data;
+      instructions;
+      offset = Unsigned.UInt32.of_int fde_offset;
+    }
+
+  let parse_section cursor section_size =
+    let section_start = cursor.position in
+    (* Track section start for relative offsets *)
+    let section_end = cursor.position + section_size in
+    let entries = ref [] in
+
+    while cursor.position < section_end do
+      let start_pos = cursor.position in
+      let length = Object.Buffer.Read.u32 cursor in
+      let length_int = Unsigned.UInt32.to_int length in
+
+      if length_int = 0 then
+        (* Zero terminator *)
+        cursor.position <- section_end
+      else
+        let id = Object.Buffer.Read.u32 cursor in
+        (* Reset cursor to parse full entry *)
+        cursor.position <- start_pos;
+
+        if Unsigned.UInt32.to_int32 id = 0x00000000l then
+          (* This is a CIE in .eh_frame format (id = 0 instead of 0xffffffff) *)
+          let cie = parse_eh_cie cursor length in
+          entries := EH_CIE cie :: !entries
+        else
+          (* This is an FDE - parse it to get address ranges *)
+          cursor.position <- start_pos;
+        (* Reset to start of entry *)
+        let fde_section_offset = start_pos - section_start in
+        (* Calculate section-relative offset *)
+        let fde = parse_eh_fde cursor length fde_section_offset in
+        entries := EH_FDE fde :: !entries
+    done;
+
+    { entries = List.rev !entries }
 end
 
 (** Accelerated Name Lookup (.debug_names section) - DWARF 5 Section 6.1 *)
@@ -4341,7 +4741,13 @@ let get_compile_units t =
 
 (** String Offset Tables (.debug_str_offsets section) - DWARF 5 Section 7.26 *)
 module DebugStrOffsets = struct
-  type header = { unit_length : u32; version : u16; padding : u16; header_span : span }
+  type header = {
+    unit_length : u32;
+    version : u16;
+    padding : u16;
+    header_span : span;
+  }
+
   type offset_entry = { offset : u32; resolved_string : string option }
   type t = { header : header; offsets : offset_entry array }
 
@@ -4353,10 +4759,12 @@ module DebugStrOffsets = struct
     let end_pos = cursor.position in
 
     (* Calculate header span *)
-    let header_span = {
-      start = Unsigned.UInt64.of_int start_pos;
-      size = Unsigned.UInt64.of_int (end_pos - start_pos);
-    } in
+    let header_span =
+      {
+        start = Unsigned.UInt64.of_int start_pos;
+        size = Unsigned.UInt64.of_int (end_pos - start_pos);
+      }
+    in
 
     (* Validate DWARF version 5 *)
     if Unsigned.UInt16.to_int version != 5 then
@@ -4674,12 +5082,21 @@ module DebugAranges = struct
     let end_pos = cursor.position in
 
     (* Calculate header span *)
-    let header_span = {
-      start = Unsigned.UInt64.of_int start_pos;
-      size = Unsigned.UInt64.of_int (end_pos - start_pos);
-    } in
+    let header_span =
+      {
+        start = Unsigned.UInt64.of_int start_pos;
+        size = Unsigned.UInt64.of_int (end_pos - start_pos);
+      }
+    in
 
-    { unit_length; version; debug_info_offset; address_size; segment_size; header_span }
+    {
+      unit_length;
+      version;
+      debug_info_offset;
+      address_size;
+      segment_size;
+      header_span;
+    }
 
   let parse_ranges cursor header =
     let address_size = Unsigned.UInt8.to_int header.address_size in
