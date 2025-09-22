@@ -1,0 +1,21 @@
+
+.eh_frame_hdr
+
+version: 1
+eh_frame_ptr_enc: PC-relative signed 4-byte
+fde_count_enc: unsigned 4-byte
+table_enc: data-relative signed 4-byte
+eh_frame_ptr: 0x00002048
+fde_count: 5
+
+Search table (5 entries) - sorted by PC for binary search:
+  No. PC Address   FDE Offset   Description
+  --------------------------------------------------
+  0   0x00001020   0x00002078   other function
+  1   0x00001040   0x000020a0   other function
+  2   0x00001050   0x000020b8   other function
+  3   0x00001060   0x00002060   other function
+  4   0x00001149   0x000020d0   main function
+
+Note: The search table enables fast FDE lookup during exception unwinding.
+eh_frame_ptr (0x00002048) points to the start of the .eh_frame section.

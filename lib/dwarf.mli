@@ -757,6 +757,7 @@ type macro_info_entry_type =
 val macro_info_entry_type_of_u8 : Types.u8 -> macro_info_entry_type
 val string_of_macro_info_entry_type : macro_info_entry_type -> string
 
+(* TODO Place this into DebugMacro module and provide documentation. *)
 (** Debug Macro Section - DWARF 5 Section 6.3 *)
 
 type debug_macro_header = {
@@ -1393,6 +1394,44 @@ module CallFrame : sig
       @param cursor Buffer cursor positioned at the start of debug_frame section
       @param section_size Size of the debug_frame section in bytes
       @return Parsed debug_frame section containing all CIE and FDE entries *)
+
+  (** CFI rule types for state machine *)
+  type cfi_rule =
+    | Rule_undefined
+    | Rule_same_value
+    | Rule_offset of int64 (* offset from CFA *)
+    | Rule_val_offset of int64 (* value = CFA + offset *)
+    | Rule_register of int (* register number *)
+    | Rule_expression of string (* DWARF expression *)
+    | Rule_val_expression of string (* DWARF expression for value *)
+
+  type cfi_state = {
+    cfa_register : int;
+    cfa_offset : int64;
+    register_rules : (int, cfi_rule) Hashtbl.t;
+    pc_offset : int;
+  }
+  (** CFI state for tracking register rules *)
+
+  val initial_cfi_state : unit -> cfi_state
+  (** Create initial CFI state with architecture defaults *)
+
+  val parse_initial_state : common_information_entry -> cfi_state
+  (** Parse CIE initial instructions to establish proper initial CFI state.
+
+      This function processes the initial_instructions field of a CIE to
+      establish the baseline Call Frame Information state that FDEs can modify.
+  *)
+
+  val parse_cfi_instructions : string -> int64 -> int64 -> (int * string) list
+  (** Parse CFI instructions with alignment factor support.
+
+      Parameters:
+      - instructions: Raw CFI instruction bytes
+      - code_alignment: Code alignment factor from CIE (scales PC offsets)
+      - data_alignment: Data alignment factor from CIE
+
+      Returns list of (pc_offset, description) pairs showing CFI rules. *)
 end
 
 (** EH Frame Header parsing for .eh_frame_hdr section.
@@ -1476,6 +1515,46 @@ module EHFrame : sig
   (** Parse the .eh_frame section.
 
       The second parameter is the section size in bytes. *)
+
+  val find_cie_for_fde :
+    eh_frame_entry list -> u32 -> CallFrame.common_information_entry option
+  (** Find the CIE corresponding to an FDE using the cie_pointer field.
+
+      This function searches through the EH frame entries to find the CIE that
+      corresponds to the given cie_pointer. In .eh_frame format, the cie_pointer
+      is a relative offset backwards to the CIE.
+
+      Parameters:
+      - entries: List of parsed EH frame entries (CIEs and FDEs)
+      - cie_pointer: The cie_pointer field from an FDE
+
+      Returns the corresponding CIE if found, None otherwise. *)
+
+  val build_cie_map :
+    section -> (int, CallFrame.common_information_entry) Hashtbl.t
+  (** Build a mapping from section offset to CIE for efficient lookup.
+
+      This creates a hash table that maps file offsets to CIE entries, enabling
+      O(1) CIE lookup for FDE processing.
+
+      Parameters:
+      - section: Parsed EH frame section
+
+      Returns a hash table mapping offsets to CIE entries. *)
+
+  val find_cie_for_fde_enhanced :
+    section -> u32 -> int -> CallFrame.common_information_entry option
+  (** Enhanced CIE lookup using both cie_pointer and section mapping.
+
+      This function provides more sophisticated CIE lookup by combining relative
+      offset calculation with fallback heuristics.
+
+      Parameters:
+      - section: Parsed EH frame section
+      - cie_pointer: The cie_pointer field from an FDE
+      - fde_file_offset: File offset where the FDE appears
+
+      Returns the corresponding CIE using the best available strategy. *)
 end
 
 (** Accelerated Name Lookup parsing for .debug_names section.
@@ -2161,18 +2240,3 @@ module CompactUnwind : sig
       @return Optional tuple of (unwind_info, architecture) if parsing succeeds
   *)
 end
-
-(* TODO Why do we need both functions and why do they take string values rather than cursor? *)
-val parse_cfi_instructions_basic : string -> (int * string) list
-(** Parse basic CFI instructions from instruction bytes *)
-
-val parse_cfi_instructions : string -> int64 -> int64 -> (int * string) list
-(** Parse comprehensive CFI instructions with full DWARF 5 support.
-
-    Parameters:
-    - instructions: Raw CFI instruction bytes
-    - code_alignment: Code alignment factor from CIE
-    - data_alignment: Data alignment factor from CIE
-
-    Returns list of (pc_offset, description) pairs showing CFI rules at each PC
-    location. *)
