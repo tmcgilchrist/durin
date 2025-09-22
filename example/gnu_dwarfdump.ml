@@ -1375,40 +1375,45 @@ let dump_debug_frame filename =
     complete call frame state. *)
 let format_cfi_state (state : Dwarf.CallFrame.cfi_state) : string =
   let open Dwarf in
-  let cfa_desc = Printf.sprintf "def cfa=r%d+%Ld" state.cfa_register state.cfa_offset in
+  let cfa_desc =
+    Printf.sprintf "def cfa=r%d+%Ld" state.cfa_register state.cfa_offset
+  in
   let reg_rules =
-    Hashtbl.fold (fun reg rule acc ->
-      match rule with
-      | CallFrame.Rule_offset offset ->
-          let rule_desc = Printf.sprintf " off r%d=%+Ld(cfa)" reg offset in
-          rule_desc :: acc
-      | CallFrame.Rule_register reg_num ->
-          let rule_desc = Printf.sprintf " off r%d=r%d" reg reg_num in
-          rule_desc :: acc
-      | CallFrame.Rule_undefined ->
-          let rule_desc = Printf.sprintf " off r%d=undefined" reg in
-          rule_desc :: acc
-      | CallFrame.Rule_same_value ->
-          let rule_desc = Printf.sprintf " off r%d=same" reg in
-          rule_desc :: acc
-      | CallFrame.Rule_val_offset offset ->
-          let rule_desc = Printf.sprintf " off r%d=val+%Ld(cfa)" reg offset in
-          rule_desc :: acc
-      | CallFrame.Rule_expression _expr ->
-          let rule_desc = Printf.sprintf " off r%d=expr" reg in
-          rule_desc :: acc
-      | CallFrame.Rule_val_expression _expr ->
-          let rule_desc = Printf.sprintf " off r%d=val_expr" reg in
-          rule_desc :: acc
-    ) state.register_rules [] in
-  let all_rules = cfa_desc :: (List.rev reg_rules) in
+    Hashtbl.fold
+      (fun reg rule acc ->
+        match rule with
+        | CallFrame.Rule_offset offset ->
+            let rule_desc = Printf.sprintf " off r%d=%+Ld(cfa)" reg offset in
+            rule_desc :: acc
+        | CallFrame.Rule_register reg_num ->
+            let rule_desc = Printf.sprintf " off r%d=r%d" reg reg_num in
+            rule_desc :: acc
+        | CallFrame.Rule_undefined ->
+            let rule_desc = Printf.sprintf " off r%d=undefined" reg in
+            rule_desc :: acc
+        | CallFrame.Rule_same_value ->
+            let rule_desc = Printf.sprintf " off r%d=same" reg in
+            rule_desc :: acc
+        | CallFrame.Rule_val_offset offset ->
+            let rule_desc = Printf.sprintf " off r%d=val+%Ld(cfa)" reg offset in
+            rule_desc :: acc
+        | CallFrame.Rule_expression _expr ->
+            let rule_desc = Printf.sprintf " off r%d=expr" reg in
+            rule_desc :: acc
+        | CallFrame.Rule_val_expression _expr ->
+            let rule_desc = Printf.sprintf " off r%d=val_expr" reg in
+            rule_desc :: acc)
+      state.register_rules []
+  in
+  let all_rules = cfa_desc :: List.rev reg_rules in
   "<" ^ String.concat "" all_rules ^ " >"
 
-(** Parse CFI instructions with a given initial state, returning state snapshots.
+(** Parse CFI instructions with a given initial state, returning state
+    snapshots.
 
     This function processes FDE instructions starting from a specific initial
-    CFI state (typically obtained from CallFrame.parse_initial_state) and returns the
-    complete state progression through the function's address range.
+    CFI state (typically obtained from CallFrame.parse_initial_state) and
+    returns the complete state progression through the function's address range.
 
     Parameters:
     - initial_state: Starting CFI state (from CIE initial instructions)
@@ -1420,16 +1425,20 @@ let format_cfi_state (state : Dwarf.CallFrame.cfi_state) : string =
     each PC location where state changes occur. This enables proper CFI rule
     tracking throughout function execution. *)
 let parse_cfi_instructions_with_initial_state
-      (initial_state : Dwarf.CallFrame.cfi_state)
-      (instructions : string)
-      (code_alignment : int64)
-      (data_alignment : int64) : (int64 * Dwarf.CallFrame.cfi_state) list =
+    (initial_state : Dwarf.CallFrame.cfi_state) (instructions : string)
+    (code_alignment : int64) (data_alignment : int64) :
+    (int64 * Dwarf.CallFrame.cfi_state) list =
   (* Use the CallFrame parser to get instruction sequences *)
-  let instruction_results = Dwarf.CallFrame.parse_cfi_instructions instructions code_alignment data_alignment in
+  let instruction_results =
+    Dwarf.CallFrame.parse_cfi_instructions instructions code_alignment
+      data_alignment
+  in
   (* Convert to state snapshots - for now return the same state at each PC *)
-  let state_snapshots = List.map (fun (pc_offset, _desc) ->
-                            (Int64.of_int pc_offset, initial_state)
-                          ) instruction_results in
+  let state_snapshots =
+    List.map
+      (fun (pc_offset, _desc) -> (Int64.of_int pc_offset, initial_state))
+      instruction_results
+  in
   (* Always include the initial state at offset 0 *)
   (0L, initial_state) :: state_snapshots
 
@@ -1511,20 +1520,22 @@ let dump_eh_frame filename =
 
                (* Find the corresponding CIE for this FDE using library function *)
                let corresponding_cie =
-                 match Dwarf.EHFrame.find_cie_for_fde_enhanced eh_frame_section
-                         fde.cie_pointer fde_offset with
+                 match
+                   Dwarf.EHFrame.find_cie_for_fde_enhanced eh_frame_section
+                     fde.cie_pointer fde_offset
+                 with
                  | Some cie -> cie
                  | None ->
                      (* Enhanced error reporting with diagnostic information *)
                      let total_cies = List.length !cie_entries in
                      Printf.eprintf
-                       "Warning: No CIE found for FDE %d (cie_pointer=0x%x, fde_offset=0x%x)\n"
+                       "Warning: No CIE found for FDE %d (cie_pointer=0x%x, \
+                        fde_offset=0x%x)\n"
                        i cie_offset fde_offset;
                      Printf.eprintf
                        "  Available CIEs: %d, Address range: 0x%08Lx-0x%08Lx\n"
                        total_cies start_addr end_addr;
-                     Printf.eprintf
-                       "  Using default x86_64 CIE as fallback\n";
+                     Printf.eprintf "  Using default x86_64 CIE as fallback\n";
                      Dwarf.CallFrame.create_default_cie ()
                in
 
@@ -1625,8 +1636,8 @@ let dump_eh_frame filename =
                    Signed.Int64.to_int64 cie.data_alignment_factor
                  in
                  let initial_rules =
-                   Dwarf.CallFrame.parse_cfi_instructions cie.initial_instructions
-                     code_alignment data_alignment
+                   Dwarf.CallFrame.parse_cfi_instructions
+                     cie.initial_instructions code_alignment data_alignment
                  in
                  List.iteri
                    (fun idx (_pc_offset, rule_desc) ->
@@ -1651,16 +1662,20 @@ let dump_eh_frame filename =
       exit 1
   | Not_found ->
       Printf.eprintf "Error: .eh_frame section not found in binary\n";
-      Printf.eprintf "  This may indicate the binary was stripped or compiled without frame information\n";
+      Printf.eprintf
+        "  This may indicate the binary was stripped or compiled without frame \
+         information\n";
       exit 1
   | Invalid_argument msg when string_contains_substring msg "CIE" ->
       Printf.eprintf "Error: Invalid CIE data in .eh_frame section: %s\n" msg;
-      Printf.eprintf "  The binary may be corrupted or use an unsupported DWARF format\n";
+      Printf.eprintf
+        "  The binary may be corrupted or use an unsupported DWARF format\n";
       exit 1
   | exn ->
       Printf.eprintf "Error parsing EH frame information: %s\n"
         (Printexc.to_string exn);
-      Printf.eprintf "  This may indicate malformed DWARF data or an unsupported format\n";
+      Printf.eprintf
+        "  This may indicate malformed DWARF data or an unsupported format\n";
       exit 1
 
 let dump_eh_frame_hdr filename =

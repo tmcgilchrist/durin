@@ -1410,6 +1410,7 @@ module CallFrame : sig
     cfa_offset : int64;
     register_rules : (int, cfi_rule) Hashtbl.t;
     pc_offset : int;
+    state_stack : cfi_state list; (* Stack for remember_state/restore_state *)
   }
   (** CFI state for tracking register rules *)
 

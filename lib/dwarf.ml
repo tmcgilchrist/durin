@@ -2344,7 +2344,8 @@ let parse_debug_macro_entry (cur : Object.Buffer.cursor) :
       | DW_MACRO_import | DW_MACRO_import_sup ->
           let offset = Object.Buffer.Read.u32 cur in
           (None, Some offset, None, None)
-      | _ ->       (* TODO Make this comprehensive match *)
+      | _ ->
+          (* TODO Make this comprehensive match *)
           (* For unknown or user-defined entry types, skip *)
           (None, None, None, None)
     in
@@ -2619,10 +2620,17 @@ let parse_dwarf_expression (expr_bytes : string) :
                 let b6 = Int64.of_int (Char.code expr_bytes.[pos + 6]) in
                 let b7 = Int64.of_int (Char.code expr_bytes.[pos + 7]) in
                 let b8 = Int64.of_int (Char.code expr_bytes.[pos + 8]) in
-                let operand = Int64.(logor b1 (logor (shift_left b2 8)
-                  (logor (shift_left b3 16) (logor (shift_left b4 24)
-                  (logor (shift_left b5 32) (logor (shift_left b6 40)
-                  (logor (shift_left b7 48) (shift_left b8 56)))))))) in
+                let operand =
+                  Int64.(
+                    logor b1
+                      (logor (shift_left b2 8)
+                         (logor (shift_left b3 16)
+                            (logor (shift_left b4 24)
+                               (logor (shift_left b5 32)
+                                  (logor (shift_left b6 40)
+                                     (logor (shift_left b7 48)
+                                        (shift_left b8 56))))))))
+                in
                 let value_str = Int64.to_string operand in
                 ([], Some value_str, pos + 9)
               else ([], Some "[truncated]", pos + 1)
@@ -2636,10 +2644,17 @@ let parse_dwarf_expression (expr_bytes : string) :
                 let b6 = Int64.of_int (Char.code expr_bytes.[pos + 6]) in
                 let b7 = Int64.of_int (Char.code expr_bytes.[pos + 7]) in
                 let b8 = Int64.of_int (Char.code expr_bytes.[pos + 8]) in
-                let operand = Int64.(logor b1 (logor (shift_left b2 8)
-                  (logor (shift_left b3 16) (logor (shift_left b4 24)
-                  (logor (shift_left b5 32) (logor (shift_left b6 40)
-                  (logor (shift_left b7 48) (shift_left b8 56)))))))) in
+                let operand =
+                  Int64.(
+                    logor b1
+                      (logor (shift_left b2 8)
+                         (logor (shift_left b3 16)
+                            (logor (shift_left b4 24)
+                               (logor (shift_left b5 32)
+                                  (logor (shift_left b6 40)
+                                     (logor (shift_left b7 48)
+                                        (shift_left b8 56))))))))
+                in
                 let value_str = Int64.to_string operand in
                 ([], Some value_str, pos + 9)
               else ([], Some "[truncated]", pos + 1)
@@ -2655,10 +2670,17 @@ let parse_dwarf_expression (expr_bytes : string) :
                 let b6 = Int64.of_int (Char.code expr_bytes.[pos + 6]) in
                 let b7 = Int64.of_int (Char.code expr_bytes.[pos + 7]) in
                 let b8 = Int64.of_int (Char.code expr_bytes.[pos + 8]) in
-                let die_ref = Int64.(logor b1 (logor (shift_left b2 8)
-                  (logor (shift_left b3 16) (logor (shift_left b4 24)
-                  (logor (shift_left b5 32) (logor (shift_left b6 40)
-                  (logor (shift_left b7 48) (shift_left b8 56)))))))) in
+                let die_ref =
+                  Int64.(
+                    logor b1
+                      (logor (shift_left b2 8)
+                         (logor (shift_left b3 16)
+                            (logor (shift_left b4 24)
+                               (logor (shift_left b5 32)
+                                  (logor (shift_left b6 40)
+                                     (logor (shift_left b7 48)
+                                        (shift_left b8 56))))))))
+                in
                 let ref_str = Printf.sprintf "0x%Lx" die_ref in
                 ([], Some ref_str, pos + 9)
               else ([], Some "[truncated]", pos + 1)
@@ -2674,53 +2696,85 @@ let parse_dwarf_expression (expr_bytes : string) :
                 let b6 = Int64.of_int (Char.code expr_bytes.[pos + 6]) in
                 let b7 = Int64.of_int (Char.code expr_bytes.[pos + 7]) in
                 let b8 = Int64.of_int (Char.code expr_bytes.[pos + 8]) in
-                let die_ref = Int64.(logor b1 (logor (shift_left b2 8)
-                  (logor (shift_left b3 16) (logor (shift_left b4 24)
-                  (logor (shift_left b5 32) (logor (shift_left b6 40)
-                  (logor (shift_left b7 48) (shift_left b8 56)))))))) in
+                let die_ref =
+                  Int64.(
+                    logor b1
+                      (logor (shift_left b2 8)
+                         (logor (shift_left b3 16)
+                            (logor (shift_left b4 24)
+                               (logor (shift_left b5 32)
+                                  (logor (shift_left b6 40)
+                                     (logor (shift_left b7 48)
+                                        (shift_left b8 56))))))))
+                in
                 (* Read SLEB128 offset *)
-                let offset, next_pos = read_sleb128_from_string expr_bytes (pos + 9) in
+                let offset, next_pos =
+                  read_sleb128_from_string expr_bytes (pos + 9)
+                in
                 let desc = Printf.sprintf "0x%Lx+%d" die_ref offset in
                 ([], Some desc, next_pos)
               else ([], Some "[truncated]", pos + 1)
           (* DW_OP_const_type - ULEB128 type offset + variable length constant *)
           | DW_OP_const_type ->
-              let type_offset, pos1 = read_uleb128_from_string expr_bytes (pos + 1) in
+              let type_offset, pos1 =
+                read_uleb128_from_string expr_bytes (pos + 1)
+              in
               let const_size, pos2 = read_uleb128_from_string expr_bytes pos1 in
               if pos2 + const_size <= String.length expr_bytes then
-                let desc = Printf.sprintf "type:0x%x const:[%d bytes]" type_offset const_size in
+                let desc =
+                  Printf.sprintf "type:0x%x const:[%d bytes]" type_offset
+                    const_size
+                in
                 ([], Some desc, pos2 + const_size)
               else ([], Some "[truncated]", pos + 1)
           (* DW_OP_regval_type - ULEB128 register + ULEB128 type offset *)
           | DW_OP_regval_type ->
-              let register, pos1 = read_uleb128_from_string expr_bytes (pos + 1) in
-              let type_offset, next_pos = read_uleb128_from_string expr_bytes pos1 in
-              let desc = Printf.sprintf "reg:%d type:0x%x" register type_offset in
+              let register, pos1 =
+                read_uleb128_from_string expr_bytes (pos + 1)
+              in
+              let type_offset, next_pos =
+                read_uleb128_from_string expr_bytes pos1
+              in
+              let desc =
+                Printf.sprintf "reg:%d type:0x%x" register type_offset
+              in
               ([], Some desc, next_pos)
           (* DW_OP_deref_type - 1-byte size + ULEB128 type offset *)
           | DW_OP_deref_type ->
               if pos + 1 < String.length expr_bytes then
                 let size = Char.code expr_bytes.[pos + 1] in
-                let type_offset, next_pos = read_uleb128_from_string expr_bytes (pos + 2) in
-                let desc = Printf.sprintf "size:%d type:0x%x" size type_offset in
+                let type_offset, next_pos =
+                  read_uleb128_from_string expr_bytes (pos + 2)
+                in
+                let desc =
+                  Printf.sprintf "size:%d type:0x%x" size type_offset
+                in
                 ([], Some desc, next_pos)
               else ([], Some "[truncated]", pos + 1)
           (* DW_OP_xderef_type - 1-byte size + ULEB128 type offset *)
           | DW_OP_xderef_type ->
               if pos + 1 < String.length expr_bytes then
                 let size = Char.code expr_bytes.[pos + 1] in
-                let type_offset, next_pos = read_uleb128_from_string expr_bytes (pos + 2) in
-                let desc = Printf.sprintf "size:%d type:0x%x" size type_offset in
+                let type_offset, next_pos =
+                  read_uleb128_from_string expr_bytes (pos + 2)
+                in
+                let desc =
+                  Printf.sprintf "size:%d type:0x%x" size type_offset
+                in
                 ([], Some desc, next_pos)
               else ([], Some "[truncated]", pos + 1)
           (* DW_OP_convert - ULEB128 type offset *)
           | DW_OP_convert ->
-              let type_offset, next_pos = read_uleb128_from_string expr_bytes (pos + 1) in
+              let type_offset, next_pos =
+                read_uleb128_from_string expr_bytes (pos + 1)
+              in
               let desc = Printf.sprintf "type:0x%x" type_offset in
               ([], Some desc, next_pos)
           (* DW_OP_reinterpret - ULEB128 type offset *)
           | DW_OP_reinterpret ->
-              let type_offset, next_pos = read_uleb128_from_string expr_bytes (pos + 1) in
+              let type_offset, next_pos =
+                read_uleb128_from_string expr_bytes (pos + 1)
+              in
               let desc = Printf.sprintf "type:0x%x" type_offset in
               ([], Some desc, next_pos)
         in
@@ -3980,6 +4034,7 @@ module CallFrame = struct
     cfa_offset : int64;
     register_rules : (int, cfi_rule) Hashtbl.t;
     pc_offset : int;
+    state_stack : cfi_state list; (* Stack for remember_state/restore_state *)
   }
 
   let create_default_cie () =
@@ -4096,17 +4151,19 @@ module CallFrame = struct
     }
 
   (** Parse a Frame Description Entry from the Debug_frame section *)
-  let parse_frame_description_entry (cur : Object.Buffer.cursor) (start_pos : int) :
-      frame_description_entry =
+  let parse_frame_description_entry (cur : Object.Buffer.cursor)
+      (start_pos : int) : frame_description_entry =
     let length = Object.Buffer.Read.u32 cur in
     let cie_pointer = Object.Buffer.Read.u32 cur in
     let initial_location = Object.Buffer.Read.u32 cur in
     let address_range = Object.Buffer.Read.u32 cur in
 
     (* Calculate remaining bytes for instructions *)
-    let header_size = 16 in (* length + cie_pointer + initial_location + address_range *)
+    let header_size = 16 in
+    (* length + cie_pointer + initial_location + address_range *)
     let total_length = Unsigned.UInt32.to_int length in
-    let instructions_length = max 0 (total_length - header_size + 4) in (* +4 because length field is excluded *)
+    let instructions_length = max 0 (total_length - header_size + 4) in
+    (* +4 because length field is excluded *)
 
     (* For now, assume no augmentation data in FDEs for simplicity *)
     let augmentation_length = None in
@@ -4114,8 +4171,7 @@ module CallFrame = struct
 
     (* Parse the FDE instructions *)
     let instructions =
-      if instructions_length > 0 then
-        parse_instructions cur instructions_length
+      if instructions_length > 0 then parse_instructions cur instructions_length
       else ""
     in
 
@@ -4170,11 +4226,11 @@ module CallFrame = struct
             let cie = parse_common_information_entry cursor in
             entries := CIE cie :: !entries;
             incr entry_count)
-          else (
+          else
             (* This is a Frame Description Entry (FDE) *)
             let fde = parse_frame_description_entry cursor start_pos in
             entries := FDE fde :: !entries;
-            incr entry_count)
+            incr entry_count
       done;
       { entries = List.rev !entries; entry_count = !entry_count }
     with End_of_file | _ ->
@@ -4190,6 +4246,7 @@ module CallFrame = struct
       (* Default stack pointer offset *)
       register_rules = Hashtbl.create 32;
       pc_offset = 0;
+      state_stack = [];
     }
 
   (* Parse CIE initial instructions to establish proper initial CFI state *)
@@ -4291,8 +4348,32 @@ module CallFrame = struct
     in
     read_sleb 0 0 pos
 
+  (* Read multi-byte fixed-size values from string at position *)
+  let read_u8_from_string str pos =
+    if pos < String.length str then (Char.code str.[pos], pos + 1) else (0, pos)
+
+  let read_u16_from_string str pos =
+    if pos + 1 < String.length str then
+      let b0 = Char.code str.[pos] in
+      let b1 = Char.code str.[pos + 1] in
+      (* Little-endian byte order *)
+      (b0 lor (b1 lsl 8), pos + 2)
+    else (0, pos)
+
+  let read_u32_from_string str pos =
+    if pos + 3 < String.length str then
+      let b0 = Char.code str.[pos] in
+      let b1 = Char.code str.[pos + 1] in
+      let b2 = Char.code str.[pos + 2] in
+      let b3 = Char.code str.[pos + 3] in
+      (* Little-endian byte order *)
+      let result = b0 lor (b1 lsl 8) lor (b2 lsl 16) lor (b3 lsl 24) in
+      (result, pos + 4)
+    else (0, pos)
+
   (* Basic CFI instruction parser - extracts info from instruction bytes *)
-  let parse_cfi_instructions (instructions : string) (code_alignment : int64) (_data_alignment : int64) : (int * string) list =
+  let parse_cfi_instructions (instructions : string) (code_alignment : int64)
+      (_data_alignment : int64) : (int * string) list =
     let rec parse_byte_stream bytes pos pc_offset acc =
       if pos >= String.length bytes then List.rev acc
       else
@@ -4313,7 +4394,9 @@ module CallFrame = struct
             let reg = opcode land 0x3f in
             if pos + 1 < String.length bytes then
               let offset = Char.code bytes.[pos + 1] in
-              let desc = Printf.sprintf "<off r%d=-%d(cfa) >" reg (offset * 8) in
+              let desc =
+                Printf.sprintf "<off r%d=-%d(cfa) >" reg (offset * 8)
+              in
               parse_byte_stream bytes (pos + 2) pc_offset
                 ((pc_offset, desc) :: acc)
             else List.rev acc
@@ -4349,8 +4432,12 @@ module CallFrame = struct
             if pos + 1 < String.length bytes then
               let reg, pos1 = read_uleb128_from_string bytes (pos + 1) in
               if pos1 < String.length bytes then
-                let target_reg, next_pos = read_uleb128_from_string bytes pos1 in
-                let desc = Printf.sprintf "<register r%d=r%d >" reg target_reg in
+                let target_reg, next_pos =
+                  read_uleb128_from_string bytes pos1
+                in
+                let desc =
+                  Printf.sprintf "<register r%d=r%d >" reg target_reg
+                in
                 parse_byte_stream bytes next_pos pc_offset
                   ((pc_offset, desc) :: acc)
               else List.rev acc
@@ -4371,16 +4458,74 @@ module CallFrame = struct
               parse_byte_stream bytes next_pos pc_offset
                 ((pc_offset, desc) :: acc)
             else List.rev acc
+        | DW_CFA_advance_loc1 ->
+            (* DW_CFA_advance_loc1 takes 1-byte delta *)
+            if pos + 1 < String.length bytes then
+              let delta, next_pos = read_u8_from_string bytes (pos + 1) in
+              parse_byte_stream bytes next_pos (pc_offset + delta) acc
+            else List.rev acc
+        | DW_CFA_advance_loc2 ->
+            (* DW_CFA_advance_loc2 takes 2-byte delta *)
+            if pos + 2 < String.length bytes then
+              let delta, next_pos = read_u16_from_string bytes (pos + 1) in
+              parse_byte_stream bytes next_pos (pc_offset + delta) acc
+            else List.rev acc
+        | DW_CFA_advance_loc4 ->
+            (* DW_CFA_advance_loc4 takes 4-byte delta *)
+            if pos + 4 < String.length bytes then
+              let delta, next_pos = read_u32_from_string bytes (pos + 1) in
+              parse_byte_stream bytes next_pos (pc_offset + delta) acc
+            else List.rev acc
+        | DW_CFA_set_loc ->
+            (* DW_CFA_set_loc takes address (4-byte for 32-bit targets) *)
+            if pos + 4 < String.length bytes then
+              let new_loc, next_pos = read_u32_from_string bytes (pos + 1) in
+              parse_byte_stream bytes next_pos new_loc acc
+            else List.rev acc
+        | DW_CFA_offset_extended ->
+            (* DW_CFA_offset_extended takes ULEB128 register + ULEB128 offset *)
+            if pos + 1 < String.length bytes then
+              let reg, pos1 = read_uleb128_from_string bytes (pos + 1) in
+              if pos1 < String.length bytes then
+                let offset, next_pos = read_uleb128_from_string bytes pos1 in
+                let desc =
+                  Printf.sprintf "<off r%d=-%d(cfa) >" reg (offset * 8)
+                in
+                parse_byte_stream bytes next_pos pc_offset
+                  ((pc_offset, desc) :: acc)
+              else List.rev acc
+            else List.rev acc
+        | DW_CFA_restore_extended ->
+            (* DW_CFA_restore_extended takes ULEB128 register *)
+            if pos + 1 < String.length bytes then
+              let reg, next_pos = read_uleb128_from_string bytes (pos + 1) in
+              let desc = Printf.sprintf "<restore r%d >" reg in
+              parse_byte_stream bytes next_pos pc_offset
+                ((pc_offset, desc) :: acc)
+            else List.rev acc
+        | DW_CFA_remember_state ->
+            (* DW_CFA_remember_state - push current state onto stack *)
+            let desc = Printf.sprintf "<remember_state >" in
+            parse_byte_stream bytes (pos + 1) pc_offset
+              ((pc_offset, desc) :: acc)
+        | DW_CFA_restore_state ->
+            (* DW_CFA_restore_state - pop state from stack *)
+            let desc = Printf.sprintf "<restore_state >" in
+            parse_byte_stream bytes (pos + 1) pc_offset
+              ((pc_offset, desc) :: acc)
         | _ ->
             (* Skip unknown instructions for now *)
             parse_byte_stream bytes (pos + 1) pc_offset acc
     in
     let basic_results = parse_byte_stream instructions 0 0 [] in
     (* Apply scaling based on code alignment factor *)
-    List.map (fun (pc_offset, desc) ->
-      let scaled_pc = Int64.to_int (Int64.mul (Int64.of_int pc_offset) code_alignment) in
-      (scaled_pc, desc)
-    ) basic_results
+    List.map
+      (fun (pc_offset, desc) ->
+        let scaled_pc =
+          Int64.to_int (Int64.mul (Int64.of_int pc_offset) code_alignment)
+        in
+        (scaled_pc, desc))
+      basic_results
 end
 
 (** EH Frame Header (.eh_frame_hdr section) - ELF exception handling support *)
@@ -4712,14 +4857,14 @@ module EHFrame = struct
     { entries = List.rev !entries }
 
   (* Find the CIE corresponding to an FDE using the cie_pointer field *)
-  let find_cie_for_fde (entries : eh_frame_entry list) (_cie_pointer : u32) : CallFrame.common_information_entry option =
+  let find_cie_for_fde (entries : eh_frame_entry list) (_cie_pointer : u32) :
+      CallFrame.common_information_entry option =
     (* In .eh_frame format, cie_pointer is a relative offset backwards from the current FDE position
        to the CIE. This is different from .debug_frame where it's an absolute offset.
 
        However, since we're working with parsed entries, we need to find the CIE by
        matching the cie_pointer value. For simplicity, we'll search through all CIEs
        and find the one that matches the expected relationship. *)
-
     let rec find_cie_in_entries = function
       | [] -> None
       | EH_CIE cie :: _ ->
@@ -4732,7 +4877,8 @@ module EHFrame = struct
     find_cie_in_entries entries
 
   (* Build a mapping from section offset to CIE for efficient lookup *)
-  let build_cie_map (section : section) : (int, CallFrame.common_information_entry) Hashtbl.t =
+  let build_cie_map (section : section) :
+      (int, CallFrame.common_information_entry) Hashtbl.t =
     let cie_map = Hashtbl.create 16 in
     let process_entry index = function
       | EH_CIE cie ->
@@ -4761,7 +4907,7 @@ module EHFrame = struct
     in
 
     (* Try mapping approach first, then fallback to most recent *)
-    let cie_offset = fde_file_offset - (Unsigned.UInt32.to_int cie_pointer) in
+    let cie_offset = fde_file_offset - Unsigned.UInt32.to_int cie_pointer in
     match Hashtbl.find_opt cie_map cie_offset with
     | Some cie -> Some cie
     | None -> find_most_recent_cie section.entries
