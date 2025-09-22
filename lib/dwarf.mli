@@ -120,6 +120,9 @@ val string_of_abbreviation_tag : u64 -> string
 (** Convert a numeric DWARF [abbreviation_tag] code to a string representation
 *)
 
+val string_of_abbreviation_tag_direct : abbreviation_tag -> string
+(** Convert a DWARF [abbreviation_tag] directly to a string representation *)
+
 (** The encodings for the child determination byte. Table 7.4: Child
     determination encodings *)
 type children_determination = DW_CHILDREN_no | DW_CHILDREN_yes
@@ -481,6 +484,19 @@ type operation_encoding =
   | DW_OP_convert (* ULEB128 type entry offset *)
   | DW_OP_reinterpret (* DW_OP_lo_user 0xe0 ULEB128 type entry offset *)
   | DW_OP_hi_user
+
+val string_of_operation_encoding : operation_encoding -> string
+
+type dwarf_expression_operation = {
+  opcode : operation_encoding;
+  operands : int list;
+  operand_string : string option;
+}
+(** DWARF Expression Parser *)
+
+val parse_dwarf_expression : string -> dwarf_expression_operation list
+val string_of_dwarf_operation : dwarf_expression_operation -> string
+val string_of_dwarf_expression : dwarf_expression_operation list -> string
 
 (** Location List entry. Table 7.10: Location list entry encoding values New in
     DWARF Version 5 *)
@@ -1262,6 +1278,9 @@ end
 
     Reference: DWARF 5 specification, section 6.4 "Call Frame Information" *)
 module CallFrame : sig
+  val debug_frame_cie_id : u32
+  (** Distinguished CIE identifier (0xffffffff) for .debug_frame sections *)
+
   type common_information_entry = {
     length : u32;  (** Length of CIE excluding this length field *)
     cie_id : u32;  (** Distinguished CIE identifier (0xffffffff) *)
@@ -1314,6 +1333,9 @@ module CallFrame : sig
       Reference: DWARF 5 specification, section 6.4.1 "Structure of Call Frame
       Information" *)
 
+  val create_default_cie : unit -> common_information_entry
+  (** Create a CIE with sensible default values for x86-64 architecture *)
+
   type frame_description_entry = {
     length : u32;
     cie_pointer : u32;
@@ -1351,6 +1373,26 @@ module CallFrame : sig
       A CIE contains information shared among many Frame Description Entries.
       The cursor should be positioned at the start of a CIE entry in the
       [Debug_frame] section. *)
+
+  (** Debug Frame section entry type *)
+  type debug_frame_entry =
+    | CIE of common_information_entry  (** Common Information Entry *)
+    | FDE of frame_description_entry  (** Frame Description Entry *)
+    | Zero_terminator of int  (** Zero terminator at given position *)
+
+  type debug_frame_section = {
+    entries : debug_frame_entry list;  (** All entries in the section *)
+    entry_count : int;  (** Number of CIE/FDE entries *)
+  }
+  (** Debug Frame section *)
+
+  val parse_debug_frame_section :
+    Object.Buffer.cursor -> int -> debug_frame_section
+  (** Parse complete debug_frame section from cursor.
+
+      @param cursor Buffer cursor positioned at the start of debug_frame section
+      @param section_size Size of the debug_frame section in bytes
+      @return Parsed debug_frame section containing all CIE and FDE entries *)
 end
 
 (** EH Frame Header parsing for .eh_frame_hdr section.
@@ -1398,6 +1440,9 @@ module EHFrameHdr : sig
 
   val parse_section : Object.Buffer.cursor -> u64 -> header
   (** Parse complete .eh_frame_hdr section - alias for parse_header. *)
+
+  val encoding_of_u8 : int -> encoding
+  (** Convert a byte value to its corresponding encoding type *)
 end
 
 (** EH Frame parsing for .eh_frame section.
@@ -2117,5 +2162,17 @@ module CompactUnwind : sig
   *)
 end
 
+(* TODO Why do we need both functions and why do they take string values rather than cursor? *)
 val parse_cfi_instructions_basic : string -> (int * string) list
 (** Parse basic CFI instructions from instruction bytes *)
+
+val parse_cfi_instructions : string -> int64 -> int64 -> (int * string) list
+(** Parse comprehensive CFI instructions with full DWARF 5 support.
+
+    Parameters:
+    - instructions: Raw CFI instruction bytes
+    - code_alignment: Code alignment factor from CIE
+    - data_alignment: Data alignment factor from CIE
+
+    Returns list of (pc_offset, description) pairs showing CFI rules at each PC
+    location. *)

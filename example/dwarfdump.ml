@@ -252,9 +252,6 @@ let dump_debug_line filename =
             entries;
           Printf.printf "\n")
 
-let string_of_abbreviation_tag tag =
-  Dwarf.(uint64_of_abbreviation_tag tag |> string_of_abbreviation_tag)
-
 (* TODO Move into main dwarf.ml library when implementing CFI parsing. *)
 let decode_simple_dwarf_expression block_data =
   (* Simple decoder for common DWARF expressions, especially register references *)
@@ -282,6 +279,7 @@ let format_dwarf_expression_block block_data =
   | Some decoded -> Printf.sprintf "(%s)" decoded
   | None -> Printf.sprintf "(<%d bytes>)" (String.length block_data)
 
+(* TODO Refactor? *)
 let resolve_file_index buffer object_format stmt_list_offset file_index =
   (* Try to find the debug_line section and resolve file index to filename *)
   try
@@ -370,7 +368,7 @@ let rec print_die die depth buffer object_format stmt_list_offset cu_addr_base
   in
 
   Printf.printf "\n0x%08x:%s%s\n" die.Dwarf.DIE.offset colon_spaces
-    (string_of_abbreviation_tag die.Dwarf.DIE.tag);
+    (Dwarf.string_of_abbreviation_tag_direct die.Dwarf.DIE.tag);
 
   (* Print attributes *)
   List.iter
@@ -605,8 +603,7 @@ let dump_debug_names filename =
             (fun abbrev ->
               let code = Unsigned.UInt64.to_int abbrev.Dwarf.DebugNames.code in
               let tag_str =
-                Dwarf.string_of_abbreviation_tag
-                  (Dwarf.uint64_of_abbreviation_tag abbrev.tag)
+                Dwarf.string_of_abbreviation_tag_direct abbrev.tag
               in
               Printf.printf "    Abbreviation 0x%x {\n" code;
               Printf.printf "      Tag: %s\n" tag_str;
@@ -795,7 +792,8 @@ let dump_debug_abbrev filename =
             (fun (code, abbrev) ->
               Printf.printf "[%d] %s\t%s\n"
                 (Unsigned.UInt64.to_int code)
-                (Dwarf.string_of_abbreviation_tag abbrev.Dwarf.tag)
+                (Dwarf.string_of_abbreviation_tag_direct abbrev.Dwarf.tag)
+                (* TODO Refactor to helper function in dwarf.ml *)
                 (if abbrev.Dwarf.has_children then "DW_CHILDREN_yes"
                  else "DW_CHILDREN_no");
 

@@ -46,14 +46,45 @@ let string_of_cpu_type = function
   | `POWERPC64 -> "ppc64"
   | `Unknown x -> Printf.sprintf "unknown_%d" x
 
+(** Convert ELF machine type to architecture string *)
+let string_of_elf_machine = function
+  | `EM_386 -> "i386"
+  | `EM_X86_64 -> "x86_64"
+  | `EM_ARM -> "arm"
+  | `EM_AARCH64 -> "aarch64"
+  | `EM_MIPS -> "mips"
+  | `EM_PPC -> "powerpc"
+  | `EM_PPC64 -> "powerpc64"
+  | `EM_SPARC -> "sparc"
+  | `EM_SPARCV9 -> "sparcv9"
+  | `EM_IA_64 -> "ia64"
+  | `EM_S390 -> "s390"
+  | `EM_RISCV -> "riscv"
+  | `EM_68K -> "m68k"
+  | `EM_88K -> "m88k"
+  | `EM_PARISC -> "hppa"
+  | `EM_SH -> "sh"
+  | `EM_UNKNOWN x -> Printf.sprintf "unknown_%d" x
+  | _ -> "unknown"
+
 (** Detect file format and architecture from buffer *)
 let detect_format_and_arch (buf : Object.Buffer.t) : string =
   let format = detect_format buf in
   match format with
-  | ELF ->
-      (* For ELF, we would need to read the e_machine field from the ELF header
-         For now, we'll default to a generic ELF string *)
-      "ELF"
+  | ELF -> (
+      (* Read ELF header to get architecture information *)
+      try
+        let open Object.Elf in
+        let header, _section_array = read_elf buf in
+        let arch_str = string_of_elf_machine header.e_machine in
+        let class_str =
+          match header.e_ident.elf_class with
+          | `ELFCLASS32 -> "elf32"
+          | `ELFCLASS64 -> "elf64"
+          | `ELFCLASSNONE -> "elf"
+        in
+        Printf.sprintf "%s-%s" class_str arch_str
+      with _ -> "ELF")
   | MachO ->
       let header, _commands = Object.Macho.read buf in
       let arch_str = string_of_cpu_type header.cpu_type in
@@ -412,6 +443,10 @@ let string_of_abbreviation_tag tag_code =
   | 0x43 -> "DW_TAG_template_alias"
   | 0x4107 -> "DW_TAG_GNU_template_parameter_pack"
   | code -> Printf.sprintf "DW_TAG_<0x%02x>" code
+
+(* Overloaded function that takes abbreviation_tag directly *)
+let string_of_abbreviation_tag_direct tag =
+  string_of_abbreviation_tag (uint64_of_abbreviation_tag tag)
 
 type children_determination = DW_CHILDREN_no | DW_CHILDREN_yes
 
@@ -1415,6 +1450,35 @@ let operation_encoding = function
   | 0x6f -> DW_OP_reg31
   | 0x70 -> DW_OP_breg0
   | 0x71 -> DW_OP_breg1
+  | 0x72 -> DW_OP_breg2
+  | 0x73 -> DW_OP_breg3
+  | 0x74 -> DW_OP_breg4
+  | 0x75 -> DW_OP_breg5
+  | 0x76 -> DW_OP_breg6
+  | 0x77 -> DW_OP_breg7
+  | 0x78 -> DW_OP_breg8
+  | 0x79 -> DW_OP_breg9
+  | 0x7a -> DW_OP_breg10
+  | 0x7b -> DW_OP_breg11
+  | 0x7c -> DW_OP_breg12
+  | 0x7d -> DW_OP_breg13
+  | 0x7e -> DW_OP_breg14
+  | 0x7f -> DW_OP_breg15
+  | 0x80 -> DW_OP_breg16
+  | 0x81 -> DW_OP_breg17
+  | 0x82 -> DW_OP_breg18
+  | 0x83 -> DW_OP_breg19
+  | 0x84 -> DW_OP_breg20
+  | 0x85 -> DW_OP_breg21
+  | 0x86 -> DW_OP_breg22
+  | 0x87 -> DW_OP_breg23
+  | 0x88 -> DW_OP_breg24
+  | 0x89 -> DW_OP_breg25
+  | 0x8a -> DW_OP_breg26
+  | 0x8b -> DW_OP_breg27
+  | 0x8c -> DW_OP_breg28
+  | 0x8d -> DW_OP_breg29
+  | 0x8e -> DW_OP_breg30
   | 0x8f -> DW_OP_breg31
   | 0x90 -> DW_OP_regx
   | 0x91 -> DW_OP_fbreg
@@ -1444,6 +1508,173 @@ let operation_encoding = function
   | 0xa9 -> DW_OP_reinterpret
   | 0xff -> DW_OP_hi_user
   | n -> failwith (Printf.sprintf "Unknown operation_encoding: 0x%02x" n)
+
+let string_of_operation_encoding = function
+  | DW_OP_addr -> "DW_OP_addr"
+  | DW_OP_deref -> "DW_OP_deref"
+  | DW_OP_const1u -> "DW_OP_const1u"
+  | DW_OP_const1s -> "DW_OP_const1s"
+  | DW_OP_const2u -> "DW_OP_const2u"
+  | DW_OP_const2s -> "DW_OP_const2s"
+  | DW_OP_const4u -> "DW_OP_const4u"
+  | DW_OP_const4s -> "DW_OP_const4s"
+  | DW_OP_const8u -> "DW_OP_const8u"
+  | DW_OP_const8s -> "DW_OP_const8s"
+  | DW_OP_constu -> "DW_OP_constu"
+  | DW_OP_consts -> "DW_OP_consts"
+  | DW_OP_dup -> "DW_OP_dup"
+  | DW_OP_drop -> "DW_OP_drop"
+  | DW_OP_over -> "DW_OP_over"
+  | DW_OP_pick -> "DW_OP_pick"
+  | DW_OP_swap -> "DW_OP_swap"
+  | DW_OP_rot -> "DW_OP_rot"
+  | DW_OP_xderef -> "DW_OP_xderef"
+  | DW_OP_abs -> "DW_OP_abs"
+  | DW_OP_and -> "DW_OP_and"
+  | DW_OP_div -> "DW_OP_div"
+  | DW_OP_minus -> "DW_OP_minus"
+  | DW_OP_mod -> "DW_OP_mod"
+  | DW_OP_mul -> "DW_OP_mul"
+  | DW_OP_neg -> "DW_OP_neg"
+  | DW_OP_not -> "DW_OP_not"
+  | DW_OP_or -> "DW_OP_or"
+  | DW_OP_plus -> "DW_OP_plus"
+  | DW_OP_plus_uconst -> "DW_OP_plus_uconst"
+  | DW_OP_shl -> "DW_OP_shl"
+  | DW_OP_shr -> "DW_OP_shr"
+  | DW_OP_shra -> "DW_OP_shra"
+  | DW_OP_xor -> "DW_OP_xor"
+  | DW_OP_bra -> "DW_OP_bra"
+  | DW_OP_eq -> "DW_OP_eq"
+  | DW_OP_ge -> "DW_OP_ge"
+  | DW_OP_gt -> "DW_OP_gt"
+  | DW_OP_le -> "DW_OP_le"
+  | DW_OP_lt -> "DW_OP_lt"
+  | DW_OP_ne -> "DW_OP_ne"
+  | DW_OP_skip -> "DW_OP_skip"
+  | DW_OP_lit0 -> "DW_OP_lit0"
+  | DW_OP_lit1 -> "DW_OP_lit1"
+  | DW_OP_lit2 -> "DW_OP_lit2"
+  | DW_OP_lit3 -> "DW_OP_lit3"
+  | DW_OP_lit4 -> "DW_OP_lit4"
+  | DW_OP_lit5 -> "DW_OP_lit5"
+  | DW_OP_lit6 -> "DW_OP_lit6"
+  | DW_OP_lit7 -> "DW_OP_lit7"
+  | DW_OP_lit8 -> "DW_OP_lit8"
+  | DW_OP_lit9 -> "DW_OP_lit9"
+  | DW_OP_lit10 -> "DW_OP_lit10"
+  | DW_OP_lit11 -> "DW_OP_lit11"
+  | DW_OP_lit12 -> "DW_OP_lit12"
+  | DW_OP_lit13 -> "DW_OP_lit13"
+  | DW_OP_lit14 -> "DW_OP_lit14"
+  | DW_OP_lit15 -> "DW_OP_lit15"
+  | DW_OP_lit16 -> "DW_OP_lit16"
+  | DW_OP_lit17 -> "DW_OP_lit17"
+  | DW_OP_lit18 -> "DW_OP_lit18"
+  | DW_OP_lit19 -> "DW_OP_lit19"
+  | DW_OP_lit20 -> "DW_OP_lit20"
+  | DW_OP_lit21 -> "DW_OP_lit21"
+  | DW_OP_lit22 -> "DW_OP_lit22"
+  | DW_OP_lit23 -> "DW_OP_lit23"
+  | DW_OP_lit24 -> "DW_OP_lit24"
+  | DW_OP_lit25 -> "DW_OP_lit25"
+  | DW_OP_lit26 -> "DW_OP_lit26"
+  | DW_OP_lit27 -> "DW_OP_lit27"
+  | DW_OP_lit28 -> "DW_OP_lit28"
+  | DW_OP_lit29 -> "DW_OP_lit29"
+  | DW_OP_lit30 -> "DW_OP_lit30"
+  | DW_OP_lit31 -> "DW_OP_lit31"
+  | DW_OP_reg0 -> "DW_OP_reg0"
+  | DW_OP_reg1 -> "DW_OP_reg1"
+  | DW_OP_reg2 -> "DW_OP_reg2"
+  | DW_OP_reg3 -> "DW_OP_reg3"
+  | DW_OP_reg4 -> "DW_OP_reg4"
+  | DW_OP_reg5 -> "DW_OP_reg5"
+  | DW_OP_reg6 -> "DW_OP_reg6"
+  | DW_OP_reg7 -> "DW_OP_reg7"
+  | DW_OP_reg8 -> "DW_OP_reg8"
+  | DW_OP_reg9 -> "DW_OP_reg9"
+  | DW_OP_reg10 -> "DW_OP_reg10"
+  | DW_OP_reg11 -> "DW_OP_reg11"
+  | DW_OP_reg12 -> "DW_OP_reg12"
+  | DW_OP_reg13 -> "DW_OP_reg13"
+  | DW_OP_reg14 -> "DW_OP_reg14"
+  | DW_OP_reg15 -> "DW_OP_reg15"
+  | DW_OP_reg16 -> "DW_OP_reg16"
+  | DW_OP_reg17 -> "DW_OP_reg17"
+  | DW_OP_reg18 -> "DW_OP_reg18"
+  | DW_OP_reg19 -> "DW_OP_reg19"
+  | DW_OP_reg20 -> "DW_OP_reg20"
+  | DW_OP_reg21 -> "DW_OP_reg21"
+  | DW_OP_reg22 -> "DW_OP_reg22"
+  | DW_OP_reg23 -> "DW_OP_reg23"
+  | DW_OP_reg24 -> "DW_OP_reg24"
+  | DW_OP_reg25 -> "DW_OP_reg25"
+  | DW_OP_reg26 -> "DW_OP_reg26"
+  | DW_OP_reg27 -> "DW_OP_reg27"
+  | DW_OP_reg28 -> "DW_OP_reg28"
+  | DW_OP_reg29 -> "DW_OP_reg29"
+  | DW_OP_reg30 -> "DW_OP_reg30"
+  | DW_OP_reg31 -> "DW_OP_reg31"
+  | DW_OP_breg0 -> "DW_OP_breg0"
+  | DW_OP_breg1 -> "DW_OP_breg1"
+  | DW_OP_breg2 -> "DW_OP_breg2"
+  | DW_OP_breg3 -> "DW_OP_breg3"
+  | DW_OP_breg4 -> "DW_OP_breg4"
+  | DW_OP_breg5 -> "DW_OP_breg5"
+  | DW_OP_breg6 -> "DW_OP_breg6"
+  | DW_OP_breg7 -> "DW_OP_breg7"
+  | DW_OP_breg8 -> "DW_OP_breg8"
+  | DW_OP_breg9 -> "DW_OP_breg9"
+  | DW_OP_breg10 -> "DW_OP_breg10"
+  | DW_OP_breg11 -> "DW_OP_breg11"
+  | DW_OP_breg12 -> "DW_OP_breg12"
+  | DW_OP_breg13 -> "DW_OP_breg13"
+  | DW_OP_breg14 -> "DW_OP_breg14"
+  | DW_OP_breg15 -> "DW_OP_breg15"
+  | DW_OP_breg16 -> "DW_OP_breg16"
+  | DW_OP_breg17 -> "DW_OP_breg17"
+  | DW_OP_breg18 -> "DW_OP_breg18"
+  | DW_OP_breg19 -> "DW_OP_breg19"
+  | DW_OP_breg20 -> "DW_OP_breg20"
+  | DW_OP_breg21 -> "DW_OP_breg21"
+  | DW_OP_breg22 -> "DW_OP_breg22"
+  | DW_OP_breg23 -> "DW_OP_breg23"
+  | DW_OP_breg24 -> "DW_OP_breg24"
+  | DW_OP_breg25 -> "DW_OP_breg25"
+  | DW_OP_breg26 -> "DW_OP_breg26"
+  | DW_OP_breg27 -> "DW_OP_breg27"
+  | DW_OP_breg28 -> "DW_OP_breg28"
+  | DW_OP_breg29 -> "DW_OP_breg29"
+  | DW_OP_breg30 -> "DW_OP_breg30"
+  | DW_OP_breg31 -> "DW_OP_breg31"
+  | DW_OP_regx -> "DW_OP_regx"
+  | DW_OP_fbreg -> "DW_OP_fbreg"
+  | DW_OP_bregx -> "DW_OP_bregx"
+  | DW_OP_piece -> "DW_OP_piece"
+  | DW_OP_deref_size -> "DW_OP_deref_size"
+  | DW_OP_xderef_size -> "DW_OP_xderef_size"
+  | DW_OP_nop -> "DW_OP_nop"
+  | DW_OP_push_object_address -> "DW_OP_push_object_address"
+  | DW_OP_call2 -> "DW_OP_call2"
+  | DW_OP_call4 -> "DW_OP_call4"
+  | DW_OP_call_ref -> "DW_OP_call_ref"
+  | DW_OP_form_tls_address -> "DW_OP_form_tls_address"
+  | DW_OP_call_frame_cfa -> "DW_OP_call_frame_cfa"
+  | DW_OP_bit_piece -> "DW_OP_bit_piece"
+  | DW_OP_implicit_value -> "DW_OP_implicit_value"
+  | DW_OP_stack_value -> "DW_OP_stack_value"
+  | DW_OP_implicit_pointer -> "DW_OP_implicit_pointer"
+  | DW_OP_addrx -> "DW_OP_addrx"
+  | DW_OP_constx -> "DW_OP_constx"
+  | DW_OP_entry_value -> "DW_OP_entry_value"
+  | DW_OP_const_type -> "DW_OP_const_type"
+  | DW_OP_regval_type -> "DW_OP_regval_type"
+  | DW_OP_deref_type -> "DW_OP_deref_type"
+  | DW_OP_xderef_type -> "DW_OP_xderef_type"
+  | DW_OP_convert -> "DW_OP_convert"
+  | DW_OP_reinterpret -> "DW_OP_reinterpret"
+  | DW_OP_hi_user -> "DW_OP_hi_user"
 
 type location_list_entry =
   | DW_LLE_end_of_list
@@ -2255,6 +2486,437 @@ let parse_cfi_instructions_basic (instructions : string) : (int * string) list =
   in
   parse_byte_stream instructions 0 0 []
 
+(* CFI rule types for state machine *)
+type cfi_rule =
+  | Rule_undefined
+  | Rule_same_value
+  | Rule_offset of int64 (* offset from CFA *)
+  | Rule_val_offset of int64 (* value = CFA + offset *)
+  | Rule_register of int (* register number *)
+  | Rule_expression of string (* DWARF expression *)
+  | Rule_val_expression of string (* DWARF expression for value *)
+
+(* CFI state for tracking register rules *)
+type cfi_state = {
+  cfa_register : int;
+  cfa_offset : int64;
+  register_rules : (int, cfi_rule) Hashtbl.t;
+  pc_offset : int;
+}
+
+(* Create initial CFI state *)
+let initial_cfi_state () =
+  {
+    cfa_register = 7;
+    (* Default RSP for x86_64 *)
+    cfa_offset = 8L;
+    (* Default stack pointer offset *)
+    register_rules = Hashtbl.create 32;
+    pc_offset = 0;
+  }
+
+(* Read ULEB128 from string at position *)
+let read_uleb128_from_string str pos =
+  let rec read_uleb acc shift pos =
+    if pos >= String.length str then (acc, pos)
+    else
+      let byte = Char.code str.[pos] in
+      let value = byte land 0x7f in
+      let acc' = acc lor (value lsl shift) in
+      if byte land 0x80 = 0 then (acc', pos + 1)
+      else read_uleb acc' (shift + 7) (pos + 1)
+  in
+  read_uleb 0 0 pos
+
+(* Read signed LEB128 from string at position *)
+let read_sleb128_from_string str pos =
+  let rec read_sleb acc shift pos =
+    if pos >= String.length str then (acc, pos)
+    else
+      let byte = Char.code str.[pos] in
+      let value = byte land 0x7f in
+      let acc' = acc lor (value lsl shift) in
+      let pos' = pos + 1 in
+      if byte land 0x80 = 0 then
+        (* Sign extend if necessary *)
+        let result =
+          if shift < 32 && value land 0x40 <> 0 then
+            acc' lor (-1 lsl (shift + 7))
+          else acc'
+        in
+        (result, pos')
+      else read_sleb acc' (shift + 7) pos'
+  in
+  read_sleb 0 0 pos
+
+(* DWARF Expression Parser *)
+type dwarf_expression_operation = {
+  opcode : operation_encoding;
+  operands : int list;
+  operand_string : string option;
+}
+
+let parse_dwarf_expression (expr_bytes : string) :
+    dwarf_expression_operation list =
+  let rec parse_ops pos acc =
+    if pos >= String.length expr_bytes then List.rev acc
+    else
+      let opcode_byte = Char.code expr_bytes.[pos] in
+      try
+        let opcode = operation_encoding opcode_byte in
+        let operands, operand_string, next_pos =
+          match opcode with
+          (* No operands *)
+          | DW_OP_deref | DW_OP_dup | DW_OP_drop | DW_OP_over | DW_OP_swap
+          | DW_OP_rot | DW_OP_xderef | DW_OP_abs | DW_OP_and | DW_OP_div
+          | DW_OP_minus | DW_OP_mod | DW_OP_mul | DW_OP_neg | DW_OP_not
+          | DW_OP_or | DW_OP_plus | DW_OP_shl | DW_OP_shr | DW_OP_shra
+          | DW_OP_xor | DW_OP_eq | DW_OP_ge | DW_OP_gt | DW_OP_le | DW_OP_lt
+          | DW_OP_ne | DW_OP_nop | DW_OP_push_object_address
+          | DW_OP_form_tls_address | DW_OP_call_frame_cfa | DW_OP_stack_value
+          | DW_OP_hi_user ->
+              ([], None, pos + 1)
+          (* Literal values 0-31 *)
+          | DW_OP_lit0 | DW_OP_lit1 | DW_OP_lit2 | DW_OP_lit3 | DW_OP_lit4
+          | DW_OP_lit5 | DW_OP_lit6 | DW_OP_lit7 | DW_OP_lit8 | DW_OP_lit9
+          | DW_OP_lit10 | DW_OP_lit11 | DW_OP_lit12 | DW_OP_lit13 | DW_OP_lit14
+          | DW_OP_lit15 | DW_OP_lit16 | DW_OP_lit17 | DW_OP_lit18 | DW_OP_lit19
+          | DW_OP_lit20 | DW_OP_lit21 | DW_OP_lit22 | DW_OP_lit23 | DW_OP_lit24
+          | DW_OP_lit25 | DW_OP_lit26 | DW_OP_lit27 | DW_OP_lit28 | DW_OP_lit29
+          | DW_OP_lit30 | DW_OP_lit31 ->
+              ([], None, pos + 1)
+          (* Register values 0-31 *)
+          | DW_OP_reg0 | DW_OP_reg1 | DW_OP_reg2 | DW_OP_reg3 | DW_OP_reg4
+          | DW_OP_reg5 | DW_OP_reg6 | DW_OP_reg7 | DW_OP_reg8 | DW_OP_reg9
+          | DW_OP_reg10 | DW_OP_reg11 | DW_OP_reg12 | DW_OP_reg13 | DW_OP_reg14
+          | DW_OP_reg15 | DW_OP_reg16 | DW_OP_reg17 | DW_OP_reg18 | DW_OP_reg19
+          | DW_OP_reg20 | DW_OP_reg21 | DW_OP_reg22 | DW_OP_reg23 | DW_OP_reg24
+          | DW_OP_reg25 | DW_OP_reg26 | DW_OP_reg27 | DW_OP_reg28 | DW_OP_reg29
+          | DW_OP_reg30 | DW_OP_reg31 ->
+              ([], None, pos + 1)
+          (* Base register + offset (breg0-breg31) all take SLEB128 offset *)
+          | DW_OP_breg0 | DW_OP_breg1 | DW_OP_breg2 | DW_OP_breg3 | DW_OP_breg4
+          | DW_OP_breg5 | DW_OP_breg6 | DW_OP_breg7 | DW_OP_breg8 | DW_OP_breg9
+          | DW_OP_breg10 | DW_OP_breg11 | DW_OP_breg12 | DW_OP_breg13
+          | DW_OP_breg14 | DW_OP_breg15 | DW_OP_breg16 | DW_OP_breg17
+          | DW_OP_breg18 | DW_OP_breg19 | DW_OP_breg20 | DW_OP_breg21
+          | DW_OP_breg22 | DW_OP_breg23 | DW_OP_breg24 | DW_OP_breg25
+          | DW_OP_breg26 | DW_OP_breg27 | DW_OP_breg28 | DW_OP_breg29
+          | DW_OP_breg30 | DW_OP_breg31 ->
+              let offset, next_pos =
+                read_sleb128_from_string expr_bytes (pos + 1)
+              in
+              ([ offset ], None, next_pos)
+          (* 1-byte operands *)
+          | DW_OP_const1u | DW_OP_const1s | DW_OP_pick | DW_OP_deref_size
+          | DW_OP_xderef_size ->
+              if pos + 1 < String.length expr_bytes then
+                let operand = Char.code expr_bytes.[pos + 1] in
+                ([ operand ], None, pos + 2)
+              else ([], None, pos + 1)
+          (* 2-byte operands *)
+          | DW_OP_const2u | DW_OP_const2s | DW_OP_bra | DW_OP_skip | DW_OP_call2
+            ->
+              if pos + 2 < String.length expr_bytes then
+                let b1 = Char.code expr_bytes.[pos + 1] in
+                let b2 = Char.code expr_bytes.[pos + 2] in
+                let operand = b1 lor (b2 lsl 8) in
+                ([ operand ], None, pos + 3)
+              else ([], None, pos + 1)
+          (* 4-byte operands *)
+          | DW_OP_const4u | DW_OP_const4s | DW_OP_call4 ->
+              if pos + 4 < String.length expr_bytes then
+                let b1 = Char.code expr_bytes.[pos + 1] in
+                let b2 = Char.code expr_bytes.[pos + 2] in
+                let b3 = Char.code expr_bytes.[pos + 3] in
+                let b4 = Char.code expr_bytes.[pos + 4] in
+                let operand =
+                  b1 lor (b2 lsl 8) lor (b3 lsl 16) lor (b4 lsl 24)
+                in
+                ([ operand ], None, pos + 5)
+              else ([], None, pos + 1)
+          (* Address operand (architecture dependent size) *)
+          | DW_OP_addr ->
+              (* For now, assume 8-byte addresses *)
+              if pos + 8 < String.length expr_bytes then
+                let addr_bytes = String.sub expr_bytes (pos + 1) 8 in
+                ( [],
+                  Some (Printf.sprintf "0x%s" (String.escaped addr_bytes)),
+                  pos + 9 )
+              else ([], None, pos + 1)
+          (* ULEB128 operands *)
+          | DW_OP_constu | DW_OP_plus_uconst | DW_OP_regx | DW_OP_piece
+          | DW_OP_addrx | DW_OP_constx ->
+              let operand, next_pos =
+                read_uleb128_from_string expr_bytes (pos + 1)
+              in
+              ([ operand ], None, next_pos)
+          (* SLEB128 operands *)
+          | DW_OP_consts | DW_OP_fbreg ->
+              let operand, next_pos =
+                read_sleb128_from_string expr_bytes (pos + 1)
+              in
+              ([ operand ], None, next_pos)
+          (* ULEB128 register + SLEB128 offset *)
+          | DW_OP_bregx ->
+              let reg, pos1 = read_uleb128_from_string expr_bytes (pos + 1) in
+              let offset, next_pos = read_sleb128_from_string expr_bytes pos1 in
+              ([ reg; offset ], None, next_pos)
+          (* ULEB128 size + ULEB128 offset *)
+          | DW_OP_bit_piece ->
+              let size, pos1 = read_uleb128_from_string expr_bytes (pos + 1) in
+              let offset, next_pos = read_uleb128_from_string expr_bytes pos1 in
+              ([ size; offset ], None, next_pos)
+          (* ULEB128 size + block of that size *)
+          | DW_OP_implicit_value | DW_OP_entry_value ->
+              let size, pos1 = read_uleb128_from_string expr_bytes (pos + 1) in
+              if pos1 + size <= String.length expr_bytes then
+                ([ size ], Some (Printf.sprintf "[%d bytes]" size), pos1 + size)
+              else ([], None, pos + 1)
+          (* TODO Parse complex operands *)
+          (* Complex operands - simplified for now *)
+          | DW_OP_const8u | DW_OP_const8s | DW_OP_call_ref
+          | DW_OP_implicit_pointer | DW_OP_const_type | DW_OP_regval_type
+          | DW_OP_deref_type | DW_OP_xderef_type | DW_OP_convert
+          | DW_OP_reinterpret ->
+              (* Skip complex operands for now *)
+              ([], Some "[complex]", pos + 1)
+        in
+        let operation = { opcode; operands; operand_string } in
+        parse_ops next_pos (operation :: acc)
+      with Failure _ ->
+        (* Unknown opcode, skip *)
+        parse_ops (pos + 1) acc
+  in
+  parse_ops 0 []
+
+let string_of_dwarf_operation (op : dwarf_expression_operation) : string =
+  let opcode_name = string_of_operation_encoding op.opcode in
+  match (op.operands, op.operand_string) with
+  | [], None -> opcode_name
+  | [], Some s -> Printf.sprintf "%s(%s)" opcode_name s
+  | operands, None ->
+      let operand_strs = List.map string_of_int operands in
+      Printf.sprintf "%s(%s)" opcode_name (String.concat "," operand_strs)
+  | operands, Some s ->
+      let operand_strs = List.map string_of_int operands in
+      Printf.sprintf "%s(%s,%s)" opcode_name (String.concat "," operand_strs) s
+
+(* TODO Replace this with concat_map  *)
+let string_of_dwarf_expression (ops : dwarf_expression_operation list) : string
+    =
+  String.concat " " (List.map string_of_dwarf_operation ops)
+
+(* Enhanced CFI instruction parser with full DWARF 5 support *)
+let parse_cfi_instructions (instructions : string) (code_alignment : int64)
+    (data_alignment : int64) : (int * string) list =
+  let rec parse_with_state state pos acc =
+    if pos >= String.length instructions then List.rev acc
+    else
+      let opcode = Char.code instructions.[pos] in
+      let instruction = decode_cfa_opcode opcode in
+      match instruction with
+      | DW_CFA_nop -> parse_with_state state (pos + 1) acc
+      | DW_CFA_set_loc ->
+          (* DW_CFA_set_loc address *)
+          if pos + 8 < String.length instructions then
+            let addr_bytes = String.sub instructions (pos + 1) 8 in
+            let addr = Bytes.get_int64_le (Bytes.of_string addr_bytes) 0 in
+            let new_state = { state with pc_offset = Int64.to_int addr } in
+            parse_with_state new_state (pos + 9) acc
+          else List.rev acc
+      | DW_CFA_advance_loc ->
+          (* DW_CFA_advance_loc delta (embedded in opcode) *)
+          let delta = opcode land 0x3f in
+          let advance = Int64.mul (Int64.of_int delta) code_alignment in
+          let new_state =
+            { state with pc_offset = state.pc_offset + Int64.to_int advance }
+          in
+          parse_with_state new_state (pos + 1) acc
+      | DW_CFA_advance_loc1 ->
+          (* DW_CFA_advance_loc1 delta *)
+          if pos + 1 < String.length instructions then
+            let delta = Char.code instructions.[pos + 1] in
+            let advance = Int64.mul (Int64.of_int delta) code_alignment in
+            let new_state =
+              { state with pc_offset = state.pc_offset + Int64.to_int advance }
+            in
+            parse_with_state new_state (pos + 2) acc
+          else List.rev acc
+      | DW_CFA_advance_loc2 ->
+          (* DW_CFA_advance_loc2 delta *)
+          if pos + 2 < String.length instructions then
+            let delta =
+              Bytes.get_uint16_le
+                (Bytes.of_string (String.sub instructions (pos + 1) 2))
+                0
+            in
+            let advance = Int64.mul (Int64.of_int delta) code_alignment in
+            let new_state =
+              { state with pc_offset = state.pc_offset + Int64.to_int advance }
+            in
+            parse_with_state new_state (pos + 3) acc
+          else List.rev acc
+      | DW_CFA_advance_loc4 ->
+          (* DW_CFA_advance_loc4 delta *)
+          if pos + 4 < String.length instructions then
+            let delta =
+              Bytes.get_int32_le
+                (Bytes.of_string (String.sub instructions (pos + 1) 4))
+                0
+            in
+            let advance = Int64.mul (Int64.of_int32 delta) code_alignment in
+            let new_state =
+              { state with pc_offset = state.pc_offset + Int64.to_int advance }
+            in
+            parse_with_state new_state (pos + 5) acc
+          else List.rev acc
+      | DW_CFA_offset ->
+          (* DW_CFA_offset register (embedded) offset *)
+          let reg = opcode land 0x3f in
+          let offset_uleb, next_pos =
+            read_uleb128_from_string instructions (pos + 1)
+          in
+          let offset = Int64.mul (Int64.of_int offset_uleb) data_alignment in
+          Hashtbl.replace state.register_rules reg (Rule_offset offset);
+          let desc = Printf.sprintf "<off r%d=%+Ld(cfa) >" reg offset in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state state next_pos (entry :: acc)
+      | DW_CFA_restore ->
+          (* DW_CFA_restore register (embedded) *)
+          let reg = opcode land 0x3f in
+          Hashtbl.remove state.register_rules reg;
+          let desc = Printf.sprintf "<restore r%d >" reg in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state state (pos + 1) (entry :: acc)
+      | DW_CFA_offset_extended ->
+          (* DW_CFA_offset_extended register offset *)
+          let reg, pos1 = read_uleb128_from_string instructions (pos + 1) in
+          let offset_uleb, pos2 = read_uleb128_from_string instructions pos1 in
+          let offset = Int64.mul (Int64.of_int offset_uleb) data_alignment in
+          Hashtbl.replace state.register_rules reg (Rule_offset offset);
+          let desc = Printf.sprintf "<off r%d=%+Ld(cfa) >" reg offset in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state state pos2 (entry :: acc)
+      | DW_CFA_restore_extended ->
+          (* DW_CFA_restore_extended register *)
+          let reg, next_pos = read_uleb128_from_string instructions (pos + 1) in
+          Hashtbl.remove state.register_rules reg;
+          let desc = Printf.sprintf "<restore r%d >" reg in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state state next_pos (entry :: acc)
+      | DW_CFA_undefined ->
+          (* DW_CFA_undefined register *)
+          let reg, next_pos = read_uleb128_from_string instructions (pos + 1) in
+          Hashtbl.replace state.register_rules reg Rule_undefined;
+          let desc = Printf.sprintf "<undefined r%d >" reg in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state state next_pos (entry :: acc)
+      | DW_CFA_same_value ->
+          (* DW_CFA_same_value register *)
+          let reg, next_pos = read_uleb128_from_string instructions (pos + 1) in
+          Hashtbl.replace state.register_rules reg Rule_same_value;
+          let desc = Printf.sprintf "<same r%d >" reg in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state state next_pos (entry :: acc)
+      | DW_CFA_register ->
+          (* DW_CFA_register register1 register2 *)
+          let reg1, pos1 = read_uleb128_from_string instructions (pos + 1) in
+          let reg2, pos2 = read_uleb128_from_string instructions pos1 in
+          Hashtbl.replace state.register_rules reg1 (Rule_register reg2);
+          let desc = Printf.sprintf "<reg r%d=r%d >" reg1 reg2 in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state state pos2 (entry :: acc)
+      | DW_CFA_def_cfa ->
+          (* DW_CFA_def_cfa register offset *)
+          let reg, pos1 = read_uleb128_from_string instructions (pos + 1) in
+          let offset, pos2 = read_uleb128_from_string instructions pos1 in
+          let new_state =
+            { state with cfa_register = reg; cfa_offset = Int64.of_int offset }
+          in
+          let desc =
+            Printf.sprintf "<def cfa=r%d%+Ld >" reg (Int64.of_int offset)
+          in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state new_state pos2 (entry :: acc)
+      | DW_CFA_def_cfa_register ->
+          (* DW_CFA_def_cfa_register register *)
+          let reg, next_pos = read_uleb128_from_string instructions (pos + 1) in
+          let new_state = { state with cfa_register = reg } in
+          let desc = Printf.sprintf "<def cfa reg=r%d >" reg in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state new_state next_pos (entry :: acc)
+      | DW_CFA_def_cfa_offset ->
+          (* DW_CFA_def_cfa_offset offset *)
+          let offset, next_pos =
+            read_uleb128_from_string instructions (pos + 1)
+          in
+          let new_state = { state with cfa_offset = Int64.of_int offset } in
+          let desc =
+            Printf.sprintf "<def cfa offset=%+Ld >" (Int64.of_int offset)
+          in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state new_state next_pos (entry :: acc)
+      | DW_CFA_val_offset ->
+          (* DW_CFA_val_offset register offset *)
+          let reg, pos1 = read_uleb128_from_string instructions (pos + 1) in
+          let offset_uleb, pos2 = read_uleb128_from_string instructions pos1 in
+          let offset = Int64.mul (Int64.of_int offset_uleb) data_alignment in
+          Hashtbl.replace state.register_rules reg (Rule_val_offset offset);
+          let desc = Printf.sprintf "<val r%d=cfa%+Ld >" reg offset in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state state pos2 (entry :: acc)
+      | DW_CFA_val_offset_sf ->
+          (* DW_CFA_val_offset_sf register offset *)
+          let reg, pos1 = read_uleb128_from_string instructions (pos + 1) in
+          let offset_sleb, pos2 = read_sleb128_from_string instructions pos1 in
+          let offset = Int64.mul (Int64.of_int offset_sleb) data_alignment in
+          Hashtbl.replace state.register_rules reg (Rule_val_offset offset);
+          let desc = Printf.sprintf "<val r%d=cfa%+Ld >" reg offset in
+          let entry = (state.pc_offset, desc) in
+          parse_with_state state pos2 (entry :: acc)
+      | DW_CFA_expression ->
+          (* DW_CFA_expression register dwarf_expression *)
+          let reg, pos1 = read_uleb128_from_string instructions (pos + 1) in
+          let expr_len, pos2 = read_uleb128_from_string instructions pos1 in
+          if pos2 + expr_len <= String.length instructions then (
+            let expr = String.sub instructions pos2 expr_len in
+            Hashtbl.replace state.register_rules reg (Rule_expression expr);
+            let parsed_ops = parse_dwarf_expression expr in
+            let expr_str =
+              if List.length parsed_ops > 0 then
+                string_of_dwarf_expression parsed_ops
+              else Printf.sprintf "[%d bytes]" expr_len
+            in
+            let desc = Printf.sprintf "<expr r%d=%s >" reg expr_str in
+            let entry = (state.pc_offset, desc) in
+            parse_with_state state (pos2 + expr_len) (entry :: acc))
+          else List.rev acc
+      | DW_CFA_val_expression ->
+          (* DW_CFA_val_expression register dwarf_expression *)
+          let reg, pos1 = read_uleb128_from_string instructions (pos + 1) in
+          let expr_len, pos2 = read_uleb128_from_string instructions pos1 in
+          if pos2 + expr_len <= String.length instructions then (
+            let expr = String.sub instructions pos2 expr_len in
+            Hashtbl.replace state.register_rules reg (Rule_val_expression expr);
+            let parsed_ops = parse_dwarf_expression expr in
+            let expr_str =
+              if List.length parsed_ops > 0 then
+                string_of_dwarf_expression parsed_ops
+              else Printf.sprintf "[%d bytes]" expr_len
+            in
+            let desc = Printf.sprintf "<val_expr r%d=%s >" reg expr_str in
+            let entry = (state.pc_offset, desc) in
+            parse_with_state state (pos2 + expr_len) (entry :: acc))
+          else List.rev acc
+      | _ ->
+          (* TODO What are the unimplemented instructions here? *)
+          (* Skip unimplemented instructions for now *)
+          parse_with_state state (pos + 1) acc
+  in
+  let initial_state = initial_cfi_state () in
+  parse_with_state initial_state 0 []
+
 type range_list_entry =
   | DW_RLE_end_of_list
   | DW_RLE_base_addressx
@@ -2421,6 +3083,7 @@ let find_debug_section_by_type buffer section_type =
               dwarf_segment.seg_sections)
   with _ -> None
 
+(* TODO Refactor to use section_type *)
 let find_debug_section buffer section_name =
   try
     let open Object.Macho in
@@ -2448,6 +3111,7 @@ let find_debug_section buffer section_name =
           dwarf_segment.seg_sections
   with _ -> None
 
+(* TODO Suspicious function, how does this get used? *)
 let read_string_from_section buffer offset section_offset : string option =
   try
     let actual_offset = section_offset + offset in
@@ -3306,6 +3970,7 @@ module LineTable = struct
           let extended_opcode = Object.Buffer.Read.u8 cur in
           let extended_val = Unsigned.UInt8.to_int extended_opcode in
 
+          (* TODO Revisit this *)
           match extended_val with
           | 0x01 ->
               (* DW_LNE_end_sequence *)
@@ -3439,6 +4104,8 @@ end
 
 (** Call frame information parsing for Debug_frame section *)
 module CallFrame = struct
+  let debug_frame_cie_id = Unsigned.UInt32.of_int32 0xffffffffl
+
   type common_information_entry = {
     length : u32;
     cie_id : u32;
@@ -3464,6 +4131,22 @@ module CallFrame = struct
     instructions : string;
     offset : u32; (* File offset where this FDE starts *)
   }
+
+  let create_default_cie () =
+    {
+      length = Unsigned.UInt32.of_int 0;
+      cie_id = Unsigned.UInt32.of_int 0;
+      version = Unsigned.UInt8.of_int 1;
+      augmentation = "";
+      address_size = Unsigned.UInt8.of_int 8;
+      segment_selector_size = Unsigned.UInt8.of_int 0;
+      code_alignment_factor = Unsigned.UInt64.of_int 1;
+      data_alignment_factor = Signed.Int64.of_int (-8);
+      return_address_register = Unsigned.UInt64.of_int 16;
+      augmentation_length = None;
+      augmentation_data = None;
+      initial_instructions = "";
+    }
 
   (** Parse a null-terminated augmentation string from a cursor *)
   let parse_augmentation_string (cur : Object.Buffer.cursor) : string =
@@ -3499,8 +4182,8 @@ module CallFrame = struct
     let cie_id = Object.Buffer.Read.u32 cur in
 
     (* Verify this is actually a CIE (cie_id should be 0xffffffff) *)
-    if Unsigned.UInt32.to_int32 cie_id <> 0xffffffffl then
-      failwith "Invalid CIE: cie_id is not 0xffffffff";
+    if Unsigned.UInt32.compare cie_id debug_frame_cie_id <> 0 then
+      failwith "Invalid CIE: cie_id is not the debug_frame CIE identifier";
 
     let version = Object.Buffer.Read.u8 cur in
     let augmentation = parse_augmentation_string cur in
@@ -3524,6 +4207,7 @@ module CallFrame = struct
       | None -> (None, None)
     in
 
+    (* TODO Refactor *)
     (* Calculate approximate size for initial instructions.
        This is a simplified calculation - in a full implementation,
        we would need to track the exact cursor position. *)
@@ -3560,6 +4244,56 @@ module CallFrame = struct
       augmentation_data;
       initial_instructions;
     }
+
+  (** Debug Frame section entry type *)
+  type debug_frame_entry =
+    | CIE of common_information_entry
+    | FDE of frame_description_entry
+    | Zero_terminator of int (* Position of zero terminator *)
+
+  type debug_frame_section = {
+    entries : debug_frame_entry list;
+    entry_count : int;
+  }
+  (** Debug Frame section *)
+
+  (** Parse debug_frame section from cursor *)
+  let parse_debug_frame_section cursor section_size =
+    let section_end = cursor.position + section_size in
+    let entries = ref [] in
+    let entry_count = ref 0 in
+
+    try
+      while cursor.position < section_end do
+        let start_pos = cursor.position in
+        let length = Object.Buffer.Read.u32 cursor in
+        let length_int = Unsigned.UInt32.to_int length in
+
+        if length_int = 0 then (
+          (* Zero length indicates end of section *)
+          entries := Zero_terminator start_pos :: !entries;
+          cursor.position <- section_end (* End parsing *))
+        else
+          (* Read the CIE/FDE ID field *)
+          let id = Object.Buffer.Read.u32 cursor in
+
+          (* Reset cursor to parse the full entry *)
+          cursor.position <- start_pos;
+
+          if Unsigned.UInt32.compare id debug_frame_cie_id = 0 then (
+            (* This is a Common Information Entry (CIE) *)
+            let cie = parse_common_information_entry cursor in
+            entries := CIE cie :: !entries;
+            incr entry_count)
+          else (
+            (* This is a Frame Description Entry (FDE) *)
+            (* For now, skip FDE parsing and just advance cursor *)
+            cursor.position <- start_pos + 4 + length_int;
+            incr entry_count)
+      done;
+      { entries = List.rev !entries; entry_count = !entry_count }
+    with End_of_file | _ ->
+      { entries = List.rev !entries; entry_count = !entry_count }
 end
 
 (** EH Frame Header (.eh_frame_hdr section) - ELF exception handling support *)
@@ -3611,8 +4345,10 @@ module EHFrameHdr = struct
     | 0x30 -> DW_EH_PE_datarel
     | 0x40 -> DW_EH_PE_funcrel
     | 0x50 -> DW_EH_PE_aligned
-    | 0x80 -> DW_EH_PE_indirect
-    (* Handle common combined encodings *)
+    | 0x80 ->
+        DW_EH_PE_indirect
+        (* Handle common combined encodings *)
+        (* TODO Other common encodings to handle? *)
     | 0x1b -> DW_EH_PE_pcrel (* 0x10 | 0x0b = PC-relative signed 4-byte *)
     | 0x3b -> DW_EH_PE_datarel (* 0x30 | 0x0b = Data-relative signed 4-byte *)
     | n -> failwith (Printf.sprintf "Unknown EH encoding: 0x%02x" n)
@@ -3777,7 +4513,7 @@ module EHFrame = struct
 
     (* In .eh_frame, cie_pointer is a relative offset backwards to the CIE *)
     (* For now, we'll store it as-is and calculate the actual CIE reference later *)
-
+    (* TODO Revisit this *)
     (* Read initial_location (PC start address) - in .eh_frame usually 32-bit PC-relative *)
     let initial_location_field_pos = cursor.position in
     let initial_location_raw = Object.Buffer.Read.u32 cursor in
@@ -4349,6 +5085,7 @@ module DebugNames = struct
     let first_byte = Object.Buffer.Read.u8 base_cursor in
     ignore (Unsigned.UInt8.to_int first_byte);
 
+    (* TODO Hack *)
     (* Try to determine the absolute position by trying some reasonable values *)
     (* Since the first byte is typically a valid abbreviation code, scan for it *)
     let rec find_base_position start_guess =
@@ -4376,6 +5113,7 @@ module DebugNames = struct
       (_buffer : Object.Buffer.t) (entry_offsets : u32 array)
       (abbrev_table : (u64, debug_names_abbrev) Hashtbl.t) :
       name_index_entry array =
+    (* TODO Hack *)
     (* The tricky part: we need to know the absolute position of entry_pool_cur *)
     (* For now, let's try to determine this by reading a few bytes and checking if they make sense *)
     let test_cur = entry_pool_cur in
@@ -4445,6 +5183,7 @@ module DebugNames = struct
     (* Read a test byte to confirm we're at the right position *)
     let first_byte_test = Object.Buffer.Read.u8 cur in
 
+    (* TODO Revisit this parsing logic *)
     (* Calculate entry pool boundaries using unit_length from DWARF 5 spec *)
     (* According to DWARF 5 section 6.1.1.4.8: *)
     (* Entry pool size = unit_length - (size of all components before entry pool) *)
@@ -4524,7 +5263,6 @@ module DebugNames = struct
       let absolute_series = ref 0 in
       let relative_series = ref 0 in
       let failures = ref 0 in
-      (* let total_names = Array.length entry_offsets in *)
 
       let results =
         Array.map
@@ -4568,6 +5306,8 @@ module DebugNames = struct
       abbreviation_table;
       entry_pool;
     }
+
+  (* TODO Consider changing large tuple to a record *)
 
   (** Parse a single entry from the entry pool at the given buffer position.
       Returns None if terminator (abbrev code 0) is found, or Some with entry
@@ -4620,6 +5360,7 @@ module DebugNames = struct
                       current_offset_ref := !current_offset_ref + 4
                   | _ -> ())
               | _ -> (
+                  (* TODO Why do we skip attributes here? *)
                   (* Skip other attributes we don't handle *)
                   match form with
                   | DW_FORM_ref4 ->
@@ -4675,6 +5416,7 @@ module DebugNames = struct
 
   (** Calculate entry pool offset based on header information *)
   let calculate_entry_pool_offset (header : name_index_header) : int =
+    (* TODO Refactor hardcoded value here. *)
     let header_size = 44 in
     (* 4 bytes unit_length + 40 bytes header including augmentation *)
     let cu_offsets_size = Unsigned.UInt32.to_int header.comp_unit_count * 4 in
@@ -4735,6 +5477,7 @@ let create buffer =
   let object_ = Object_file.{ buffer; format } in
   { abbrev_tables_ = Hashtbl.create 10; compile_units_ = [||]; object_ }
 
+(* TODO Change the type of t.compile_units_ *)
 let get_compile_units t =
   let compile_units = parse_compile_units t |> List.of_seq |> Array.of_list in
   { t with compile_units_ = compile_units }
@@ -4845,6 +5588,7 @@ module DebugStr = struct
           in
           let cursor = Object.Buffer.cursor buffer ~at:section_start in
 
+          (* TODO Write this as a single pass? *)
           (* First pass: count strings to allocate array *)
           let string_count = ref 0 in
           let current_pos = ref section_start in
@@ -4892,6 +5636,7 @@ module DebugStr = struct
             }
         with _ -> None)
 
+  (* TODO Inline this! *)
   let iter f debug_str = Array.iter f debug_str.entries
 
   let find_string_at_offset debug_str offset =
@@ -4926,6 +5671,7 @@ module DebugLineStr = struct
           let string_offset = ref 0 in
           let index = ref 0 in
 
+          (* TODO Can this be improved to a single pass? *)
           (* First pass: count the number of strings *)
           let string_count = ref 0 in
           let temp_cursor = Object.Buffer.cursor buffer ~at:section_start in
@@ -5003,6 +5749,7 @@ module DebugAddr = struct
     (* Calculate number of entries from unit_length *)
     (* unit_length includes everything after the length field itself *)
     (* header takes 4 bytes (version + address_size + segment_selector_size) *)
+    (* TODO Can this be calculated based off the header? *)
     let header_size = 4 in
     let remaining_length =
       Unsigned.UInt32.to_int header.unit_length - header_size
@@ -5144,6 +5891,7 @@ module DebugAranges = struct
     in
     read_ranges []
 
+  (* TODO Would this be improved by returning the span/size of the header? *)
   (* Calculate the actual CU DIE offset by examining the .debug_info section structure *)
   let calculate_cu_die_offset buffer debug_info_offset =
     match find_debug_section_by_type buffer Debug_info with

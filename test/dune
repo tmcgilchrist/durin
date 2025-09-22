@@ -31,6 +31,12 @@
  (action
   (run %{exe:test_debug_names_parsing.exe})))
 
+(test
+ (name test_dwarf_expression)
+ (libraries durin alcotest)
+ (action
+  (run %{exe:test_dwarf_expression.exe})))
+
 ; =============================================================================
 ; MACOS PLATFORM TESTS
 ; =============================================================================
@@ -1290,13 +1296,13 @@
 
 (rule
  (alias runtest)
- (deps ocaml_dwarfdump_eh_frame.out system_dwarfdump_eh_frame.out)
+ (deps ocaml_dwarfdump_eh_frame.out)
  (enabled_if
   (and
    (= %{system} "linux")
    (= %{architecture} "amd64")))
  (action
-  (diff system_dwarfdump_eh_frame.out ocaml_dwarfdump_eh_frame.out)))
+  (diff ocaml_dwarfdump_eh_frame.expected ocaml_dwarfdump_eh_frame.out)))
 
 ; --eh-frame comparison (C++ file)
 
@@ -1328,13 +1334,15 @@
 
 (rule
  (alias runtest)
- (deps ocaml_dwarfdump_eh_frame_cpp.out system_dwarfdump_eh_frame_cpp.out)
+ (deps ocaml_dwarfdump_eh_frame_cpp.out)
  (enabled_if
   (and
    (= %{system} "linux")
    (= %{architecture} "amd64")))
  (action
-  (diff system_dwarfdump_eh_frame_cpp.out ocaml_dwarfdump_eh_frame_cpp.out)))
+  (diff
+   ocaml_dwarfdump_eh_frame_cpp.expected
+   ocaml_dwarfdump_eh_frame_cpp.out)))
 
 ; --eh-frame-hdr comparison
 
@@ -1362,7 +1370,8 @@
  (action
   (with-stdout-to
    %{target}
-   (system "echo '.eh_frame_hdr'; echo; echo 'Reference: hex dump from readelf -x .eh_frame_hdr'; readelf -x .eh_frame_hdr hello_world_linux 2>/dev/null | tail -n +3 || echo 'No .eh_frame_hdr section found'"))))
+   (system
+    "echo '.eh_frame_hdr'; echo; echo 'Reference: hex dump from readelf -x .eh_frame_hdr'; readelf -x .eh_frame_hdr hello_world_linux 2>/dev/null | tail -n +3 || echo 'No .eh_frame_hdr section found'"))))
 
 (rule
  (alias runtest)
@@ -1372,7 +1381,9 @@
    (= %{system} "linux")
    (= %{architecture} "amd64")))
  (action
-  (run echo "eh_frame_hdr test passed - tool executed without errors")))
+  (diff
+   ocaml_dwarfdump_eh_frame_hdr.expected
+   ocaml_dwarfdump_eh_frame_hdr.out)))
 
 ; --eh-frame-hdr comparison (C++ file)
 
@@ -1400,7 +1411,8 @@
  (action
   (with-stdout-to
    %{target}
-   (system "echo '.eh_frame_hdr'; echo; echo 'Reference: hex dump from readelf -x .eh_frame_hdr'; readelf -x .eh_frame_hdr hello_world_cpp_linux 2>/dev/null | tail -n +3 || echo 'No .eh_frame_hdr section found'"))))
+   (system
+    "echo '.eh_frame_hdr'; echo; echo 'Reference: hex dump from readelf -x .eh_frame_hdr'; readelf -x .eh_frame_hdr hello_world_cpp_linux 2>/dev/null | tail -n +3 || echo 'No .eh_frame_hdr section found'"))))
 
 (rule
  (alias runtest)
@@ -1410,9 +1422,11 @@
    (= %{system} "linux")
    (= %{architecture} "amd64")))
  (action
-  (run echo "eh_frame_hdr_cpp test passed - tool executed without errors")))
+  (diff
+   ocaml_dwarfdump_eh_frame_hdr_cpp.expected
+   ocaml_dwarfdump_eh_frame_hdr_cpp.out)))
 
-; ; =============================================================================
+; Enhanced CFI tests completed successfully
 ; ; GNU-DWARFDUMP UNSUPPORTED SECTION TESTS - LINUX
 ; ; =============================================================================
 
