@@ -4371,6 +4371,16 @@ module CallFrame = struct
       (result, pos + 4)
     else (0, pos)
 
+  (* Parse DWARF expression block for CFI instructions *)
+  let parse_cfi_expression_block bytes pos =
+    if pos < String.length bytes then
+      let block_length, next_pos = read_uleb128_from_string bytes pos in
+      if next_pos + block_length <= String.length bytes then
+        let expression = String.sub bytes next_pos block_length in
+        (expression, next_pos + block_length)
+      else ("", pos)
+    else ("", pos)
+
   (* Basic CFI instruction parser - extracts info from instruction bytes *)
   let parse_cfi_instructions (instructions : string) (code_alignment : int64)
       (_data_alignment : int64) : (int * string) list =
@@ -4513,6 +4523,126 @@ module CallFrame = struct
             let desc = Printf.sprintf "<restore_state >" in
             parse_byte_stream bytes (pos + 1) pc_offset
               ((pc_offset, desc) :: acc)
+        | DW_CFA_def_cfa_expression ->
+            (* DW_CFA_def_cfa_expression takes ULEB128 length + expression block *)
+            if pos + 1 < String.length bytes then
+              let expression, next_pos =
+                parse_cfi_expression_block bytes (pos + 1)
+              in
+              let desc =
+                Printf.sprintf "<def_cfa_expression len=%d >"
+                  (String.length expression)
+              in
+              parse_byte_stream bytes next_pos pc_offset
+                ((pc_offset, desc) :: acc)
+            else List.rev acc
+        | DW_CFA_expression ->
+            (* DW_CFA_expression takes ULEB128 register + ULEB128 length + expression block *)
+            if pos + 1 < String.length bytes then
+              let reg, pos1 = read_uleb128_from_string bytes (pos + 1) in
+              if pos1 < String.length bytes then
+                let expression, next_pos =
+                  parse_cfi_expression_block bytes pos1
+                in
+                let desc =
+                  Printf.sprintf "<expression r%d len=%d >" reg
+                    (String.length expression)
+                in
+                parse_byte_stream bytes next_pos pc_offset
+                  ((pc_offset, desc) :: acc)
+              else List.rev acc
+            else List.rev acc
+        | DW_CFA_val_expression ->
+            (* DW_CFA_val_expression takes ULEB128 register + ULEB128 length + expression block *)
+            if pos + 1 < String.length bytes then
+              let reg, pos1 = read_uleb128_from_string bytes (pos + 1) in
+              if pos1 < String.length bytes then
+                let expression, next_pos =
+                  parse_cfi_expression_block bytes pos1
+                in
+                let desc =
+                  Printf.sprintf "<val_expression r%d len=%d >" reg
+                    (String.length expression)
+                in
+                parse_byte_stream bytes next_pos pc_offset
+                  ((pc_offset, desc) :: acc)
+              else List.rev acc
+            else List.rev acc
+        | DW_CFA_offset_extended_sf ->
+            (* DW_CFA_offset_extended_sf takes ULEB128 register + SLEB128 signed factored offset *)
+            if pos + 1 < String.length bytes then
+              let reg, pos1 = read_uleb128_from_string bytes (pos + 1) in
+              if pos1 < String.length bytes then
+                let signed_offset, next_pos =
+                  read_sleb128_from_string bytes pos1
+                in
+                let desc =
+                  Printf.sprintf "<off_sf r%d=%+d*data_align(cfa) >" reg
+                    signed_offset
+                in
+                parse_byte_stream bytes next_pos pc_offset
+                  ((pc_offset, desc) :: acc)
+              else List.rev acc
+            else List.rev acc
+        | DW_CFA_def_cfa_sf ->
+            (* DW_CFA_def_cfa_sf takes ULEB128 register + SLEB128 signed factored offset *)
+            if pos + 1 < String.length bytes then
+              let reg, pos1 = read_uleb128_from_string bytes (pos + 1) in
+              if pos1 < String.length bytes then
+                let signed_offset, next_pos =
+                  read_sleb128_from_string bytes pos1
+                in
+                let desc =
+                  Printf.sprintf "<def_cfa_sf r%d %+d*data_align >" reg
+                    signed_offset
+                in
+                parse_byte_stream bytes next_pos pc_offset
+                  ((pc_offset, desc) :: acc)
+              else List.rev acc
+            else List.rev acc
+        | DW_CFA_def_cfa_offset_sf ->
+            (* DW_CFA_def_cfa_offset_sf takes SLEB128 signed factored offset *)
+            if pos + 1 < String.length bytes then
+              let signed_offset, next_pos =
+                read_sleb128_from_string bytes (pos + 1)
+              in
+              let desc =
+                Printf.sprintf "<def_cfa_offset_sf %+d*data_align >"
+                  signed_offset
+              in
+              parse_byte_stream bytes next_pos pc_offset
+                ((pc_offset, desc) :: acc)
+            else List.rev acc
+        | DW_CFA_val_offset ->
+            (* DW_CFA_val_offset takes ULEB128 register + ULEB128 offset *)
+            if pos + 1 < String.length bytes then
+              let reg, pos1 = read_uleb128_from_string bytes (pos + 1) in
+              if pos1 < String.length bytes then
+                let offset, next_pos = read_uleb128_from_string bytes pos1 in
+                let desc =
+                  Printf.sprintf "<val_offset r%d=cfa+%d*data_align >" reg
+                    offset
+                in
+                parse_byte_stream bytes next_pos pc_offset
+                  ((pc_offset, desc) :: acc)
+              else List.rev acc
+            else List.rev acc
+        | DW_CFA_val_offset_sf ->
+            (* DW_CFA_val_offset_sf takes ULEB128 register + SLEB128 signed factored offset *)
+            if pos + 1 < String.length bytes then
+              let reg, pos1 = read_uleb128_from_string bytes (pos + 1) in
+              if pos1 < String.length bytes then
+                let signed_offset, next_pos =
+                  read_sleb128_from_string bytes pos1
+                in
+                let desc =
+                  Printf.sprintf "<val_offset_sf r%d=cfa%+d*data_align >" reg
+                    signed_offset
+                in
+                parse_byte_stream bytes next_pos pc_offset
+                  ((pc_offset, desc) :: acc)
+              else List.rev acc
+            else List.rev acc
         | _ ->
             (* Skip unknown instructions for now *)
             parse_byte_stream bytes (pos + 1) pc_offset acc
