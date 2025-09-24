@@ -989,6 +989,8 @@ module CompileUnit : sig
     debug_abbrev_offset : u32;  (** Offset into debug abbreviation table *)
     address_size : u8;  (** Size of addresses in bytes (must be 8) *)
     header_span : span;  (** Span indicating the header's position and size *)
+    addr_base : u64 option;
+        (** Address table base offset from DW_AT_addr_base *)
   }
   (** Parsed header data from a compilation unit. This contains the essential
       metadata needed to interpret the unit's content. *)
@@ -1300,6 +1302,8 @@ module CallFrame : sig
     augmentation_data : string option;
         (** Implementation-specific augmentation data *)
     initial_instructions : string;  (** Call frame instructions for this CIE *)
+    header_span : span;  (** Tracks exact header size for precise parsing *)
+    offset : u32;  (** Section-relative offset where CIE starts *)
   }
   (** Common Information Entry (CIE) from DWARF 5 section 6.4.1.
 
@@ -1500,7 +1504,7 @@ module EHFrame : sig
   type section = { entries : eh_frame_entry list }
 
   val parse_eh_cie :
-    Object.Buffer.cursor -> u32 -> CallFrame.common_information_entry
+    Object.Buffer.cursor -> u32 -> int -> CallFrame.common_information_entry
   (** Parse a Common Information Entry adapted for .eh_frame format.
 
       The second parameter is the expected length from the length field. *)
@@ -1518,7 +1522,7 @@ module EHFrame : sig
       The second parameter is the section size in bytes. *)
 
   val find_cie_for_fde :
-    eh_frame_entry list -> u32 -> CallFrame.common_information_entry option
+    section -> u32 -> int -> CallFrame.common_information_entry option
   (** Find the CIE corresponding to an FDE using the cie_pointer field.
 
       This function searches through the EH frame entries to find the CIE that
@@ -1530,32 +1534,6 @@ module EHFrame : sig
       - cie_pointer: The cie_pointer field from an FDE
 
       Returns the corresponding CIE if found, None otherwise. *)
-
-  val build_cie_map :
-    section -> (int, CallFrame.common_information_entry) Hashtbl.t
-  (** Build a mapping from section offset to CIE for efficient lookup.
-
-      This creates a hash table that maps file offsets to CIE entries, enabling
-      O(1) CIE lookup for FDE processing.
-
-      Parameters:
-      - section: Parsed EH frame section
-
-      Returns a hash table mapping offsets to CIE entries. *)
-
-  val find_cie_for_fde_enhanced :
-    section -> u32 -> int -> CallFrame.common_information_entry option
-  (** Enhanced CIE lookup using both cie_pointer and section mapping.
-
-      This function provides more sophisticated CIE lookup by combining relative
-      offset calculation with fallback heuristics.
-
-      Parameters:
-      - section: Parsed EH frame section
-      - cie_pointer: The cie_pointer field from an FDE
-      - fde_file_offset: File offset where the FDE appears
-
-      Returns the corresponding CIE using the best available strategy. *)
 end
 
 (** Accelerated Name Lookup parsing for .debug_names section.
@@ -1608,6 +1586,7 @@ module DebugNames : sig
     augmentation_string_size : u32;  (** Size of augmentation string *)
     augmentation_string : string;
         (** Implementation-specific augmentation data *)
+    span : int;  (** Total size of header in bytes *)
   }
   (** Name index header as specified in DWARF 5 section 6.1.1.
 
@@ -1635,6 +1614,19 @@ module DebugNames : sig
     value : string;  (** Resolved string value *)
   }
   (** String with original offset preserved for debug_names *)
+
+  type entry_parse_result = {
+    name_offset : u32;  (** Offset of name in debug_str section *)
+    die_offset : u32;  (** Offset of DIE in debug_info section *)
+    tag_name : string;  (** Human-readable tag name *)
+    offset_hex : string;  (** Hexadecimal representation of offset *)
+    unit_index : int option;  (** Index of compilation unit *)
+    is_declaration : bool;  (** Whether this is a declaration *)
+    compile_unit_index : u32 option;  (** DWARF 5 DW_IDX_compile_unit *)
+    type_unit_index : u32 option;  (** DWARF 5 DW_IDX_type_unit *)
+    type_hash : u64 option;  (** DWARF 5 DW_IDX_type_hash *)
+  }
+  (** Result of parsing a single entry from the entry pool *)
 
   type name_index_entry = {
     name_offset : u32;  (** Offset into .debug_str section for symbol name *)
@@ -1778,13 +1770,352 @@ module DebugNames : sig
     debug_names_section ->
     int ->
     int ->
-    (int * int * string * string * int option * bool) list
+    entry_parse_result list
   (** Parse all entries for a given name index according to DWARF 5
-      specification. Returns a list of tuples: (entry_addr, die_offset, tag_str,
-      abbrev_id, parent_offset_opt, has_parent_flag) *)
+      specification. Returns a list of entry parse results with structured data.
+  *)
 
   val calculate_entry_pool_offset : name_index_header -> int
   (** Calculate entry pool offset based on header information *)
+
+  val find_bucket_index : string -> int -> int
+  (** Find bucket index for a given name using DJB2 hash algorithm.
+
+      @param name The symbol name to hash
+      @param bucket_count Total number of buckets in the hash table
+      @return Bucket index (0-based) where this name should be found *)
+
+  val get_name_indices_for_bucket : debug_names_section -> int -> int list
+  (** Get all name indices for entries in a specific hash bucket.
+
+      @param debug_names Parsed debug_names section
+      @param bucket_index Bucket index to search
+      @return List of name table indices that hash to this bucket *)
+
+  val find_name_indices : debug_names_section -> string -> int list
+  (** Find all name table indices that match a given name exactly.
+
+      @param debug_names Parsed debug_names section
+      @param name Symbol name to search for
+      @return List of matching name table indices *)
+
+  val find_entries_by_name :
+    Object.Buffer.t ->
+    debug_names_section ->
+    int ->
+    string ->
+    entry_parse_result list
+  (** Find all entries (DIEs) that match a given name.
+
+      This is the core name lookup function that uses the hash table to
+      efficiently locate all DIEs (Debug Information Entries) with the specified
+      name.
+
+      @param buffer Object buffer containing DWARF data
+      @param debug_names Parsed debug_names section
+      @param section_offset Offset of debug_names section in buffer
+      @param name Symbol name to search for
+      @return List of matching entry_parse_result structures *)
+
+  val lookup_symbols_by_name :
+    Object.Buffer.t ->
+    debug_names_section ->
+    int ->
+    string ->
+    entry_parse_result list
+  (** Find all symbols (any kind of DIE) matching a name.
+
+      This function searches for any symbol with the given name, regardless of
+      type (functions, variables, types, etc.). It's an alias for
+      find_entries_by_name with a more descriptive name for general symbol
+      lookup.
+
+      @param buffer Object buffer containing DWARF data
+      @param debug_names Parsed debug_names section
+      @param section_offset Offset of debug_names section in buffer
+      @param name Symbol name to search for
+      @return List of matching entry_parse_result structures *)
+
+  val find_functions_by_name :
+    Object.Buffer.t ->
+    debug_names_section ->
+    int ->
+    string ->
+    entry_parse_result list
+  (** Find specifically function DIEs by name.
+
+      This function filters results to only include function-like DIEs such as
+      DW_TAG_subprogram entries. Useful for debuggers looking specifically for
+      callable functions.
+
+      @param buffer Object buffer containing DWARF data
+      @param debug_names Parsed debug_names section
+      @param section_offset Offset of debug_names section in buffer
+      @param name Function name to search for
+      @return List of matching function entry_parse_result structures *)
+
+  val find_types_by_name :
+    Object.Buffer.t ->
+    debug_names_section ->
+    int ->
+    string ->
+    entry_parse_result list
+  (** Find specifically type DIEs by name.
+
+      This function filters results to only include type definition DIEs such as
+      DW_TAG_structure_type, DW_TAG_class_type, DW_TAG_typedef, etc. Useful for
+      type lookup in debuggers and analysis tools.
+
+      @param buffer Object buffer containing DWARF data
+      @param debug_names Parsed debug_names section
+      @param section_offset Offset of debug_names section in buffer
+      @param name Type name to search for
+      @return List of matching type entry_parse_result structures *)
+
+  val get_all_symbol_names : debug_names_section -> string list
+  (** Get all symbol names available in the debug_names section.
+
+      This function extracts all symbol names from the name table, which can be
+      useful for symbol completion, browsing available symbols, or building
+      symbol indices.
+
+      @param debug_names Parsed debug_names section
+      @return List of all symbol names in the section *)
+
+  val search_names_with_prefix : debug_names_section -> string -> string list
+  (** Find names matching a prefix.
+
+      This function searches for all symbol names that start with the given
+      prefix. Useful for implementing symbol name completion in debuggers and
+      IDEs.
+
+      @param debug_names Parsed debug_names section
+      @param prefix Prefix to search for
+      @return List of symbol names that start with the given prefix *)
+
+  val filter_entries_by_tag :
+    abbreviation_tag -> entry_parse_result list -> entry_parse_result list
+  (** Filter entries by a specific abbreviation tag.
+
+      @param tag Target DWARF tag to filter by
+      @param entries List of entries to filter
+      @return Filtered list containing only entries with the specified tag *)
+
+  val filter_entries_by_tags :
+    abbreviation_tag list -> entry_parse_result list -> entry_parse_result list
+  (** Filter entries by multiple abbreviation tags.
+
+      @param tags List of DWARF tags to filter by
+      @param entries List of entries to filter
+      @return
+        Filtered list containing only entries with any of the specified tags *)
+
+  val find_variables_by_name :
+    Object.Buffer.t ->
+    debug_names_section ->
+    int ->
+    string ->
+    entry_parse_result list
+  (** Find specifically variable DIEs by name.
+
+      This function filters results to only include variable-like DIEs such as
+      DW_TAG_variable, DW_TAG_formal_parameter, and DW_TAG_constant entries.
+
+      @param buffer Object buffer containing DWARF data
+      @param debug_names Parsed debug_names section
+      @param section_offset Offset of debug_names section in buffer
+      @param name Variable name to search for
+      @return List of matching variable entry_parse_result structures *)
+
+  val find_namespaces_by_name :
+    Object.Buffer.t ->
+    debug_names_section ->
+    int ->
+    string ->
+    entry_parse_result list
+  (** Find specifically namespace or module DIEs by name.
+
+      This function filters results to only include namespace-like DIEs such as
+      DW_TAG_namespace and DW_TAG_module entries.
+
+      @param buffer Object buffer containing DWARF data
+      @param debug_names Parsed debug_names section
+      @param section_offset Offset of debug_names section in buffer
+      @param name Namespace/module name to search for
+      @return List of matching namespace entry_parse_result structures *)
+
+  val search_entries_with_pattern :
+    Object.Buffer.t ->
+    debug_names_section ->
+    int ->
+    string ->
+    entry_parse_result list
+  (** Search entries with regex pattern matching on names.
+
+      This function allows for complex pattern-based searches using regular
+      expressions. Useful for finding symbols with complex naming patterns.
+
+      @param buffer Object buffer containing DWARF data
+      @param debug_names Parsed debug_names section
+      @param section_offset Offset of debug_names section in buffer
+      @param pattern Regular expression pattern to match against symbol names
+      @return List of matching entry_parse_result structures *)
+
+  val find_entries_in_compilation_unit :
+    entry_parse_result list -> u32 -> entry_parse_result list
+  (** Find entries within a specific compilation unit.
+
+      This function filters entries to only include those belonging to a
+      specific compilation unit index, leveraging the DWARF 5
+      DW_IDX_compile_unit attribute.
+
+      @param entries List of entries to filter
+      @param cu_index Compilation unit index to filter by
+      @return
+        Filtered list containing only entries from the specified compilation
+        unit *)
+
+  val find_entries_in_type_unit :
+    entry_parse_result list -> u32 -> entry_parse_result list
+  (** Find entries within a specific type unit.
+
+      This function filters entries to only include those belonging to a
+      specific type unit index, leveraging the DWARF 5 DW_IDX_type_unit
+      attribute.
+
+      @param entries List of entries to filter
+      @param tu_index Type unit index to filter by
+      @return Filtered list containing only entries from the specified type unit
+  *)
+
+  val find_entries_with_type_hash :
+    entry_parse_result list -> u64 -> entry_parse_result list
+  (** Find entries with a specific type hash.
+
+      This function filters entries to only include those with a specific type
+      hash, leveraging the DWARF 5 DW_IDX_type_hash attribute for type
+      deduplication.
+
+      @param entries List of entries to filter
+      @param type_hash Type hash value to filter by
+      @return Filtered list containing only entries with the specified type hash
+  *)
+
+  val find_children_entries :
+    Object.Buffer.t ->
+    debug_names_section ->
+    int ->
+    entry_parse_result ->
+    entry_parse_result list
+  (** Find children of a given entry using parent offset relationships.
+
+      This function searches for all entries that reference the given entry as
+      their parent, leveraging the DWARF 5 parent-child relationships in the
+      debug_names section.
+
+      @param buffer Object buffer containing DWARF data
+      @param debug_names Parsed debug_names section
+      @param section_offset Offset of debug_names section in buffer
+      @param parent_entry Entry to find children for
+      @return List of child entries *)
+
+  val find_sibling_entries :
+    entry_parse_result list -> entry_parse_result -> entry_parse_result list
+  (** Find all entries that belong to the same compilation unit as a given
+      entry.
+
+      This function finds sibling entries by matching compilation unit indices,
+      excluding the target entry itself.
+
+      @param entries List of entries to search within
+      @param target_entry Entry to find siblings for
+      @return List of sibling entries from the same compilation unit *)
+
+  val group_entries_by_compilation_unit :
+    entry_parse_result list -> (u32 * entry_parse_result list) list
+  (** Group entries by their compilation unit.
+
+      This function organizes entries into groups based on their compilation
+      unit index, leveraging the DWARF 5 DW_IDX_compile_unit attribute.
+
+      @param entries List of entries to group
+      @return List of (compilation_unit_index, entries) pairs *)
+
+  val group_entries_by_type_unit :
+    entry_parse_result list -> (u32 * entry_parse_result list) list
+  (** Group entries by their type unit.
+
+      This function organizes entries into groups based on their type unit
+      index, leveraging the DWARF 5 DW_IDX_type_unit attribute.
+
+      @param entries List of entries to group
+      @return List of (type_unit_index, entries) pairs *)
+
+  val group_entries_by_type_hash :
+    entry_parse_result list -> (u64 * entry_parse_result list) list
+  (** Group entries by their type hash.
+
+      This function groups entries with the same type hash, which is useful for
+      type deduplication and finding equivalent types across compilation units.
+
+      @param entries List of entries to group
+      @return List of (type_hash, entries) pairs *)
+
+  type entry_tree = { entry : entry_parse_result; children : entry_tree list }
+  (** Hierarchical tree structure representing parent-child relationships
+      between entries *)
+
+  val build_entry_hierarchy :
+    Object.Buffer.t ->
+    debug_names_section ->
+    int ->
+    entry_parse_result list ->
+    entry_tree list
+  (** Build a hierarchical tree structure from entries using parent
+      relationships.
+
+      This function constructs a tree representation of the symbol hierarchy,
+      showing parent-child relationships between debug information entries.
+
+      @param buffer Object buffer containing DWARF data
+      @param debug_names Parsed debug_names section
+      @param section_offset Offset of debug_names section in buffer
+      @param root_entries List of root entries to build trees from
+      @return List of entry trees showing hierarchical relationships *)
+
+  val find_root_entries_in_compilation_unit :
+    entry_parse_result list -> u32 -> entry_parse_result list
+  (** Find root entries (entries with no parent) in a compilation unit.
+
+      This function identifies top-level entries within a specific compilation
+      unit that have no parent references.
+
+      @param entries List of entries to search within
+      @param cu_index Compilation unit index to search in
+      @return List of root entries in the specified compilation unit *)
+
+  val find_compilation_unit_for_die : debug_names_section -> u32 -> u32 option
+  (** Find the compilation unit index that contains a specific DIE offset.
+
+      This function determines which compilation unit contains a given DIE
+      offset by searching through the compilation unit offset array.
+
+      @param debug_names Parsed debug_names section
+      @param die_offset DIE offset to search for
+      @return Optional compilation unit index containing the DIE *)
+
+  val get_compilation_unit_offset : debug_names_section -> u32 -> u32 option
+  (** Get the compilation unit offset for a given index.
+
+      @param debug_names Parsed debug_names section
+      @param cu_index Compilation unit index
+      @return Optional compilation unit offset *)
+
+  val get_all_compilation_unit_offsets : debug_names_section -> u32 array
+  (** Get all compilation unit offsets from debug_names section.
+
+      @param debug_names Parsed debug_names section
+      @return Array of all compilation unit offsets *)
 end
 
 (** String table parsing for .debug_str section.
@@ -1994,6 +2325,7 @@ module DebugAddr : sig
         (** Size of addresses in bytes (4 for 32-bit, 8 for 64-bit) *)
     segment_selector_size : u8;
         (** Size of segment selectors in bytes (0 if no segments) *)
+    span : span;  (** Header location and size information *)
   }
   (** Header structure for an address table contribution.
 

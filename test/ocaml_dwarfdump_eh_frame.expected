@@ -13,7 +13,6 @@ fde:
         0x00001020: <def cfa=r7+8 off r16=-8(cfa) >
         0x00001026: <def cfa=r7+8 off r16=-8(cfa) >
         0x00001030: <def cfa=r7+8 off r16=-8(cfa) >
-        0x00001067: <def cfa=r7+8 off r16=-8(cfa) >
 fde:
 <    2><0x00001040:0x00001050><<missing name>><cie offset 0x0000005c::cie index     0><fde offset 0x00000058 length: 0x00000014>
        <eh aug data len 0x0>

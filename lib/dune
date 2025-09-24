@@ -3,4 +3,4 @@
  (package durin)
  (flags
   (:standard -w -8-32-69))
- (libraries object integers))
+ (libraries object integers str))

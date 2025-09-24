@@ -40,6 +40,8 @@ let test_calculate_section_addresses () =
       abbrev_table_size = Unsigned.UInt32.of_int 0x11;
       augmentation_string_size = Unsigned.UInt32.of_int 8;
       augmentation_string = "LLVM0700";
+      span = 44;
+      (* 4+2+2+4+4+4+4+4+4+4+8 = header size in bytes *)
     }
   in
   let base_offset = Unsigned.UInt32.of_int 0x2000 in

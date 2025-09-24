@@ -1114,12 +1114,17 @@ let dump_debug_names filename =
 
                     (* Print all entries for this name *)
                     List.iter
-                      (fun ( entry_addr,
-                             die_offset,
-                             tag_str,
-                             abbrev_id,
-                             parent_offset_opt,
-                             has_parent_flag ) ->
+                      (fun (entry : Dwarf.DebugNames.entry_parse_result) ->
+                        let entry_addr =
+                          Unsigned.UInt32.to_int entry.name_offset
+                        in
+                        let die_offset =
+                          Unsigned.UInt32.to_int entry.die_offset
+                        in
+                        let tag_str = entry.tag_name in
+                        let abbrev_id = entry.offset_hex in
+                        let parent_offset_opt = entry.unit_index in
+                        let has_parent_flag = entry.is_declaration in
                         let parent_info_str =
                           format_parent_info parent_offset_opt has_parent_flag
                         in
@@ -1521,7 +1526,7 @@ let dump_eh_frame filename =
                (* Find the corresponding CIE for this FDE using library function *)
                let corresponding_cie =
                  match
-                   Dwarf.EHFrame.find_cie_for_fde_enhanced eh_frame_section
+                   Dwarf.EHFrame.find_cie_for_fde eh_frame_section
                      fde.cie_pointer fde_offset
                  with
                  | Some cie -> cie
