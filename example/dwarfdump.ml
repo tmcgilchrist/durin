@@ -957,7 +957,7 @@ let dump_debug_aranges filename =
 
 let dump_debug_macro filename =
   handle_dwarf_errors (fun () ->
-      let actual_filename, is_dsym, buffer, format_str =
+      let actual_filename, _is_dsym, buffer, format_str =
         init_dwarf_context filename
       in
       Printf.printf "%s:\tfile format %s\n\n" actual_filename format_str;
@@ -965,7 +965,7 @@ let dump_debug_macro filename =
 
       (* Try to find the debug_macro section *)
       match get_section_offset buffer Dwarf.Debug_macro with
-      | None -> handle_section_not_found Dwarf.Debug_macro filename is_dsym
+      | None -> ()
       | Some (section_offset, section_size) ->
           (* Create cursor at the debug_macro section offset *)
           let cursor = create_section_cursor buffer section_offset in

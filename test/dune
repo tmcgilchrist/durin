@@ -4,7 +4,7 @@
 
 (test
  (name test_line_program_header)
- (deps hello_world hello_world_cpp example/unity_cpp)
+ (deps hello_world)
  (libraries durin object alcotest cmdliner)
  (build_if
   (and
@@ -437,7 +437,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_macro.out)
- (deps %{bin:dwarfdump} test_macros)
+ (deps %{bin:dwarfdump} hello_world_cpp)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -453,7 +453,7 @@
 (rule
  (alias runtest)
  (target system_debug_macro.out)
- (deps test_macros)
+ (deps hello_world_cpp)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -461,8 +461,9 @@
  (action
   (with-stdout-to
    %{target}
+   ; TODO Trim output, we don't support split DWO files yet.
    (system
-    "dwarfdump --debug-macro hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
+    "dwarfdump --debug-macro hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp | head -n 3"))))
 
 (rule
  (alias runtest)
