@@ -102,13 +102,10 @@ let format_section_header buffer section_type additional_info =
   | None -> Printf.sprintf "\n%s\n" section_name
   | Some info -> Printf.sprintf "\n%s: %s\n" section_name info
 
-(* Helper function to get section name for CLI documentation (uses ELF as default) *)
-let get_section_doc_name section_type =
-  Dwarf.object_format_to_section_name Dwarf.ELF section_type
-
 (* Helper function to generate CLI flag documentation *)
 let make_section_flag_doc section_type =
-  Printf.sprintf "Dump the %s section" (get_section_doc_name section_type)
+  Printf.sprintf "Dump the %s section"
+    (Dwarf.object_format_to_section_name Dwarf.ELF section_type)
 
 let dump_debug_line filename =
   try
@@ -117,7 +114,7 @@ let dump_debug_line filename =
 
     (* Try to get the debug_line section offset and size *)
     match get_section_offset buffer Dwarf.Debug_line with
-    | None -> Printf.printf "\n"
+    | None -> ()
     | Some (section_offset, _section_size) ->
         Printf.printf "%s"
           (format_section_header buffer Dwarf.Debug_line
@@ -162,18 +159,6 @@ let dump_debug_line filename =
         (* Parse the line program and display entries *)
         let entries = Dwarf.LineTable.parse_line_program cursor header in
 
-        (* Get the filename from header for first file (line_strp references now resolved by library) *)
-        let get_filename () =
-          if Array.length header.file_names > 0 then
-            let file_entry = header.file_names.(0) in
-            let full_path =
-              if file_entry.directory = "" then file_entry.name
-              else file_entry.directory ^ "/" ^ file_entry.name
-            in
-            Some full_path
-          else None
-        in
-
         (* Display each entry in system dwarfdump format *)
         List.iteri
           (fun i entry ->
@@ -213,6 +198,18 @@ let dump_debug_line filename =
               else ""
             in
 
+            (* Get the filename from header for first file (line_strp references now resolved by library) *)
+            let get_filename () =
+              if Array.length header.file_names > 0 then
+                let file_entry = header.file_names.(0) in
+                let full_path =
+                  if file_entry.directory = "" then file_entry.name
+                  else file_entry.directory ^ "/" ^ file_entry.name
+                in
+                Some full_path
+              else None
+            in
+
             let uri_str =
               if i = 0 then
                 match get_filename () with
@@ -237,10 +234,6 @@ let dump_debug_line filename =
         (Printexc.to_string exn);
       exit 1
 
-(* Common hex formatting helpers - eliminates Printf.sprintf repetition *)
-let format_hex32_int value = Printf.sprintf "0x%08x" value
-let format_hex32 value = Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int value)
-
 (* Common Format-based attribute formatting function - eliminates hardcoded spacing *)
 let format_attribute_with_spacing ~depth attr_name attr_value =
   let base_indent = if depth = 0 then 20 else 22 in
@@ -264,7 +257,7 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
       (* For child DIEs, subtract debug_info section offset to get relative offset *)
       die.Dwarf.DIE.offset - debug_info_offset
   in
-  let offset_str = format_hex32_int relative_offset in
+  let offset_str = Printf.sprintf "0x%08x" relative_offset in
   let tag_str = Dwarf.string_of_abbreviation_tag_direct die.Dwarf.DIE.tag in
 
   (* Format: < depth><offset>  TAG_NAME or < depth><offset>    TAG_NAME for children *)
@@ -297,10 +290,10 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
                       Printf.sprintf "<offset-from-lowpc> %d <highpc: 0x%08x>"
                         offset
                         (Unsigned.UInt64.to_int high_pc)
-                  | _ -> format_hex32 u)
-              | None -> format_hex32 u
+                  | _ -> Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u))
+              | None -> Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u)
             else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_decl_file then
-              Printf.sprintf "%s %s" (format_hex32 u)
+              Printf.sprintf "0x%08x %s" (Unsigned.UInt64.to_int u)
                 (match resolve_file_index buffer stmt_list_offset u with
                 | Some filename -> filename
                 | None -> "")
@@ -565,7 +558,6 @@ let dump_debug_str_offsets filename =
         let num_offsets = data_size / offset_size in
         Printf.printf " arraysize   %d\n" num_offsets;
 
-        (* TODO Can we calculate this another way? *)
         (* Parse and print offsets in the format expected by system dwarfdump *)
         let rec print_offsets i =
           if i < num_offsets then (
@@ -887,7 +879,6 @@ let dump_debug_abbrev filename =
           (fun (code, abbrev) ->
             let code_int = Unsigned.UInt64.to_int code in
             let children_str =
-              (* TODO Make this a library function *)
               if abbrev.Dwarf.has_children then "DW_children_yes"
               else "DW_children_no"
             in

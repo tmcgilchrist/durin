@@ -55,8 +55,8 @@ let resolve_binary_path filename =
     let dsym_path =
       filename ^ ".dSYM/Contents/Resources/DWARF/" ^ Filename.basename filename
     in
+    (* Use original filename, will fail later if not found *)
     if Sys.file_exists dsym_path then (dsym_path, true) else (filename, false)
-(* Use original filename, will fail later if not found *)
 
 let suggest_dsym_if_needed filename is_dsym section_name =
   if not is_dsym then (
@@ -349,7 +349,7 @@ let resolve_type_reference buffer abbrev_table debug_info_offset die_offset =
         (* Look for DW_AT_name attribute in the referenced DIE *)
         match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
         | Some (Dwarf.DIE.String name) -> Some name
-        | _ -> None)
+        | Some _ | None -> None)
     | None -> None
   with _ -> None
 
@@ -365,24 +365,7 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
   in
 
   let relative_offset = die.Dwarf.DIE.offset - debug_info_offset in
-  let tag_str = Dwarf.string_of_abbreviation_tag_direct die.Dwarf.DIE.tag in
-
-  (* Debug output for problematic offsets *)
-  if tag_str = "NULL" then
-    Printf.eprintf
-      "DEBUG: NULL DIE - absolute_offset=%d, debug_info_offset=%d, \
-       relative_offset=%d\n\
-       %!"
-      die.Dwarf.DIE.offset debug_info_offset relative_offset;
-
-  (* Bounds check to prevent corrupted offsets from being displayed *)
-  let safe_offset =
-    if tag_str = "NULL" then 0x40 (* NULL terminator should always be at 0x40 *)
-    else if relative_offset < 0 || relative_offset > 0x1000 then 0x40
-      (* Fallback for corrupted offsets *)
-    else relative_offset
-  in
-  Printf.printf "\n0x%08x:%s%s\n" safe_offset colon_spaces
+  Printf.printf "\n0x%08x:%s%s\n" relative_offset colon_spaces
     (Dwarf.string_of_abbreviation_tag_direct die.Dwarf.DIE.tag);
 
   (* Print attributes *)
@@ -699,10 +682,8 @@ let dump_debug_names filename =
                       List.iter
                         (fun (entry : Dwarf.DebugNames.entry_parse_result) ->
                           let parent_info_str =
-                            (* Debug: Let's see what values we actually have *)
-                            match (entry.unit_index, entry.is_declaration) with
-                            | Some parent_offset, true ->
-                                (* has_parent_flag is true and we have parent offset *)
+                            match entry.unit_index with
+                            | Some parent_offset ->
                                 let entry_pool_relative_offset =
                                   Dwarf.DebugNames.calculate_entry_pool_offset
                                     debug_names.header
@@ -711,20 +692,7 @@ let dump_debug_names filename =
                                   entry_pool_relative_offset + parent_offset
                                 in
                                 Printf.sprintf "Entry @ 0x%x" parent_entry_addr
-                            | Some parent_offset, false ->
-                                (* has_parent_flag is false but we have parent offset - try using it anyway *)
-                                let entry_pool_relative_offset =
-                                  Dwarf.DebugNames.calculate_entry_pool_offset
-                                    debug_names.header
-                                in
-                                let parent_entry_addr =
-                                  entry_pool_relative_offset + parent_offset
-                                in
-                                Printf.sprintf "Entry @ 0x%x" parent_entry_addr
-                            | None, true ->
-                                (* has_parent_flag is true but no offset - DW_FORM_flag_present case *)
-                                "<parent not indexed>"
-                            | _ -> "<parent not indexed>"
+                            | None -> "<parent not indexed>"
                           in
 
                           Printf.printf "      Entry @ 0x%lx {\n"
@@ -761,13 +729,14 @@ let dump_debug_abbrev filename =
       match get_section_offset buffer Dwarf.Debug_abbrev with
       | None -> handle_section_not_found Dwarf.Debug_abbrev filename is_dsym
       | Some (_offset, _size) ->
+          let offset = 0 in
           (* System dwarfdump shows offset 0x00000000 for the start of the section *)
-          Printf.printf "Abbrev table for offset: 0x%08x\n" 0;
+          Printf.printf "Abbrev table for offset: 0x%08x\n" offset;
 
           (* Create DWARF context and parse abbreviation table *)
           let dwarf = Dwarf.create buffer in
           let _dwarf, abbrev_table =
-            Dwarf.get_abbrev_table dwarf (Unsigned.UInt64.of_int 0)
+            Dwarf.get_abbrev_table dwarf (Unsigned.UInt64.of_int offset)
           in
 
           (* Convert abbreviation table to sorted list for consistent output *)
@@ -1022,7 +991,6 @@ let dump_debug_loclists filename =
                  loclists_section.header.offset_entry_count))
 
 (* Command line interface *)
-(* TODO Use platform agnostic names for sections. *)
 let filename =
   let doc = "Binary file to analyze for DWARF debug information" in
   Cmdliner.Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
@@ -1079,9 +1047,8 @@ let all_flag =
   let doc = "Dump all available debug information" in
   Cmdliner.Arg.(value & flag & info [ "all"; "a" ] ~doc)
 
-(* TODO handle .debug_frame .debug_rnglists
-
-   dwarfdump --show-section-sizes  - Show the sizes of all debug sections, expressed in bytes.
+(* Implement
+  dwarfdump --show-section-sizes  - Show the sizes of all debug sections, expressed in bytes.
  *)
 let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev
     debug_str_offsets debug_str debug_line_str debug_addr debug_aranges
