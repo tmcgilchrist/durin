@@ -2373,7 +2373,7 @@ module DebugAddr : sig
       @return Array of address entries
       @raise Failure if entries cannot be parsed or address sizes are invalid *)
 
-  val parse : Object.Buffer.t -> u32 -> t
+  val parse : Object.Buffer.t -> u64 -> t
   (** Parse a complete debug_addr contribution from buffer.
 
       This is the main entry point for parsing an address table. It combines

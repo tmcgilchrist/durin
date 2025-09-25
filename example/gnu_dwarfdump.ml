@@ -301,7 +301,7 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
               | None -> format_hex32 u
             else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_decl_file then
               Printf.sprintf "%s %s" (format_hex32 u)
-                (match resolve_file_reference buffer stmt_list_offset u with
+                (match resolve_file_index buffer stmt_list_offset u with
                 | Some filename -> filename
                 | None -> "")
             else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_decl_line then
@@ -342,7 +342,7 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
       die.Dwarf.DIE.children
 
 (* Helper function to resolve file references for decl_file attributes *)
-and resolve_file_reference buffer stmt_list_offset file_index =
+and resolve_file_index buffer stmt_list_offset file_index =
   (* Parse the line table to resolve file index to actual filename *)
   try
     match get_section_offset buffer Dwarf.Debug_line with
@@ -350,8 +350,7 @@ and resolve_file_reference buffer stmt_list_offset file_index =
     | Some (debug_line_offset, _size) ->
         (* Calculate absolute offset in debug_line section *)
         let absolute_offset =
-          Unsigned.UInt64.to_int debug_line_offset
-          + Unsigned.UInt64.to_int stmt_list_offset
+          Unsigned.UInt64.(add debug_line_offset stmt_list_offset |> to_int)
         in
         let cursor = Object.Buffer.cursor buffer ~at:absolute_offset in
         let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
@@ -1067,18 +1066,16 @@ let dump_debug_names filename =
                     let name =
                       match Dwarf.DebugStr.parse buffer with
                       | Some str_table -> (
-                          try
-                            (* Find the string entry with matching offset *)
-                            let matching_entry =
-                              Array.find_opt
-                                (fun entry ->
-                                  entry.Dwarf.DebugStr.offset = str_offset)
-                                str_table.entries
-                            in
-                            match matching_entry with
-                            | Some entry -> entry.content
-                            | None -> name_entry.value
-                          with _ -> name_entry.value)
+                          (* Find the string entry with matching offset *)
+                          let matching_entry =
+                            Array.find_opt
+                              (fun entry ->
+                                entry.Dwarf.DebugStr.offset = str_offset)
+                              str_table.entries
+                          in
+                          match matching_entry with
+                          | Some entry -> entry.content
+                          | None -> name_entry.value)
                       | None -> name_entry.value
                     in
 
@@ -1115,23 +1112,18 @@ let dump_debug_names filename =
                     (* Print all entries for this name *)
                     List.iter
                       (fun (entry : Dwarf.DebugNames.entry_parse_result) ->
-                        let entry_addr =
-                          Unsigned.UInt32.to_int entry.name_offset
-                        in
                         let die_offset =
                           Unsigned.UInt32.to_int entry.die_offset
                         in
-                        let tag_str = entry.tag_name in
-                        let abbrev_id = entry.offset_hex in
-                        let parent_offset_opt = entry.unit_index in
-                        let has_parent_flag = entry.is_declaration in
                         let parent_info_str =
-                          format_parent_info parent_offset_opt has_parent_flag
+                          format_parent_info entry.unit_index
+                            entry.is_declaration
                         in
 
-                        Printf.printf "      Entry @ 0x%x {\n" entry_addr;
-                        Printf.printf "        Abbrev: %s\n" abbrev_id;
-                        Printf.printf "        Tag: %s\n" tag_str;
+                        Printf.printf "      Entry @ 0x%lx {\n"
+                          (Unsigned.UInt32.to_int32 entry.name_offset);
+                        Printf.printf "        Abbrev: %s\n" entry.offset_hex;
+                        Printf.printf "        Tag: %s\n" entry.tag_name;
                         Printf.printf "        %s: 0x%08x\n"
                           (Dwarf.string_of_name_index_attribute
                              Dwarf.DW_IDX_die_offset)
@@ -1186,9 +1178,9 @@ let dump_debug_macro filename =
         in
 
         (* Parse the debug_macro section *)
-        let section_size_int = Unsigned.UInt64.to_int section_size in
         let macro_section =
-          Dwarf.parse_debug_macro_section cursor section_size_int
+          Dwarf.parse_debug_macro_section cursor
+            (Unsigned.UInt64.to_int section_size)
         in
 
         Printf.printf "Debug macro section parsed successfully with %d units\n"
@@ -1266,10 +1258,7 @@ let dump_debug_addr filename =
         ()
     | Some (section_offset, _section_size) ->
         (* Parse the debug_addr section *)
-        let parsed_addr =
-          Dwarf.DebugAddr.parse buffer
-            (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int section_offset))
-        in
+        let parsed_addr = Dwarf.DebugAddr.parse buffer section_offset in
 
         (* Print header information *)
         let header = parsed_addr.header in
@@ -1318,10 +1307,9 @@ let dump_debug_frame filename =
           Object.Buffer.cursor buffer
             ~at:(Unsigned.UInt64.to_int section_offset)
         in
-        let section_size_int = Unsigned.UInt64.to_int section_size in
-
         let debug_frame_section =
-          Dwarf.CallFrame.parse_debug_frame_section cursor section_size_int
+          Dwarf.CallFrame.parse_debug_frame_section cursor
+            (Unsigned.UInt64.to_int section_size)
         in
 
         (* Display parsed entries using library data structures *)

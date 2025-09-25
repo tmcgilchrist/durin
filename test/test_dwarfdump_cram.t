@@ -27,37 +27,37 @@ Test help flag:
              Dump all available debug information
   
          --debug-abbrev
-             Dump debug abbreviation information (.debug_abbrev section)
+             Dump debug abbreviation information (__debug_abbrev section)
   
          --debug-addr
-             Dump debug address information (.debug_addr section)
+             Dump debug address information (__debug_addr section)
   
          --debug-aranges
-             Dump debug address ranges information (.debug_aranges section)
+             Dump debug address ranges information (__debug_aranges section)
   
          --debug-info
-             Dump debug info information (.debug_info section)
+             Dump debug info information (__debug_info section)
   
          --debug-line
-             Dump debug line information (.debug_line section)
+             Dump debug line information (__debug_line section)
   
          --debug-line-str
-             Dump debug line string information (.debug_line_str section)
+             Dump debug line string information (__debug_line_str section)
   
          --debug-loclists
-             Dump debug location lists information (.debug_loclists section)
+             Dump debug location lists information (__debug_loclists section)
   
          --debug-macro
-             Dump debug macro information (.debug_macro section)
+             Dump debug macro information (__debug_macro section)
   
          --debug-names
-             Dump debug names information (.debug_names section)
+             Dump debug names information (__debug_names section)
   
          --debug-str
-             Dump debug string information (.debug_str section)
+             Dump debug string information (__debug_str section)
   
          --debug-str-offsets
-             Dump debug string offsets information (.debug_str_offs section)
+             Dump debug string offsets information (__debug_str_offs section)
   
   COMMON OPTIONS
          --help[=FMT] (default=auto)

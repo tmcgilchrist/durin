@@ -134,7 +134,7 @@ let object_format_to_section_name format section =
       | Debug_loclists -> "__debug_loclists"
       | Debug_rnglists -> "__debug_rnglists"
       | Debug_str -> "__debug_str"
-      | Debug_str_offs -> "__debug_str_offsets"
+      | Debug_str_offs -> "__debug_str_offs"
       | Debug_names -> "__debug_names"
       | Debug_addr -> "__debug_addr"
       | Debug_macro -> "__debug_macro"
@@ -6444,7 +6444,7 @@ module DebugAddr = struct
 
   let parse buffer section_offset =
     let cursor =
-      Object.Buffer.cursor buffer ~at:(Unsigned.UInt32.to_int section_offset)
+      Object.Buffer.cursor buffer ~at:(Unsigned.UInt64.to_int section_offset)
     in
     let header = parse_header cursor in
     let entries = parse_entries cursor header in
@@ -6703,10 +6703,7 @@ let lookup_address_in_debug_addr (buffer : Object.Buffer.t) (_addr_base : u64)
       try
         (* addr_base is an offset from the beginning of the debug_addr section to the address data *)
         (* We need to parse the entire section, not start at addr_base *)
-        let parsed_addr =
-          DebugAddr.parse buffer
-            (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int section_offset))
-        in
+        let parsed_addr = DebugAddr.parse buffer section_offset in
 
         (* Check if index is within bounds *)
         if index >= 0 && index < Array.length parsed_addr.entries then

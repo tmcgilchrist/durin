@@ -65,6 +65,17 @@
  (action
   (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp")))
 
+(rule
+ (alias runtest)
+ (deps test_macros.c test_macros_header.h)
+ (targets test_macros test_macros.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (system "cc -gdwarf-5 test_macros.c -o test_macros")))
+
 ; macOS Cram Tests
 
 (cram
@@ -713,6 +724,17 @@
    (= %{architecture} "amd64")))
  (action
   (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp_linux")))
+
+(rule
+ (alias runtest)
+ (deps test_macros.c test_macros_header.h)
+ (targets test_macros_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "gcc -gdwarf-5 test_macros.c -o test_macros_linux")))
 
 ; =============================================================================
 ; GNU-DWARFDUMP COMPARISON TESTS - LINUX
