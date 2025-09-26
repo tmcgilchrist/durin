@@ -17,6 +17,7 @@
   integers
   (cmdliner :with-test)
   (alcotest :with-test)
+  (patdiff :with-dev-setup)
   (ocamlformat (and :with-dev-setup (= 0.27.0))))
  (synopsis "A library for reading and writing the DWARF debugging format.")
  (description "A library for reading and writing the DWARF debugging format."))

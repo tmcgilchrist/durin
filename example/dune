@@ -1,18 +1,25 @@
 (executables
  (public_names
   dwprod
-  dwarfdump
   objdump
   addr2line
   dwarf_validate
   simple_debug_info
-  simple_debug_line)
+  simple_debug_line
+  gnu-dwarfdump)
  (names
   dwprod
-  dwarfdump
   objdump
   addr2line
   dwarf_validate
   simple_debug_info
-  simple_debug_line)
- (libraries durin object integers cmdliner))
+  simple_debug_line
+  gnu_dwarfdump)
+ (libraries durin object integers cmdliner str))
+
+(executable
+ (public_name dwarfdump)
+ (name dwarfdump)
+ (enabled_if
+  (= %{system} "macosx"))
+ (libraries durin object integers cmdliner str))
