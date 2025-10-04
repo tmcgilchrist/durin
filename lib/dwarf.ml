@@ -1,5 +1,3 @@
-(* DWARF 5 *)
-
 open Types
 
 type dwarf_section =
@@ -16,24 +14,6 @@ type dwarf_section =
   | Debug_addr
   | Debug_macro
   | Debug_frame
-
-type object_format = MachO | ELF
-
-let string_of_object_format = function MachO -> "Mach-O" | ELF -> "ELF"
-
-(* TODO Move some of this into "object" library *)
-
-(** Detect file format from buffer using magic numbers *)
-let detect_format (buf : Object.Buffer.t) : object_format =
-  let cursor = Object.Buffer.cursor buf in
-  let magic = Object.Buffer.Read.u32 cursor in
-  let magic_int = Unsigned.UInt32.to_int magic in
-  match magic_int with
-  | 0x7f454c46 -> ELF (* ELF magic: \x7fELF big-endian *)
-  | 0x464c457f -> ELF (* ELF magic: \x7fELF little-endian *)
-  | 0xFEEDFACE | 0xFEEDFACF | 0xCEFAEDFE | 0xCFFAEDFE ->
-      MachO (* Mach-O magics *)
-  | _ -> failwith "Unsupported file format"
 
 (** Convert Mach-O cpu_type to architecture string *)
 let string_of_cpu_type = function
@@ -69,7 +49,7 @@ let string_of_elf_machine = function
 
 (** Detect file format and architecture from buffer *)
 let detect_format_and_arch (buf : Object.Buffer.t) : string =
-  let format = detect_format buf in
+  let format = Object_format.detect_format buf in
   match format with
   | ELF -> (
       (* Read ELF header to get architecture information *)
@@ -85,7 +65,7 @@ let detect_format_and_arch (buf : Object.Buffer.t) : string =
         in
         Printf.sprintf "%s-%s" class_str arch_str
       with _ -> "ELF")
-  | MachO ->
+  | MACHO ->
       let header, _commands = Object.Macho.read buf in
       let arch_str = string_of_cpu_type header.cpu_type in
       Printf.sprintf "Mach-O %s" arch_str
@@ -122,9 +102,11 @@ let string_of_unit_type = function
   | DW_UT_lo_user -> "DW_UT_lo_user"
   | DW_UT_hi_user -> "DW_UT_hi_user"
 
+type object_format = Object_format.format
+
 let object_format_to_section_name format section =
   match format with
-  | MachO -> (
+  | Object_format.MACHO -> (
       match section with
       | Debug_info -> "__debug_info"
       | Debug_abbrev -> "__debug_abbrev"
@@ -139,7 +121,7 @@ let object_format_to_section_name format section =
       | Debug_addr -> "__debug_addr"
       | Debug_macro -> "__debug_macro"
       | Debug_frame -> "__debug_frame")
-  | ELF -> (
+  | Object_format.ELF -> (
       match section with
       | Debug_info -> ".debug_info"
       | Debug_abbrev -> ".debug_abbrev"
@@ -2822,7 +2804,7 @@ let range_list_entry = function
   | n -> failwith (Printf.sprintf "Unknown range_list_entry: 0x%02x" n)
 
 module Object_file = struct
-  type t = { buffer : Buffer.t; format : object_format }
+  type t = { buffer : Buffer.t; format : Object_format.format }
 end
 
 type attr_spec = { attr : u64; form : u64 }
@@ -2839,7 +2821,7 @@ let bool_of_int = function 0 -> false | _ -> true
 
 (* Object-format-aware section finder that works with both ELF and MachO *)
 let find_debug_section_by_type buffer section_type =
-  let object_format = detect_format buffer in
+  let object_format = Object_format.detect_format buffer in
   let section_name = object_format_to_section_name object_format section_type in
   try
     match object_format with
@@ -2854,7 +2836,7 @@ let find_debug_section_by_type buffer section_type =
         match section_opt with
         | Some section -> Some (section.sh_offset, section.sh_size)
         | None -> None)
-    | MachO -> (
+    | MACHO -> (
         let open Object.Macho in
         let _header, commands = read buffer in
         let dwarf_segment_opt =
@@ -6163,7 +6145,7 @@ let get_abbrev_table t (offset : size_t) =
       (t, a)
 
 let create buffer =
-  let format = detect_format buffer in
+  let format = Object_format.detect_format buffer in
   let object_ = Object_file.{ buffer; format } in
   { abbrev_tables_ = Hashtbl.create 10; compile_units_ = [||]; object_ }
 

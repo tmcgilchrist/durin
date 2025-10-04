@@ -3,7 +3,7 @@ open Durin
 
 (* Helper function to get section offset like GNU version *)
 let get_section_offset buffer section_type =
-  let object_format = Dwarf.detect_format buffer in
+  let object_format = Object_format.detect_format buffer in
   let section_name =
     Dwarf.object_format_to_section_name object_format section_type
   in
@@ -69,7 +69,7 @@ let suggest_dsym_if_needed filename is_dsym section_name =
 
 let handle_section_not_found section_name filename is_dsym =
   let section_name =
-    Dwarf.object_format_to_section_name Dwarf.MachO section_name
+    Dwarf.object_format_to_section_name Object_format.MACHO section_name
   in
 
   Printf.printf "No %s section found in file\n" section_name;

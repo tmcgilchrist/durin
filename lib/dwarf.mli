@@ -1,4 +1,3 @@
-(* DWARF 5 *)
 open Types
 
 (** DWARF 5 unit type encodings.
@@ -865,17 +864,6 @@ type range_list_entry =
 
 type t
 
-type object_format =
-  | MachO
-  | ELF
-      (** Object file formats supported.
-
-          Primarily used to derive the correct section name for different
-          formats. *)
-
-val string_of_object_format : object_format -> string
-(** Human readable string for [object_format] type *)
-
 (* TODO This could be stored alongside the parsed representation or
    to provide a lazy way to parse out the values on demand. *)
 type span = { start : size_t; size : size_t }
@@ -891,11 +879,10 @@ type abbrev = {
   attr_specs : attr_spec list;
 }
 
+type object_format = Object_format.format
+
 val object_format_to_section_name : object_format -> dwarf_section -> string
 (** Returns the dwarf_section name specific for the object_format. *)
-
-val detect_format : Object.Buffer.t -> object_format
-(** Detect file format from buffer using magic numbers *)
 
 val detect_format_and_arch : Object.Buffer.t -> string
 (** Detect file format and architecture from buffer, returning a string like

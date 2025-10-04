@@ -64,7 +64,7 @@ let resolve_function_name buffer start_addr end_addr =
 
 (* Helper function to get section offset and size for ELF files *)
 let get_section_offset buffer section_type =
-  let object_format = Dwarf.detect_format buffer in
+  let object_format = Object_format.detect_format buffer in
   let section_name =
     Dwarf.object_format_to_section_name object_format section_type
   in
@@ -92,7 +92,7 @@ let resolve_binary_path filename =
 
 (* Helper function to get section display name using object format detection *)
 let get_section_display_name buffer section_type =
-  let object_format = Dwarf.detect_format buffer in
+  let object_format = Object_format.detect_format buffer in
   Dwarf.object_format_to_section_name object_format section_type
 
 (* Helper function to format section headers consistently *)
@@ -105,7 +105,7 @@ let format_section_header buffer section_type additional_info =
 (* Helper function to generate CLI flag documentation *)
 let make_section_flag_doc section_type =
   Printf.sprintf "Dump the %s section"
-    (Dwarf.object_format_to_section_name Dwarf.ELF section_type)
+    (Dwarf.object_format_to_section_name Object_format.ELF section_type)
 
 let dump_debug_line filename =
   try
