@@ -39,8 +39,52 @@ Initially GCC and Clang both emit DWARF 5 32 bit format so we will support that 
  * dwarfdump - dump and verify DWARF debug information
  * nm - display name list (symbol table)
 
+``` shell
+# Display section headers
+$ gcc -gdwarf-5 -o prog prog.c
+$ objdump --section-headers prog
+
+prog:	file format mach-o arm64
+
+Sections:
+Idx Name          Size     VMA              Type
+  0 __text        00000068 0000000100000460 TEXT
+  1 __stubs       00000018 00000001000004c8 TEXT
+  2 __cstring     00000011 00000001000004e0 DATA
+  3 __unwind_info 00000060 00000001000004f4 DATA
+  4 __got         00000010 0000000100004000 DATA
+
+$ objdump --section-headers prog.dSYM/Contents/Resources/DWARF/prog
+
+prog.dSYM/Contents/Resources/DWARF/prog:	file format mach-o arm64
+
+Sections:
+Idx Name             Size     VMA              Type
+  0 __text           00000068 0000000100000460 TEXT
+  1 __stubs          00000018 00000001000004c8 TEXT
+  2 __cstring        00000011 00000001000004e0 DATA
+  3 __unwind_info    00000060 00000001000004f4 DATA
+  4 __got            00000010 0000000100004000 DATA
+  5 __debug_line     00000084 0000000100009000 DATA, DEBUG
+  6 __debug_aranges  00000030 0000000100009084 DATA, DEBUG
+  7 __debug_addr     00000018 00000001000090b4 DATA, DEBUG
+  8 __debug_info     00000068 00000001000090cc DATA, DEBUG
+  9 __debug_abbrev   00000083 0000000100009134 DATA, DEBUG
+ 10 __debug_str      000000ed 00000001000091b7 DATA, DEBUG
+ 11 __debug_str_offs 00000034 00000001000092a4 DATA, DEBUG
+ 12 __debug_line_str 00000028 00000001000092d8 DATA, DEBUG
+ 13 __debug_names    000000b0 0000000100009300 DATA, DEBUG
+```
+
+
 ## Linux commands
 
  * readelf - display information about ELF files
  * dwarfdump - dumps DWARF debug information of an ELF object
  * nm - list symbols from object files
+
+``` shell
+# Display section headers
+$ readelf -S prog
+
+```

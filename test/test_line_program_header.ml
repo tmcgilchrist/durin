@@ -3,20 +3,20 @@ open Durin
 let test_section_name_mappings _binary_path =
   (* Test MachO section name *)
   let macho_debug_line =
-    Dwarf.object_format_to_section_name Dwarf.MachO Dwarf.Debug_line
+    Dwarf.object_format_to_section_name Object_format.MACHO Dwarf.Debug_line
   in
   Alcotest.(check string)
     "MachO debug_line section" "__debug_line" macho_debug_line;
 
   (* Test ELF section name *)
   let elf_debug_line =
-    Dwarf.object_format_to_section_name Dwarf.ELF Dwarf.Debug_line
+    Dwarf.object_format_to_section_name Object_format.ELF Dwarf.Debug_line
   in
   Alcotest.(check string) "ELF debug_line section" ".debug_line" elf_debug_line;
 
   (* Test other DWARF sections *)
   let macho_debug_info =
-    Dwarf.object_format_to_section_name Dwarf.MachO Dwarf.Debug_info
+    Dwarf.object_format_to_section_name Object_format.MACHO Dwarf.Debug_info
   in
   Alcotest.(check string)
     "MachO debug_info section" "__debug_info" macho_debug_info

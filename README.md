@@ -46,6 +46,9 @@ And add `durin` to your project's `dune-project` or `*.opam` files.
 ## Resources
 
  * Apple Compact Unwinding Format is defined by the LLVM implementation.
-   https://github.com/llvm/llvm-project/blob/main/libunwind/include/mach-o/compact_unwind_encoding.h
-   https://faultlore.com/blah/compact-unwinding/
-   https://github.com/getsentry/symbolic/blob/master/symbolic-debuginfo/src/macho/compact.rs
+   - https://github.com/llvm/llvm-project/blob/main/libunwind/include/mach-o/compact_unwind_encoding.h
+   - https://faultlore.com/blah/compact-unwinding/
+   - https://github.com/getsentry/symbolic/blob/master/symbolic-debuginfo/src/macho/compact.rs
+
+ * Vendor extensions from GCC
+   https://sourceware.org/elfutils/DwarfExtensions
