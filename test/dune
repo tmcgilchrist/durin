@@ -92,6 +92,13 @@
    (= %{system} "macosx")
    (= %{architecture} "arm64"))))
 
+(cram
+ (deps %{bin:addr2line} hello_world hello_world.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64"))))
+
 ; =============================================================================
 ; DWARFDUMP COMPARISON TESTS - MACOS
 ; =============================================================================
