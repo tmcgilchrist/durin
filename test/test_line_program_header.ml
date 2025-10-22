@@ -153,12 +153,13 @@ let test_comprehensive_debug_line_validation binary_path =
     let realistic_header =
       Dwarf.LineTable.
         {
-          unit_length = Unsigned.UInt32.of_int 89;
+          format = Dwarf.DWARF32;
+          unit_length = Unsigned.UInt64.of_int 89;
           (* 0x59 from dwarfdump *)
           version = Unsigned.UInt16.of_int 5;
           address_size = Unsigned.UInt8.of_int 8;
           segment_selector_size = Unsigned.UInt8.of_int 0;
-          header_length = Unsigned.UInt32.of_int 55;
+          header_length = Unsigned.UInt64.of_int 55;
           (* 0x37 from dwarfdump *)
           minimum_instruction_length = Unsigned.UInt8.of_int 1;
           maximum_operations_per_instruction = Unsigned.UInt8.of_int 1;
@@ -219,7 +220,7 @@ let test_comprehensive_debug_line_validation binary_path =
     (* Validate all the critical fields match dwarfdump output *)
     Alcotest.(check int)
       "unit_length matches dwarfdump" 89
-      (Unsigned.UInt32.to_int realistic_header.unit_length);
+      (Unsigned.UInt64.to_int realistic_header.unit_length);
     Alcotest.(check int)
       "version is DWARF 5" 5
       (Unsigned.UInt16.to_int realistic_header.version);
@@ -228,7 +229,7 @@ let test_comprehensive_debug_line_validation binary_path =
       (Unsigned.UInt8.to_int realistic_header.address_size);
     Alcotest.(check int)
       "header_length matches dwarfdump" 55
-      (Unsigned.UInt32.to_int realistic_header.header_length);
+      (Unsigned.UInt64.to_int realistic_header.header_length);
     Alcotest.(check bool)
       "default_is_stmt is true" true realistic_header.default_is_stmt;
     Alcotest.(check int) "line_base is -5" (-5) realistic_header.line_base;

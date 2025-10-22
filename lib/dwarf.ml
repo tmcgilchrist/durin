@@ -102,6 +102,42 @@ let string_of_unit_type = function
   | DW_UT_lo_user -> "DW_UT_lo_user"
   | DW_UT_hi_user -> "DW_UT_hi_user"
 
+type dwarf_format = DWARF32 | DWARF64
+
+let string_of_dwarf_format = function
+  | DWARF32 -> "DWARF32"
+  | DWARF64 -> "DWARF64"
+
+type encoding = {
+  format : dwarf_format;  (** DWARF32 or DWARF64 format *)
+  address_size : u8;  (** Size of addresses in bytes *)
+  version : u16;  (** DWARF version *)
+}
+(** Encoding parameters that affect how DWARF data is parsed. Similar to Gimli's
+    Encoding struct, this bundles format with related context needed for parsing
+    DIE attributes. *)
+
+let parse_initial_length (cur : Object.Buffer.cursor) : dwarf_format * u64 =
+  let first_four = Object.Buffer.Read.u32 cur in
+  let first_val = Unsigned.UInt32.to_int first_four in
+  if first_val = 0xffffffff then
+    let actual_length = Object.Buffer.Read.u64 cur in
+    (DWARF64, actual_length)
+  else if first_val >= 0xfffffff0 then
+    failwith
+      (Printf.sprintf
+         "Reserved initial_length value 0x%08x in range 0xfffffff0-0xfffffffe"
+         first_val)
+  else (DWARF32, Unsigned.UInt64.of_uint32 first_four)
+
+let offset_size_for_format = function DWARF32 -> 4 | DWARF64 -> 8
+
+let read_offset_for_format (format : dwarf_format) (cur : Object.Buffer.cursor)
+    : u64 =
+  match format with
+  | DWARF32 -> Object.Buffer.Read.u32 cur |> Unsigned.UInt64.of_uint32
+  | DWARF64 -> Object.Buffer.Read.u64 cur
+
 type object_format = Object_format.format
 
 let object_format_to_section_name format section =
@@ -2991,24 +3027,25 @@ module DIE = struct
       die.attributes
 
   let parse_attribute_value (cur : Object.Buffer.cursor)
-      (form : attribute_form_encoding) (full_buffer : Object.Buffer.t) :
-      attribute_value =
+      (form : attribute_form_encoding) (encoding : encoding)
+      (full_buffer : Object.Buffer.t) : attribute_value =
     match form with
     | DW_FORM_string ->
         let str = Object.Buffer.Read.zero_string cur () in
         String (match str with Some s -> s | None -> "")
     | DW_FORM_strp -> (
-        (* String pointer to Debug_str section *)
-        let offset = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
+        (* String pointer to Debug_str section - size depends on format *)
+        let offset = read_offset_for_format encoding.format cur in
+        let offset_int = Unsigned.UInt64.to_int offset in
         match find_debug_section_by_type full_buffer Debug_str with
         | Some (str_section_offset, _) -> (
             match
-              read_string_from_section full_buffer offset
+              read_string_from_section full_buffer offset_int
                 (Unsigned.UInt64.to_int str_section_offset)
             with
             | Some s -> String s
-            | None -> String (Printf.sprintf "<strp_offset:%d>" offset))
-        | None -> String (Printf.sprintf "<strp_offset:%d>" offset))
+            | None -> String (Printf.sprintf "<strp_offset:%d>" offset_int))
+        | None -> String (Printf.sprintf "<strp_offset:%d>" offset_int))
     | DW_FORM_udata ->
         let value = Object.Buffer.Read.uleb128 cur in
         UData (Unsigned.UInt64.of_int value)
@@ -3045,8 +3082,8 @@ module DIE = struct
         String resolved_string
     | DW_FORM_sec_offset ->
         (* Section offset - 4 or 8 bytes depending on DWARF format *)
-        let offset = Object.Buffer.Read.u32 cur in
-        UData (Unsigned.UInt64.of_uint32 offset)
+        let offset = read_offset_for_format encoding.format cur in
+        UData offset
     | DW_FORM_addrx ->
         (* Address index - ULEB128 index into address table *)
         let index = Object.Buffer.Read.uleb128 cur in
@@ -3141,17 +3178,19 @@ module DIE = struct
         (* TODO: Use addr_base from compilation unit context for resolution *)
         Address (Unsigned.UInt64.of_int index)
     | DW_FORM_line_strp -> (
-        (* String pointer to Debug_line_str section *)
-        let offset = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
+        (* String pointer to Debug_line_str section - size depends on format *)
+        let offset = read_offset_for_format encoding.format cur in
+        let offset_int = Unsigned.UInt64.to_int offset in
         match find_debug_section_by_type full_buffer Debug_line_str with
         | Some (str_section_offset, _) -> (
             match
-              read_string_from_section full_buffer offset
+              read_string_from_section full_buffer offset_int
                 (Unsigned.UInt64.to_int str_section_offset)
             with
             | Some s -> String s
-            | None -> String (Printf.sprintf "<line_strp_offset:%d>" offset))
-        | None -> String (Printf.sprintf "<line_strp_offset:%d>" offset))
+            | None -> String (Printf.sprintf "<line_strp_offset:%d>" offset_int)
+            )
+        | None -> String (Printf.sprintf "<line_strp_offset:%d>" offset_int))
     | _ ->
         (* For unsupported forms, skip and return placeholder *)
         String "<unsupported_form>"
@@ -3175,16 +3214,17 @@ module DIE = struct
     | _ -> raw_value
 
   let rec parse_children_seq (cur : Object.Buffer.cursor)
-      (abbrev_table : (u64, abbrev) Hashtbl.t) (full_buffer : Object.Buffer.t) :
-      t Seq.t =
+      (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
+      (full_buffer : Object.Buffer.t) : t Seq.t =
    fun () ->
-    match parse_die cur abbrev_table full_buffer with
+    match parse_die cur abbrev_table encoding full_buffer with
     | None -> Seq.Nil (* End of children marker or error *)
-    | Some die -> Seq.Cons (die, parse_children_seq cur abbrev_table full_buffer)
+    | Some die ->
+        Seq.Cons (die, parse_children_seq cur abbrev_table encoding full_buffer)
 
   and parse_die (cur : Object.Buffer.cursor)
-      (abbrev_table : (u64, abbrev) Hashtbl.t) (full_buffer : Object.Buffer.t) :
-      t option =
+      (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
+      (full_buffer : Object.Buffer.t) : t option =
     try
       (* Capture the position at the start of this DIE *)
       let die_offset = cur.position in
@@ -3205,7 +3245,7 @@ module DIE = struct
                   let attr_encoding = attribute_encoding spec.attr in
                   let form_encoding = attribute_form_encoding spec.form in
                   let raw_value =
-                    parse_attribute_value cur form_encoding full_buffer
+                    parse_attribute_value cur form_encoding encoding full_buffer
                   in
                   let value =
                     (* Process special attributes that need conversion *)
@@ -3221,7 +3261,7 @@ module DIE = struct
             (* Parse children if the abbreviation indicates this DIE has children *)
             let children =
               if abbrev.has_children then
-                parse_children_seq cur abbrev_table full_buffer
+                parse_children_seq cur abbrev_table encoding full_buffer
               else Seq.empty
             in
             Some { tag; attributes; children; offset = die_offset }
@@ -3234,10 +3274,11 @@ type span = { start : size_t; size : size_t }
 
 module CompileUnit = struct
   type header = {
-    unit_length : u32;
+    format : dwarf_format;
+    unit_length : u64;
     version : u16;
     unit_type : u8;
-    debug_abbrev_offset : u32;
+    debug_abbrev_offset : u64;
     address_size : u8;
     header_span : span;
     addr_base : u64 option; (* Address table base offset from DW_AT_addr_base *)
@@ -3257,17 +3298,27 @@ module CompileUnit = struct
   let data t = t.span
   let header t = t.header
 
+  (** Extract encoding parameters from the unit header. This provides the
+      context needed for parsing DIE attributes. *)
+  let encoding t : encoding =
+    {
+      format = t.header.format;
+      address_size = t.header.address_size;
+      version = t.header.version;
+    }
+
   let root_die t abbrev_table full_buffer =
     (* Create cursor positioned after the compilation unit header *)
-    (* DWARF 5 header: unit_length(4) + version(2) + unit_type(1) + address_size(1) + debug_abbrev_offset(4) = 12 bytes *)
+    let header_size = Unsigned.UInt64.to_int t.header.header_span.size in
     let cur =
       Object.Buffer.cursor t.raw_buffer_.buffer
         ~at:
           (Unsigned.UInt64.to_int
-             (Unsigned.UInt64.add t.span.start (Unsigned.UInt64.of_int 12)))
+             (Unsigned.UInt64.add t.span.start
+                (Unsigned.UInt64.of_int header_size)))
     in
-    (* Skip header *)
-    DIE.parse_die cur abbrev_table full_buffer
+    let enc = encoding t in
+    DIE.parse_die cur abbrev_table enc full_buffer
 end
 
 (* TODO Record to keep the different parsed areas of an object file together.
@@ -3281,18 +3332,14 @@ type t = {
 let parse_compile_unit_header (cur : Object.Buffer.cursor) :
     span * CompileUnit.header =
   let start = cur.position in
-  (* Parse DWARF 5 compile unit header *)
-  let unit_length = Object.Buffer.Read.u32 cur in
+  (* Parse DWARF 5 compile unit header with format detection *)
+  let format, unit_length = parse_initial_length cur in
   let version = Object.Buffer.Read.u16 cur in
   let unit_type = Object.Buffer.Read.u8 cur in
   let address_size = Object.Buffer.Read.u8 cur in
-  let debug_abbrev_offset = Object.Buffer.Read.u32 cur in
+  let debug_abbrev_offset = read_offset_for_format format cur in
 
   let parsed_unit_type = unit_type_of_u8 unit_type in
-
-  (* Only support DWARF32 format for now *)
-  if unit_length = Unsigned.UInt32.of_int 0xffffffff then
-    failwith "Only DWARF32 is supported";
 
   (* Only support DWARF version 5 *)
   if version <> Unsigned.UInt16.of_int 5 then
@@ -3308,7 +3355,6 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
   if address_size <> Unsigned.UInt8.of_int 8 then
     failwith "Invalid address size of DWARF";
 
-  (* Calculate header size: unit_length(4) + version(2) + unit_type(1) + address_size(1) + debug_abbrev_offset(4) = 12 bytes *)
   let header_end = cur.position in
   let header_size = header_end - start in
   let header_span =
@@ -3318,11 +3364,11 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
     }
   in
 
-  (* Total size includes the length field itself *)
-  let total_size =
-    start + 4
-    (* sizeof(uint32_t) *)
-  in
+  (* Total size includes the length field itself.
+     For DWARF32 there is a 4-byte value, while for
+     DWARF64 there is a 4-byte marker (0xffffffff) + 8-byte length value. *)
+  let length_field_size = match format with DWARF32 -> 4 | DWARF64 -> 12 in
+  let total_size = start + length_field_size in
   let span =
     {
       start = Unsigned.UInt64.of_int start;
@@ -3331,6 +3377,7 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
   in
   ( span,
     {
+      format;
       unit_length;
       version;
       unit_type;
@@ -3374,11 +3421,14 @@ let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
               CompileUnit.make cursor_pos span dwarf.object_ parsed_header
             in
 
-            (* Calculate next position: current + unit_length + 4 (for length field) *)
+            (* Calculate next position: current + unit_length + length_field_size *)
             let unit_length =
-              Unsigned.UInt32.to_int parsed_header.unit_length
+              Unsigned.UInt64.to_int parsed_header.unit_length
             in
-            let next_pos = cursor_pos + unit_length + 4 in
+            let length_field_size =
+              match parsed_header.format with DWARF32 -> 4 | DWARF64 -> 12
+            in
+            let next_pos = cursor_pos + unit_length + length_field_size in
 
             Seq.Cons (unit, parse_units next_pos)
           with exn ->
@@ -3404,11 +3454,12 @@ module LineTable = struct
   }
 
   type line_program_header = {
-    unit_length : u32;
+    format : dwarf_format;
+    unit_length : u64;
     version : u16;
     address_size : u8;
     segment_selector_size : u8;
-    header_length : u32;
+    header_length : u64;
     minimum_instruction_length : u8;
     maximum_operations_per_instruction : u8;
     default_is_stmt : bool;
@@ -3459,23 +3510,22 @@ module LineTable = struct
   let resolve_line_strp_offset buffer offset =
     match find_debug_section_by_type buffer Debug_line_str with
     | None ->
-        Printf.sprintf "<line_strp:0x%08lx>" (Unsigned.UInt32.to_int32 offset)
+        Printf.sprintf "<line_strp:0x%Lx>" (Unsigned.UInt64.to_int64 offset)
     | Some (section_offset, _size) -> (
         try
           let string_cursor =
             Object.Buffer.cursor buffer
               ~at:
                 (Unsigned.UInt64.to_int section_offset
-                + Unsigned.UInt32.to_int offset)
+                + Unsigned.UInt64.to_int offset)
           in
           match Object.Buffer.Read.zero_string string_cursor () with
           | Some s -> s
           | None ->
-              Printf.sprintf "<line_strp:0x%08lx>"
-                (Unsigned.UInt32.to_int32 offset)
+              Printf.sprintf "<line_strp:0x%Lx>"
+                (Unsigned.UInt64.to_int64 offset)
         with _ ->
-          Printf.sprintf "<line_strp:0x%08lx>" (Unsigned.UInt32.to_int32 offset)
-        )
+          Printf.sprintf "<line_strp:0x%Lx>" (Unsigned.UInt64.to_int64 offset))
 
   (** Parse a DWARF 5 line program header from a buffer cursor.
 
@@ -3495,11 +3545,11 @@ module LineTable = struct
       checksums. *)
   let parse_line_program_header (cur : Object.Buffer.cursor) buffer :
       line_program_header =
-    let unit_length = Object.Buffer.Read.u32 cur in
+    let format, unit_length = parse_initial_length cur in
     let version = Object.Buffer.Read.u16 cur in
     let address_size = Object.Buffer.Read.u8 cur in
     let segment_selector_size = Object.Buffer.Read.u8 cur in
-    let header_length = Object.Buffer.Read.u32 cur in
+    let header_length = read_offset_for_format format cur in
     let minimum_instruction_length = Object.Buffer.Read.u8 cur in
     let maximum_operations_per_instruction = Object.Buffer.Read.u8 cur in
     let default_is_stmt =
@@ -3557,7 +3607,7 @@ module LineTable = struct
               | None -> "")
         | DW_LNCT_path, DW_FORM_line_strp ->
             (* Read offset into .debug_line_str section *)
-            let offset = Object.Buffer.Read.u32 cur in
+            let offset = read_offset_for_format format cur in
             (* Resolve line_strp offset to actual string *)
             path_ref := resolve_line_strp_offset buffer offset
         (* Section 6.2 (Line Number Information) of the DWARF 5 spec does not seem to
@@ -3646,7 +3696,7 @@ module LineTable = struct
               | None -> "")
         | DW_LNCT_path, DW_FORM_line_strp ->
             (* Read offset into .debug_line_str section and resolve *)
-            let offset = Object.Buffer.Read.u32 cur in
+            let offset = read_offset_for_format format cur in
             path_ref := resolve_line_strp_offset buffer offset
         | DW_LNCT_directory_index, DW_FORM_udata ->
             dir_index_ref := Object.Buffer.Read.uleb128 cur
@@ -3734,6 +3784,7 @@ module LineTable = struct
     done;
 
     {
+      format;
       unit_length;
       version;
       address_size;
@@ -4977,7 +5028,8 @@ end
 (** Accelerated Name Lookup (.debug_names section) - DWARF 5 Section 6.1 *)
 module DebugNames = struct
   type name_index_header = {
-    unit_length : u32;
+    format : dwarf_format;
+    unit_length : u64;
     version : u16;
     padding : u16;
     comp_unit_count : u32;
@@ -5054,7 +5106,7 @@ module DebugNames = struct
   (** Parse name index header *)
   let parse_name_index_header (cur : Object.Buffer.cursor) : name_index_header =
     let start_pos = cur.position in
-    let unit_length = Object.Buffer.Read.u32 cur in
+    let format, unit_length = parse_initial_length cur in
     let version = Object.Buffer.Read.u16 cur in
     let padding = Object.Buffer.Read.u16 cur in
     let comp_unit_count = Object.Buffer.Read.u32 cur in
@@ -5071,6 +5123,7 @@ module DebugNames = struct
     let span = end_pos - start_pos in
 
     {
+      format;
       unit_length;
       version;
       padding;
@@ -6157,18 +6210,19 @@ let get_compile_units t =
 (** String Offset Tables (.debug_str_offsets section) - DWARF 5 Section 7.26 *)
 module DebugStrOffsets = struct
   type header = {
-    unit_length : u32;
+    format : dwarf_format;
+    unit_length : u64;
     version : u16;
     padding : u16;
     header_span : span;
   }
 
-  type offset_entry = { offset : u32; resolved_string : string option }
+  type offset_entry = { offset : u64; resolved_string : string option }
   type t = { header : header; offsets : offset_entry array }
 
   let parse_header (cursor : Object.Buffer.cursor) : header =
     let start_pos = cursor.position in
-    let unit_length = Object.Buffer.Read.u32 cursor in
+    let format, unit_length = parse_initial_length cursor in
     let version = Object.Buffer.Read.u16 cursor in
     let padding = Object.Buffer.Read.u16 cursor in
     let end_pos = cursor.position in
@@ -6187,20 +6241,19 @@ module DebugStrOffsets = struct
         (Printf.sprintf "Expected DWARF version 5, got %d"
            (Unsigned.UInt16.to_int version));
 
-    { unit_length; version; padding; header_span }
+    { format; unit_length; version; padding; header_span }
 
   let parse_offsets (cursor : Object.Buffer.cursor) (header : header)
       (debug_str_section : (u32 * u64) option) (buffer : Object.Buffer.t) :
       offset_entry array =
     let _header_size = Unsigned.UInt64.to_int header.header_span.size in
-    let offset_size = 4 in
-    (* 4-byte offsets for DWARF32 *)
-    let data_size = Unsigned.UInt32.to_int header.unit_length - 4 in
-    (* unit_length excludes itself *)
+    let offset_size = offset_size_for_format header.format in
+    let data_size = Unsigned.UInt64.to_int header.unit_length - 4 in
+    (* unit_length excludes itself (version+padding) *)
     let num_offsets = data_size / offset_size in
 
     Array.init num_offsets (fun _i ->
-        let offset = Object.Buffer.Read.u32 cursor in
+        let offset = read_offset_for_format header.format cursor in
         let resolved_string =
           match debug_str_section with
           | Some (str_section_offset, _) -> (
@@ -6209,7 +6262,7 @@ module DebugStrOffsets = struct
                   Object.Buffer.cursor buffer
                     ~at:
                       (Unsigned.UInt32.to_int str_section_offset
-                      + Unsigned.UInt32.to_int offset)
+                      + Unsigned.UInt64.to_int offset)
                 in
                 Object.Buffer.Read.zero_string str_cursor ()
               with _ -> None)
@@ -6437,9 +6490,10 @@ end
 (** Address Range Tables (.debug_aranges section) - DWARF 5 Section 6.1.2 *)
 module DebugAranges = struct
   type header = {
-    unit_length : u32;
+    format : dwarf_format;
+    unit_length : u64;
     version : u16;
-    debug_info_offset : u32;
+    debug_info_offset : u64;
     address_size : u8;
     segment_size : u8;
     header_span : span;
@@ -6450,9 +6504,9 @@ module DebugAranges = struct
 
   let parse_header cursor =
     let start_pos = cursor.position in
-    let unit_length = Object.Buffer.Read.u32 cursor in
+    let format, unit_length = parse_initial_length cursor in
     let version = Object.Buffer.Read.u16 cursor in
-    let debug_info_offset = Object.Buffer.Read.u32 cursor in
+    let debug_info_offset = read_offset_for_format format cursor in
     let address_size = Object.Buffer.Read.u8 cursor in
     let segment_size = Object.Buffer.Read.u8 cursor in
     let end_pos = cursor.position in
@@ -6466,6 +6520,7 @@ module DebugAranges = struct
     in
 
     {
+      format;
       unit_length;
       version;
       debug_info_offset;
@@ -6535,8 +6590,8 @@ module DebugAranges = struct
              Calculate this as: base offset + header size *)
           let cu_die_offset =
             if
-              Unsigned.UInt32.equal header.debug_info_offset
-                (Unsigned.UInt32.of_int 0)
+              Unsigned.UInt64.equal header.debug_info_offset
+                (Unsigned.UInt64.of_int 0)
             then
               (* If debug_info_offset is 0 (start of .debug_info), calculate DIE offset using proper header parsing *)
               match find_debug_section_by_type buffer Debug_info with
@@ -6553,7 +6608,7 @@ module DebugAranges = struct
                     let die_offset_from_section_start =
                       Unsigned.UInt64.to_int cu_header.header_span.size
                     in
-                    Unsigned.UInt32.of_int die_offset_from_section_start
+                    Unsigned.UInt64.of_int die_offset_from_section_start
                   with _ -> header.debug_info_offset)
             else
               (* For non-zero offsets, assume it already points to the DIE *)
@@ -6573,7 +6628,8 @@ end
 (** Location Lists (.debug_loclists section) - DWARF 5 Section 7.7.3 *)
 module DebugLoclists = struct
   type header = {
-    unit_length : u32;
+    format : dwarf_format;
+    unit_length : u64;
     version : u16;
     address_size : u8;
     segment_size : u8;
@@ -6619,12 +6675,19 @@ module DebugLoclists = struct
         failwith (Printf.sprintf "Unknown location list entry type: 0x%02x" n)
 
   let parse_header cursor =
-    let unit_length = Object.Buffer.Read.u32 cursor in
+    let format, unit_length = parse_initial_length cursor in
     let version = Object.Buffer.Read.u16 cursor in
     let address_size = Object.Buffer.Read.u8 cursor in
     let segment_size = Object.Buffer.Read.u8 cursor in
     let offset_entry_count = Object.Buffer.Read.u32 cursor in
-    { unit_length; version; address_size; segment_size; offset_entry_count }
+    {
+      format;
+      unit_length;
+      version;
+      address_size;
+      segment_size;
+      offset_entry_count;
+    }
 
   let parse_offset_table cursor offset_entry_count =
     let count = Unsigned.UInt32.to_int offset_entry_count in
@@ -6666,7 +6729,8 @@ module DebugLoclists = struct
       {
         header =
           {
-            unit_length = Unsigned.UInt32.zero;
+            format = DWARF32;
+            unit_length = Unsigned.UInt64.zero;
             version = Unsigned.UInt16.zero;
             address_size = Unsigned.UInt8.zero;
             segment_size = Unsigned.UInt8.zero;

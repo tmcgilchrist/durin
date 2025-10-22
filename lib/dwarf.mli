@@ -23,6 +23,33 @@ val unit_type_of_u8 : Unsigned.UInt8.t -> unit_type
 val string_of_unit_type : unit_type -> string
 (** Convert a unit_type to its string representation *)
 
+(** DWARF format discriminator.*)
+type dwarf_format =
+  | DWARF32  (** 32-bit format with 4-byte lengths and offsets *)
+  | DWARF64  (** 64-bit format with 8-byte lengths and offsets *)
+
+val string_of_dwarf_format : dwarf_format -> string
+(** Convert a dwarf_format to its string representation *)
+
+type encoding = {
+  format : dwarf_format;  (** DWARF32 or DWARF64 format *)
+  address_size : u8;  (** Size of addresses in bytes (typically 8 for 64-bit) *)
+  version : u16;  (** DWARF version number *)
+}
+(** Encoding parameters that affect how DWARF data is parsed. *)
+
+val parse_initial_length : Object.Buffer.cursor -> dwarf_format * u64
+(** Parse the initial_length field from a DWARF section header. Returns the
+    format (DWARF32 or DWARF64) and the actual length value. Raises an exception
+    if the value is in the reserved range 0xfffffff0-0xfffffffe. *)
+
+val offset_size_for_format : dwarf_format -> int
+(** Returns the size in bytes of offsets for a given DWARF format. *)
+
+val read_offset_for_format : dwarf_format -> Object.Buffer.cursor -> u64
+(** Read an offset value from the buffer according to the specified format,
+    returning the value as a u64. *)
+
 val string_of_attribute_code : u64 -> string
 (** Convert a numeric DWARF attribute code to its string representation *)
 
@@ -939,9 +966,10 @@ module DIE : sig
   val parse_die :
     Object.Buffer.cursor ->
     (u64, abbrev) Hashtbl.t ->
+    encoding ->
     Object.Buffer.t ->
     t option
-  (** Parse a single DIE from a buffer using abbreviation table *)
+  (** Parse a single DIE from a buffer using abbreviation table. *)
 
   val find_attribute : t -> attribute_encoding -> attribute_value option
   (** Find an attribute by name in a DIE *)
@@ -970,10 +998,11 @@ end
     - DIE Data (variable length) - Tree of debugging information entries *)
 module CompileUnit : sig
   type header = {
-    unit_length : u32;
+    format : dwarf_format;  (** DWARF32 or DWARF64 format *)
+    unit_length : u64;  (** Length of this unit excluding the length field *)
     version : u16;  (** DWARF version (must be 5) *)
     unit_type : u8;
-    debug_abbrev_offset : u32;  (** Offset into debug abbreviation table *)
+    debug_abbrev_offset : u64;  (** Offset into debug abbreviation table *)
     address_size : u8;  (** Size of addresses in bytes (must be 8) *)
     header_span : span;  (** Span indicating the header's position and size *)
     addr_base : u64 option;
@@ -996,6 +1025,10 @@ module CompileUnit : sig
 
   val header : t -> header
   (** Force parsing of the compilation unit header and return parsed data. *)
+
+  val encoding : t -> encoding
+  (** Extract encoding parameters (format, address_size, version) from the unit.
+      This provides the context needed for parsing DIE attributes. *)
 
   val root_die : t -> (u64, abbrev) Hashtbl.t -> Object.Buffer.t -> DIE.t option
   (** Get the root DIE for this compilation unit. *)
@@ -1074,15 +1107,17 @@ module LineTable : sig
       Header" *)
 
   type line_program_header = {
-    unit_length : u32;
-        (** Total length of line table entry excluding this field *)
+    format : dwarf_format;  (** DWARF32 or DWARF64 format *)
+    unit_length : u64;
+        (** Total length of line table entry excluding the length field *)
     version : u16;  (** DWARF version number (5 for DWARF 5) *)
     address_size : u8;
         (** Size of target address in bytes (typically 4 or 8) *)
     segment_selector_size : u8;
         (** Size of segment selector in bytes (usually 0) *)
-    header_length : u32;
-        (** Length of line program header excluding unit_length and version *)
+    header_length : u64;
+        (** Length of line program header excluding initial_length and version
+        *)
     minimum_instruction_length : u8;
         (** Smallest target machine instruction length *)
     maximum_operations_per_instruction : u8;
@@ -1560,7 +1595,9 @@ end
     DWARF 5 Specification Reference: Section 6.1 (Accelerated Access) *)
 module DebugNames : sig
   type name_index_header = {
-    unit_length : u32;  (** Total length of name index excluding this field *)
+    format : dwarf_format;  (** DWARF32 or DWARF64 format *)
+    unit_length : u64;
+        (** Total length of name index excluding the length field *)
     version : u16;  (** Version number (5 for DWARF 5) *)
     padding : u16;  (** Reserved padding field, must be zero *)
     comp_unit_count : u32;  (** Number of compilation units indexed *)
@@ -2199,7 +2236,9 @@ val get_abbrev_table : t -> size_t -> t * (u64, abbrev) Hashtbl.t
     DWARF 5 Specification Reference: Section 7.26 (String Offsets Table) *)
 module DebugStrOffsets : sig
   type header = {
-    unit_length : u32;  (** Length of this contribution excluding this field *)
+    format : dwarf_format;  (** DWARF32 or DWARF64 format *)
+    unit_length : u64;
+        (** Length of this contribution excluding the length field *)
     version : u16;  (** DWARF version number (typically 5) *)
     padding : u16;  (** Reserved padding field, must be zero *)
     header_span : span;  (** Span indicating the header's position and size *)
@@ -2211,7 +2250,7 @@ module DebugStrOffsets : sig
       single [.debug_str_offsets] section. *)
 
   type offset_entry = {
-    offset : u32;  (** Offset into .debug_str section *)
+    offset : u64;  (** Offset into .debug_str section *)
     resolved_string : string option;  (** Resolved string content if available *)
   }
   (** An individual offset entry with optional resolved string content.
@@ -2414,9 +2453,11 @@ end
     DWARF 5 Specification Reference: Section 6.1.2 (Address Range Table) *)
 module DebugAranges : sig
   type header = {
-    unit_length : u32;  (** Length of this aranges set excluding this field *)
+    format : dwarf_format;  (** DWARF32 or DWARF64 format *)
+    unit_length : u64;
+        (** Length of this aranges set excluding the length field *)
     version : u16;  (** DWARF version number (typically 2) *)
-    debug_info_offset : u32;  (** Offset into .debug_info section *)
+    debug_info_offset : u64;  (** Offset into .debug_info section *)
     address_size : u8;  (** Size of addresses in bytes *)
     segment_size : u8;  (** Size of segment selectors in bytes (usually 0) *)
     header_span : span;  (** Span indicating the header's position and size *)
@@ -2477,7 +2518,8 @@ end
     DWARF 5 Specification Reference: Section 7.7.3 (Location Lists) *)
 module DebugLoclists : sig
   type header = {
-    unit_length : u32;  (** Length of the location lists contribution *)
+    format : dwarf_format;  (** DWARF32 or DWARF64 format *)
+    unit_length : u64;  (** Length of the location lists contribution *)
     version : u16;  (** Version identifier (DWARF 5) *)
     address_size : u8;  (** Size of addresses in bytes *)
     segment_size : u8;  (** Size of segment selectors in bytes (usually 0) *)

@@ -68,7 +68,7 @@ let test_debug_str_offsets_header_parsing () =
 
   Alcotest.(check int)
     "unit_length" 40
-    (Unsigned.UInt32.to_int header.unit_length);
+    (Unsigned.UInt64.to_int header.unit_length);
   Alcotest.(check int) "version" 5 (Unsigned.UInt16.to_int header.version);
   Alcotest.(check int) "padding" 0 (Unsigned.UInt16.to_int header.padding);
 
@@ -85,31 +85,31 @@ let test_debug_str_offsets_parsing_without_strings () =
   Alcotest.(check int) "number_of_offsets" 9 (Array.length offsets);
   Alcotest.(check int)
     "offset_0" 1
-    (Unsigned.UInt32.to_int offsets.(0).Dwarf.DebugStrOffsets.offset);
+    (Unsigned.UInt64.to_int offsets.(0).Dwarf.DebugStrOffsets.offset);
   Alcotest.(check int)
     "offset_1" 48
-    (Unsigned.UInt32.to_int offsets.(1).Dwarf.DebugStrOffsets.offset);
+    (Unsigned.UInt64.to_int offsets.(1).Dwarf.DebugStrOffsets.offset);
   Alcotest.(check int)
     "offset_2" 62
-    (Unsigned.UInt32.to_int offsets.(2).Dwarf.DebugStrOffsets.offset);
+    (Unsigned.UInt64.to_int offsets.(2).Dwarf.DebugStrOffsets.offset);
   Alcotest.(check int)
     "offset_3" 157
-    (Unsigned.UInt32.to_int offsets.(3).Dwarf.DebugStrOffsets.offset);
+    (Unsigned.UInt64.to_int offsets.(3).Dwarf.DebugStrOffsets.offset);
   Alcotest.(check int)
     "offset_4" 168
-    (Unsigned.UInt32.to_int offsets.(4).Dwarf.DebugStrOffsets.offset);
+    (Unsigned.UInt64.to_int offsets.(4).Dwarf.DebugStrOffsets.offset);
   Alcotest.(check int)
     "offset_5" 217
-    (Unsigned.UInt32.to_int offsets.(5).Dwarf.DebugStrOffsets.offset);
+    (Unsigned.UInt64.to_int offsets.(5).Dwarf.DebugStrOffsets.offset);
   Alcotest.(check int)
     "offset_6" 222
-    (Unsigned.UInt32.to_int offsets.(6).Dwarf.DebugStrOffsets.offset);
+    (Unsigned.UInt64.to_int offsets.(6).Dwarf.DebugStrOffsets.offset);
   Alcotest.(check int)
     "offset_7" 242
-    (Unsigned.UInt32.to_int offsets.(7).Dwarf.DebugStrOffsets.offset);
+    (Unsigned.UInt64.to_int offsets.(7).Dwarf.DebugStrOffsets.offset);
   Alcotest.(check int)
     "offset_8" 247
-    (Unsigned.UInt32.to_int offsets.(8).Dwarf.DebugStrOffsets.offset);
+    (Unsigned.UInt64.to_int offsets.(8).Dwarf.DebugStrOffsets.offset);
 
   (* Check that all resolved_strings are None when no debug_str section provided *)
   Array.iteri
@@ -225,7 +225,7 @@ let test_debug_str_offsets_with_real_file () =
       (* Verify header matches expected values from real file *)
       Alcotest.(check int)
         "real_file_unit_length" 40
-        (Unsigned.UInt32.to_int header.unit_length);
+        (Unsigned.UInt64.to_int header.unit_length);
       Alcotest.(check int)
         "real_file_version" 5
         (Unsigned.UInt16.to_int header.version);

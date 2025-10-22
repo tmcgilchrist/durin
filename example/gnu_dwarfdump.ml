@@ -418,9 +418,7 @@ let dump_debug_info filename =
               unit_start_in_debug_info;
 
             (* Get the abbreviation table for this compilation unit *)
-            let abbrev_offset =
-              Unsigned.UInt64.of_uint32 header.debug_abbrev_offset
-            in
+            let abbrev_offset = header.debug_abbrev_offset in
             let _, abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
 
             (* Get the root DIE for this compilation unit *)
@@ -543,8 +541,8 @@ let dump_debug_str_offsets filename =
         Printf.printf " table 0\n";
         Printf.printf " tableheader 0x%08x\n" table_start_offset;
         Printf.printf " arrayoffset 0x%08x\n" header_size;
-        Printf.printf " unit length 0x%08x\n"
-          (Unsigned.UInt32.to_int header.unit_length);
+        Printf.printf " unit length 0x%016Lx\n"
+          (Unsigned.UInt64.to_int64 header.unit_length);
         Printf.printf " entry size  4\n";
         Printf.printf " version     %d\n"
           (Unsigned.UInt16.to_int header.version);
@@ -552,9 +550,9 @@ let dump_debug_str_offsets filename =
           (Unsigned.UInt16.to_int header.padding);
 
         (* Calculate number of offsets *)
-        let data_size = Unsigned.UInt32.to_int header.unit_length - 4 in
-        (* unit_length excludes itself *)
-        let offset_size = 4 in
+        let data_size = Unsigned.UInt64.to_int header.unit_length - 4 in
+        (* unit_length excludes itself (version+padding) *)
+        let offset_size = Dwarf.offset_size_for_format header.format in
         let num_offsets = data_size / offset_size in
         Printf.printf " arraysize   %d\n" num_offsets;
 
@@ -677,7 +675,7 @@ let dump_debug_aranges filename =
 
         (* Find the compilation unit that matches the debug_info_offset from aranges *)
         let cu_die_offset =
-          Unsigned.UInt32.to_int header.Dwarf.DebugAranges.debug_info_offset
+          Unsigned.UInt64.to_int header.Dwarf.DebugAranges.debug_info_offset
         in
 
         (* For the first compilation unit, the unit_offset_in_section should be 0
@@ -715,8 +713,7 @@ let dump_debug_aranges filename =
             (* Get abbreviation table for DIE parsing *)
             let _, abbrev_table =
               Dwarf.get_abbrev_table (Dwarf.create buffer)
-                (Unsigned.UInt64.of_uint32
-                   (Dwarf.CompileUnit.header unit).debug_abbrev_offset)
+                (Dwarf.CompileUnit.header unit).debug_abbrev_offset
             in
 
             (* Parse and print root DIE attributes *)
@@ -816,12 +813,12 @@ let dump_debug_aranges filename =
               Unsigned.UInt64.to_int64 range.Dwarf.DebugAranges.length
             in
             let cu_offset =
-              Unsigned.UInt32.to_int32
+              Unsigned.UInt64.to_int64
                 header.Dwarf.DebugAranges.debug_info_offset
             in
             Printf.printf
               "arange starts at 0x%08Lx, length of 0x%08Lx, cu_die_offset = \
-               0x%08lx\n"
+               0x%08Lx\n"
               start_addr length cu_offset)
           aranges_set.Dwarf.DebugAranges.ranges;
         Printf.printf "arange end\n\n"
@@ -961,7 +958,7 @@ let dump_debug_names filename =
         Printf.printf "Name Index @ 0x0 {\n";
         Printf.printf "  Header {\n";
         Printf.printf "    Length: 0x%X\n"
-          (Unsigned.UInt32.to_int debug_names.header.unit_length);
+          (Unsigned.UInt64.to_int debug_names.header.unit_length);
         Printf.printf "    Format: DWARF32\n";
         Printf.printf "    Version: %d\n"
           (Unsigned.UInt16.to_int debug_names.header.version);
@@ -1208,18 +1205,18 @@ let dump_debug_loclists filename =
 
         (* Check if section is empty (indicated by zero unit_length) *)
         if
-          Unsigned.UInt32.equal loclists_section.header.unit_length
-            Unsigned.UInt32.zero
+          Unsigned.UInt64.equal loclists_section.header.unit_length
+            Unsigned.UInt64.zero
         then
           (* Empty section - no output needed, this matches system dwarfdump *)
           ()
         else
           (* Format output similar to other debug sections *)
           Printf.printf
-            "Location lists header: length = 0x%08lx, format = DWARF32, \
+            "Location lists header: length = 0x%08Lx, format = DWARF32, \
              version = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x, \
              offset_entry_count = 0x%08lx\n"
-            (Unsigned.UInt32.to_int32 loclists_section.header.unit_length)
+            (Unsigned.UInt64.to_int64 loclists_section.header.unit_length)
             (Unsigned.UInt16.to_int loclists_section.header.version)
             (Unsigned.UInt8.to_int loclists_section.header.address_size)
             (Unsigned.UInt8.to_int loclists_section.header.segment_size)

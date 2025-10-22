@@ -35,14 +35,15 @@ let find_line_entry entries target_addr =
       if Unsigned.UInt64.equal addr target_addr then Some entry
       else if Unsigned.UInt64.compare target_addr addr < 0 then
         binary_search low (mid - 1)
-      else
+      else if
         (* Check if target is between this entry and the next *)
-        if mid < List.length entries - 1 then
-          let next_entry = List.nth entries (mid + 1) in
-          let next_addr = next_entry.Dwarf.LineTable.address in
-          if Unsigned.UInt64.compare target_addr next_addr < 0 then Some entry
-          else binary_search (mid + 1) high
-        else Some entry
+        mid < List.length entries - 1
+      then
+        let next_entry = List.nth entries (mid + 1) in
+        let next_addr = next_entry.Dwarf.LineTable.address in
+        if Unsigned.UInt64.compare target_addr next_addr < 0 then Some entry
+        else binary_search (mid + 1) high
+      else Some entry
     (* Last entry *)
   in
   if List.length entries = 0 then None
@@ -110,7 +111,9 @@ let addr_to_location _buffer header entries addr =
   match find_line_entry entries addr with
   | None -> ("??", 0)
   | Some entry ->
-      let file_index = Unsigned.UInt32.to_int entry.Dwarf.LineTable.file_index in
+      let file_index =
+        Unsigned.UInt32.to_int entry.Dwarf.LineTable.file_index
+      in
       if file_index < Array.length header.Dwarf.LineTable.file_names then
         let file_entry = header.Dwarf.LineTable.file_names.(file_index) in
         let filename =
@@ -137,18 +140,18 @@ let find_function_name buffer addr =
     let rec search_cu cu_seq =
       match cu_seq () with
       | Seq.Nil -> None
-      | Seq.Cons (unit, rest) ->
+      | Seq.Cons (unit, rest) -> (
           let header = Dwarf.CompileUnit.header unit in
-          let abbrev_offset =
-            Unsigned.UInt64.of_uint32 header.debug_abbrev_offset
-          in
+          let abbrev_offset = header.debug_abbrev_offset in
           let _, abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
-          (match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+          match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
           | None -> search_cu rest
-          | Some root_die ->
+          | Some root_die -> (
               (* Get addr_base from root DIE if present *)
               let addr_base =
-                match Dwarf.DIE.find_attribute root_die Dwarf.DW_AT_addr_base with
+                match
+                  Dwarf.DIE.find_attribute root_die Dwarf.DW_AT_addr_base
+                with
                 | Some (Dwarf.DIE.UData base) -> Some base
                 | _ -> None
               in
@@ -164,27 +167,39 @@ let find_function_name buffer addr =
                       Dwarf.DIE.find_attribute die Dwarf.DW_AT_high_pc
                     in
                     match (low_pc_opt, high_pc_opt) with
-                    | Some (Dwarf.DIE.Address low_pc_raw), Some (Dwarf.DIE.Address high_pc_raw) ->
+                    | ( Some (Dwarf.DIE.Address low_pc_raw),
+                        Some (Dwarf.DIE.Address high_pc_raw) ) ->
                         (* Both are addresses - resolve them *)
-                        let low_pc = resolve_die_address buffer addr_base low_pc_raw in
-                        let high_pc = resolve_die_address buffer addr_base high_pc_raw in
+                        let low_pc =
+                          resolve_die_address buffer addr_base low_pc_raw
+                        in
+                        let high_pc =
+                          resolve_die_address buffer addr_base high_pc_raw
+                        in
                         if
                           Unsigned.UInt64.compare addr low_pc >= 0
                           && Unsigned.UInt64.compare addr high_pc < 0
                         then
-                          match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
+                          match
+                            Dwarf.DIE.find_attribute die Dwarf.DW_AT_name
+                          with
                           | Some (Dwarf.DIE.String name) -> Some name
                           | _ -> None
                         else None
-                    | Some (Dwarf.DIE.Address low_pc_raw), Some (Dwarf.DIE.UData offset) ->
+                    | ( Some (Dwarf.DIE.Address low_pc_raw),
+                        Some (Dwarf.DIE.UData offset) ) ->
                         (* high_pc is offset from low_pc *)
-                        let low_pc = resolve_die_address buffer addr_base low_pc_raw in
+                        let low_pc =
+                          resolve_die_address buffer addr_base low_pc_raw
+                        in
                         let high_pc = Unsigned.UInt64.add low_pc offset in
                         if
                           Unsigned.UInt64.compare addr low_pc >= 0
                           && Unsigned.UInt64.compare addr high_pc < 0
                         then
-                          match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
+                          match
+                            Dwarf.DIE.find_attribute die Dwarf.DW_AT_name
+                          with
                           | Some (Dwarf.DIE.String name) -> Some name
                           | _ -> None
                         else None
@@ -204,7 +219,7 @@ let find_function_name buffer addr =
                     in
                     search_children die.Dwarf.DIE.children
               in
-              (match search_die root_die with
+              match search_die root_die with
               | Some name -> Some name
               | None -> search_cu rest))
     in
@@ -216,23 +231,28 @@ let lookup_address buffer addr_str show_functions =
   try
     let addr = Unsigned.UInt64.of_string addr_str in
     match parse_line_table buffer with
-    | None -> if show_functions then Printf.printf "??\n??:0\n" else Printf.printf "??:0\n"
+    | None ->
+        if show_functions then Printf.printf "??\n??:0\n"
+        else Printf.printf "??:0\n"
     | Some (header, entries) ->
         let filename, line = addr_to_location buffer header entries addr in
-        if show_functions then (
+        if show_functions then
           let func_name =
             match find_function_name buffer addr with
             | Some name -> name
             | None -> "??"
           in
-          Printf.printf "%s\n%s:%d\n" func_name filename line)
+          Printf.printf "%s\n%s:%d\n" func_name filename line
         else Printf.printf "%s:%d\n" filename line
-  with _ -> if show_functions then Printf.printf "??\n??:0\n" else Printf.printf "??:0\n"
+  with _ ->
+    if show_functions then Printf.printf "??\n??:0\n"
+    else Printf.printf "??:0\n"
 
 (* Command-line interface *)
 let executable_file =
   let doc = "Executable file to analyze" in
-  Cmdliner.Arg.(value & opt (some string) None & info [ "e"; "exe" ] ~docv:"FILE" ~doc)
+  Cmdliner.Arg.(
+    value & opt (some string) None & info [ "e"; "exe" ] ~docv:"FILE" ~doc)
 
 let show_functions =
   let doc = "Show function names" in
@@ -262,7 +282,8 @@ let addr_list =
   let doc = "Addresses to look up" in
   Cmdliner.Arg.(value & pos_all string [] & info [] ~docv:"ADDRESS" ~doc)
 
-let addr2line_cmd exec_file show_funcs _inlines _pretty _base _addrs _dem addrs =
+let addr2line_cmd exec_file show_funcs _inlines _pretty _base _addrs _dem addrs
+    =
   let filename = match exec_file with Some f -> f | None -> "a.out" in
   try
     let buffer, _ = init_context filename in
