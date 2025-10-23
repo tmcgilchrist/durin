@@ -734,6 +734,7 @@
   (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp_linux")))
 
 ; DWARF64 binary compilation for testing
+
 (rule
  (alias runtest)
  (deps hello_world.cpp)
@@ -744,7 +745,7 @@
    (= %{architecture} "amd64")))
  (action
   (system
-    "clang++ -std=c++17 -gdwarf64 -gdwarf-5 %{deps} -o hello_world_dwarf64_cpp")))
+   "clang++ -std=c++17 -gdwarf64 -gdwarf-5 %{deps} -o hello_world_dwarf64_cpp")))
 
 (rule
  (alias runtest)
