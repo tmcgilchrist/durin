@@ -1251,9 +1251,10 @@ let dump_debug_addr filename =
         (* Print header information *)
         let header = parsed_addr.header in
         Printf.printf
-          "Address table header: length = 0x%08lx, format = DWARF32, version = \
+          "Address table header: length = 0x%08Lx, format = %s, version = \
            0x%04x, addr_size = 0x%02x, seg_size = 0x%02x\n"
-          (Unsigned.UInt32.to_int32 header.unit_length)
+          (Unsigned.UInt64.to_int64 header.unit_length)
+          (Dwarf.string_of_dwarf_format header.format)
           (Unsigned.UInt16.to_int header.version)
           (Unsigned.UInt8.to_int header.address_size)
           (Unsigned.UInt8.to_int header.segment_selector_size);
@@ -1308,9 +1309,9 @@ let dump_debug_frame filename =
                 (* Calculate position offset for display - this is simplified *)
                 let start_pos = 0 in
                 (* Would need actual offset tracking in library *)
-                Printf.printf "\n%08x %08lx %08lx CIE\n" start_pos
-                  (Unsigned.UInt32.to_int32 cie.length)
-                  (Unsigned.UInt32.to_int32 cie.cie_id);
+                Printf.printf "\n%08x %08Lx %08Lx CIE\n" start_pos
+                  (Unsigned.UInt64.to_int64 cie.length)
+                  (Unsigned.UInt64.to_int64 cie.cie_id);
                 Printf.printf "  Version:               %d\n"
                   (Unsigned.UInt8.to_int cie.version);
                 Printf.printf "  Augmentation:          \"%s\"\n"
@@ -1470,14 +1471,14 @@ let dump_eh_frame filename =
         List.rev !fde_entries
         |> List.iteri (fun i fde ->
                let open Dwarf.CallFrame in
-               let start_addr = Unsigned.UInt32.to_int64 fde.initial_location in
+               let start_addr = Unsigned.UInt64.to_int64 fde.initial_location in
                let end_addr =
                  Int64.add start_addr
-                   (Unsigned.UInt32.to_int64 fde.address_range)
+                   (Unsigned.UInt64.to_int64 fde.address_range)
                in
-               let cie_offset = Unsigned.UInt32.to_int fde.cie_pointer in
-               let fde_length = Unsigned.UInt32.to_int fde.length in
-               let fde_offset = Unsigned.UInt32.to_int fde.offset in
+               let cie_offset = Unsigned.UInt64.to_int fde.cie_pointer in
+               let fde_length = Unsigned.UInt64.to_int fde.length in
+               let fde_offset = Unsigned.UInt64.to_int fde.offset in
 
                Printf.printf "fde:\n";
 
@@ -1503,7 +1504,9 @@ let dump_eh_frame filename =
                let corresponding_cie =
                  match
                    Dwarf.EHFrame.find_cie_for_fde eh_frame_section
-                     fde.cie_pointer fde_offset
+                     (Unsigned.UInt32.of_int
+                        (Unsigned.UInt64.to_int fde.cie_pointer))
+                     fde_offset
                  with
                  | Some cie -> cie
                  | None ->
@@ -1604,8 +1607,8 @@ let dump_eh_frame filename =
 
                Printf.printf "  bytes of initial instructions %d\n"
                  (String.length cie.initial_instructions);
-               Printf.printf "  cie length                    %ld\n"
-                 (Unsigned.UInt32.to_int32 cie.length);
+               Printf.printf "  cie length                    %Ld\n"
+                 (Unsigned.UInt64.to_int64 cie.length);
 
                if String.length cie.initial_instructions > 0 then (
                  Printf.printf "  initial instructions\n";

@@ -878,9 +878,10 @@ let dump_debug_addr filename =
           (* Print header information *)
           let header = parsed_addr.header in
           Printf.printf
-            "Address table header: length = 0x%08lx, format = DWARF32, version \
-             = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x\n"
-            (Unsigned.UInt32.to_int32 header.unit_length)
+            "Address table header: length = 0x%08Lx, format = %s, version = \
+             0x%04x, addr_size = 0x%02x, seg_size = 0x%02x\n"
+            (Unsigned.UInt64.to_int64 header.unit_length)
+            (Dwarf.string_of_dwarf_format header.format)
             (Unsigned.UInt16.to_int header.version)
             (Unsigned.UInt8.to_int header.address_size)
             (Unsigned.UInt8.to_int header.segment_selector_size);
