@@ -376,6 +376,7 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
       let attr_value =
         match attr.Dwarf.DIE.value with
         | Dwarf.DIE.String s -> Printf.sprintf "(\"%s\")" s
+        | Dwarf.DIE.IndexedString (_, s) -> Printf.sprintf "(\"%s\")" s
         | Dwarf.DIE.UData u ->
             (* Special handling for DW_AT_high_pc which might be an offset from DW_AT_low_pc *)
             if attr.Dwarf.DIE.attr = Dwarf.DW_AT_high_pc then
@@ -404,6 +405,12 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
                 (Unsigned.UInt64.to_int64 u |> Int64.to_int)
         | Dwarf.DIE.SData i -> Printf.sprintf "(%Ld)" i
         | Dwarf.DIE.Address a ->
+            let resolved_addr =
+              resolve_address_attribute buffer die attr.Dwarf.DIE.attr a
+                cu_addr_base
+            in
+            Printf.sprintf "(0x%016Lx)" (Unsigned.UInt64.to_int64 resolved_addr)
+        | Dwarf.DIE.IndexedAddress (_, a) ->
             let resolved_addr =
               resolve_address_attribute buffer die attr.Dwarf.DIE.attr a
                 cu_addr_base

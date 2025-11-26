@@ -1999,6 +1999,15 @@ let calling_convention = function
   | 0xff -> DW_CC_hi_user
   | n -> failwith (Printf.sprintf "Unknown calling_convention: 0x%02x" n)
 
+let string_of_calling_convention = function
+  | DW_CC_normal -> "DW_CC_normal"
+  | DW_CC_program -> "DW_CC_program"
+  | DW_CC_nocall -> "DW_CC_nocall"
+  | DW_CC_pass_by_reference -> "DW_CC_pass_by_reference"
+  | DW_CC_pass_by_value -> "DW_CC_pass_by_value"
+  | DW_CC_lo_user -> "DW_CC_lo_user"
+  | DW_CC_hi_user -> "DW_CC_hi_user"
+
 type inlined =
   | DW_INL_not_inlined
   | DW_INL_inlined
@@ -3017,9 +3026,11 @@ let resolve_string_index (buffer : Object.Buffer.t) (format : dwarf_format)
 module DIE = struct
   type attribute_value =
     | String of string
+    | IndexedString of int * string (* index, resolved_string *)
     | UData of u64
     | SData of i64
     | Address of u64
+    | IndexedAddress of int * u64 (* index, resolved_address *)
     | Flag of bool
     | Reference of u64
     | Block of string
@@ -3095,7 +3106,7 @@ module DIE = struct
         let resolved_string =
           resolve_string_index full_buffer encoding.format index
         in
-        String resolved_string
+        IndexedString (index, resolved_string)
     | DW_FORM_sec_offset ->
         (* Section offset - 4 or 8 bytes depending on DWARF format *)
         let offset = read_offset_for_format encoding.format cur in
@@ -3103,9 +3114,7 @@ module DIE = struct
     | DW_FORM_addrx ->
         (* Address index - ULEB128 index into address table *)
         let index = Object.Buffer.Read.uleb128 cur in
-        (* TODO: Implement proper address table resolution using DW_AT_addr_base *)
-        (* For now, treat as an address placeholder that needs resolution *)
-        Address (Unsigned.UInt64.of_int index)
+        IndexedAddress (index, Unsigned.UInt64.of_int index)
     | DW_FORM_ref4 ->
         (* 4-byte offset reference within same compilation unit *)
         let offset = Object.Buffer.Read.u32 cur in
@@ -3153,14 +3162,14 @@ module DIE = struct
         let resolved_string =
           resolve_string_index full_buffer encoding.format index
         in
-        String resolved_string
+        IndexedString (index, resolved_string)
     | DW_FORM_strx2 ->
         (* String index form - reads 2-byte index into string offsets table *)
         let index = Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int in
         let resolved_string =
           resolve_string_index full_buffer encoding.format index
         in
-        String resolved_string
+        IndexedString (index, resolved_string)
     | DW_FORM_strx3 ->
         (* String index form - reads 3-byte index into string offsets table *)
         let byte1 = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
@@ -3170,37 +3179,37 @@ module DIE = struct
         let resolved_string =
           resolve_string_index full_buffer encoding.format index
         in
-        String resolved_string
+        IndexedString (index, resolved_string)
     | DW_FORM_strx4 ->
         (* String index form - reads 4-byte index into string offsets table *)
         let index = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
         let resolved_string =
           resolve_string_index full_buffer encoding.format index
         in
-        String resolved_string
+        IndexedString (index, resolved_string)
     | DW_FORM_addrx1 ->
         (* Address index form - reads 1-byte index into address table *)
         let index = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
-        (* TODO: Use addr_base from compilation unit context for resolution *)
-        Address (Unsigned.UInt64.of_int index)
+        (* Return IndexedAddress - resolution requires addr_base from CU context *)
+        IndexedAddress (index, Unsigned.UInt64.of_int index)
     | DW_FORM_addrx2 ->
         (* Address index form - reads 2-byte index into address table *)
         let index = Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int in
-        (* TODO: Use addr_base from compilation unit context for resolution *)
-        Address (Unsigned.UInt64.of_int index)
+        (* Return IndexedAddress - resolution requires addr_base from CU context *)
+        IndexedAddress (index, Unsigned.UInt64.of_int index)
     | DW_FORM_addrx3 ->
         (* Address index form - reads 3-byte index into address table *)
         let byte1 = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
         let byte2 = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
         let byte3 = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
         let index = byte1 lor (byte2 lsl 8) lor (byte3 lsl 16) in
-        (* TODO: Use addr_base from compilation unit context for resolution *)
-        Address (Unsigned.UInt64.of_int index)
+        (* Return IndexedAddress - resolution requires addr_base from CU context *)
+        IndexedAddress (index, Unsigned.UInt64.of_int index)
     | DW_FORM_addrx4 ->
         (* Address index form - reads 4-byte index into address table *)
         let index = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
-        (* TODO: Use addr_base from compilation unit context for resolution *)
-        Address (Unsigned.UInt64.of_int index)
+        (* Return IndexedAddress - resolution requires addr_base from CU context *)
+        IndexedAddress (index, Unsigned.UInt64.of_int index)
     | DW_FORM_line_strp -> (
         (* String pointer to Debug_line_str section - size depends on format *)
         let offset = read_offset_for_format encoding.format cur in
@@ -3838,6 +3847,21 @@ module LineTable = struct
       table entries that map program addresses to source locations. *)
   let parse_line_program (cur : Object.Buffer.cursor)
       (header : line_program_header) : line_table_entry list =
+    (* Calculate program length from header.
+       unit_length includes everything after the initial_length field:
+       - version (2) + address_size (1) + segment_selector_size (1) + header_length field (4 or 8)
+       - + header content (header_length bytes) + line program
+       So: program_length = unit_length - (4 + offset_size + header_length) *)
+    let offset_size = offset_size_for_format header.format in
+    let header_overhead = 4 + offset_size in
+    (* Fixed fields: version(2) + address_size(1) + segment_selector_size(1) + header_length field *)
+    let total_program_length =
+      Unsigned.UInt64.to_int header.unit_length
+      - header_overhead
+      - Unsigned.UInt64.to_int header.header_length
+    in
+    let bytes_read = ref 0 in
+
     (* Initialize the line number state machine *)
     let address = ref (Unsigned.UInt64.of_int 0) in
     let op_index = ref (Unsigned.UInt32.of_int 0) in
@@ -3854,6 +3878,22 @@ module LineTable = struct
 
     let entries = ref [] in
     let program_done = ref false in
+
+    (* Helper to reset state machine after end_sequence *)
+    let reset_state () =
+      address := Unsigned.UInt64.of_int 0;
+      op_index := Unsigned.UInt32.of_int 0;
+      file_index := Unsigned.UInt32.of_int 1;
+      line := Unsigned.UInt32.of_int 1;
+      column := Unsigned.UInt32.of_int 0;
+      is_stmt := header.default_is_stmt;
+      basic_block := false;
+      end_sequence := false;
+      prologue_end := false;
+      epilogue_begin := false;
+      isa := Unsigned.UInt32.of_int 0;
+      discriminator := Unsigned.UInt32.of_int 0
+    in
 
     (* Helper function to create a line table entry *)
     let make_entry () =
@@ -3874,15 +3914,19 @@ module LineTable = struct
     in
 
     (* Process opcodes until end of program *)
-    while not !program_done do
+    while (not !program_done) && !bytes_read < total_program_length do
       try
         let opcode = Object.Buffer.Read.u8 cur in
+        bytes_read := !bytes_read + 1;
         let opcode_val = Unsigned.UInt8.to_int opcode in
 
-        if opcode_val = 0 then
+        if opcode_val = 0 then (
           (* Extended opcode *)
           let length = Object.Buffer.Read.uleb128 cur in
+          (* LEB128 encoding: conservatively estimate max 5 bytes for typical values *)
+          bytes_read := !bytes_read + if length < 128 then 1 else 2;
           let extended_opcode = Object.Buffer.Read.u8 cur in
+          bytes_read := !bytes_read + 1;
           let extended_val = Unsigned.UInt8.to_int extended_opcode in
 
           (* Extended opcode handling: DWARF 5 extended opcode support.
@@ -3901,28 +3945,34 @@ module LineTable = struct
           match extended_val with
           | 0x01 ->
               (* DW_LNE_end_sequence *)
+              (* Set end_sequence, emit row, then reset state and continue *)
               end_sequence := true;
               entries := make_entry () :: !entries;
-              program_done := true
+              reset_state ()
           | 0x02 ->
               (* DW_LNE_set_address *)
               let addr_bytes = length - 1 in
-              if addr_bytes = 4 then
+              if addr_bytes = 4 then (
                 address :=
-                  Object.Buffer.Read.u32 cur |> Unsigned.UInt64.of_uint32
-              else if addr_bytes = 8 then address := Object.Buffer.Read.u64 cur
+                  Object.Buffer.Read.u32 cur |> Unsigned.UInt64.of_uint32;
+                bytes_read := !bytes_read + 4)
+              else if addr_bytes = 8 then (
+                address := Object.Buffer.Read.u64 cur;
+                bytes_read := !bytes_read + 8)
               else failwith "Unsupported address size in DW_LNE_set_address"
           | 0x04 ->
               (* DW_LNE_set_discriminator *)
-              discriminator :=
-                Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              let disc_val = Object.Buffer.Read.uleb128 cur in
+              discriminator := Unsigned.UInt32.of_int disc_val;
+              bytes_read := !bytes_read + if disc_val < 128 then 1 else 2
           | _ ->
               (* Skip unknown extended opcodes *)
               (* The DW_LNE_define_file operation defined in earlier versions of DWARF is deprecated
                 in DWARF Version 5. *)
               for _i = 1 to length - 1 do
-                ignore (Object.Buffer.Read.u8 cur)
-              done
+                ignore (Object.Buffer.Read.u8 cur);
+                bytes_read := !bytes_read + 1
+              done)
         else if opcode_val >= Unsigned.UInt8.to_int header.opcode_base then (
           (* Special opcode *)
           let adjusted_opcode =
@@ -3962,6 +4012,7 @@ module LineTable = struct
           | 0x02 ->
               (* DW_LNS_advance_pc *)
               let advance = Object.Buffer.Read.uleb128 cur in
+              bytes_read := !bytes_read + if advance < 128 then 1 else 2;
               let address_increment =
                 advance
                 * Unsigned.UInt8.to_int header.minimum_instruction_length
@@ -3972,14 +4023,19 @@ module LineTable = struct
           | 0x03 ->
               (* DW_LNS_advance_line *)
               let advance = Object.Buffer.Read.sleb128 cur in
+              bytes_read :=
+                !bytes_read + if advance >= -64 && advance < 64 then 1 else 2;
               line := Unsigned.UInt32.add !line (Unsigned.UInt32.of_int advance)
           | 0x04 ->
               (* DW_LNS_set_file *)
-              file_index :=
-                Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              let file_val = Object.Buffer.Read.uleb128 cur in
+              bytes_read := !bytes_read + if file_val < 128 then 1 else 2;
+              file_index := Unsigned.UInt32.of_int file_val
           | 0x05 ->
               (* DW_LNS_set_column *)
-              column := Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              let col_val = Object.Buffer.Read.uleb128 cur in
+              bytes_read := !bytes_read + if col_val < 128 then 1 else 2;
+              column := Unsigned.UInt32.of_int col_val
           | 0x06 ->
               (* DW_LNS_negate_stmt *)
               is_stmt := not !is_stmt
@@ -4002,6 +4058,7 @@ module LineTable = struct
           | 0x09 ->
               (* DW_LNS_fixed_advance_pc *)
               let advance = Object.Buffer.Read.u16 cur in
+              bytes_read := !bytes_read + 2;
               address :=
                 Unsigned.UInt64.add !address
                   (Unsigned.UInt64.of_int (Unsigned.UInt16.to_int advance))
@@ -4013,7 +4070,9 @@ module LineTable = struct
               epilogue_begin := true
           | 0x0c ->
               (* DW_LNS_set_isa *)
-              isa := Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              let isa_val = Object.Buffer.Read.uleb128 cur in
+              bytes_read := !bytes_read + if isa_val < 128 then 1 else 2;
+              isa := Unsigned.UInt32.of_int isa_val
           | _ ->
               (* Skip unknown standard opcodes using operand count from header *)
               let operand_count =
@@ -4023,7 +4082,8 @@ module LineTable = struct
                 else 0
               in
               for _i = 1 to operand_count do
-                ignore (Object.Buffer.Read.uleb128 cur)
+                let val_read = Object.Buffer.Read.uleb128 cur in
+                bytes_read := !bytes_read + if val_read < 128 then 1 else 2
               done
       with End_of_file | _ -> program_done := true
     done;

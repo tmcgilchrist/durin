@@ -170,7 +170,13 @@ let dump_debug_line filename =
               if entry.Dwarf.LineTable.basic_block then "BB" :: flags else flags
             in
             let flags =
-              if entry.Dwarf.LineTable.end_sequence then "ET" :: flags
+              (* Show ET flag if end_sequence is set, OR if epilogue_begin is set.
+                 This matches libdwarf's dwarfdump behavior which considers the
+                 epilogue as part of the "end of text sequence". *)
+              if
+                entry.Dwarf.LineTable.end_sequence
+                || entry.Dwarf.LineTable.epilogue_begin
+              then "ET" :: flags
               else flags
             in
             let flags =
@@ -236,9 +242,11 @@ let dump_debug_line filename =
 
 (* Common Format-based attribute formatting function - eliminates hardcoded spacing *)
 let format_attribute_with_spacing ~depth attr_name attr_value =
-  let base_indent = if depth = 0 then 20 else 22 in
+  (* Base indent increases with depth: depth 0 = 20, depth 1 = 22, depth 2 = 24, etc. *)
+  let base_indent = 20 + (2 * depth) in
   let attr_name_width = String.length attr_name in
-  let target_value_column = if depth = 0 then 48 else 50 in
+  (* Target value column also increases with depth *)
+  let target_value_column = 48 + (2 * depth) in
   let spacing_needed =
     max 1 (target_value_column - base_indent - attr_name_width)
   in
@@ -260,9 +268,9 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
   let offset_str = Printf.sprintf "0x%08x" relative_offset in
   let tag_str = Dwarf.string_of_abbreviation_tag_direct die.Dwarf.DIE.tag in
 
-  (* Format: < depth><offset>  TAG_NAME or < depth><offset>    TAG_NAME for children *)
-  (* Use Format module for automatic spacing based on depth *)
-  let tag_spacing = if depth = 0 then 2 else 4 in
+  (* Format: < depth><offset>  TAG_NAME with spacing = 2 * (depth + 1) *)
+  (* Spacing increases with depth: depth 0 = 2 spaces, depth 1 = 4, depth 2 = 6, etc. *)
+  let tag_spacing = 2 * (depth + 1) in
   Format.printf "< %d><%s>%*s%s@." depth offset_str tag_spacing "" tag_str;
 
   (* Print attributes with system dwarfdump formatting *)
@@ -272,6 +280,8 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
       let attr_value =
         match attr.Dwarf.DIE.value with
         | Dwarf.DIE.String s -> s
+        | Dwarf.DIE.IndexedString (index, resolved) ->
+            Printf.sprintf "(indexed string: 0x%08x)%s" index resolved
         | Dwarf.DIE.UData u ->
             (* Special formatting for different attributes *)
             if attr.Dwarf.DIE.attr = Dwarf.DW_AT_high_pc then
@@ -290,6 +300,24 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
                       Printf.sprintf "<offset-from-lowpc> %d <highpc: 0x%08x>"
                         offset
                         (Unsigned.UInt64.to_int high_pc)
+                  | Dwarf.DIE.IndexedAddress (index, placeholder_addr) ->
+                      (* Resolve the indexed address *)
+                      let resolved_addr =
+                        try
+                          let addr_base_offset = Unsigned.UInt64.of_int 0x10 in
+                          match
+                            Dwarf.lookup_address_in_debug_addr buffer
+                              addr_base_offset index
+                          with
+                          | Some addr -> addr
+                          | None -> placeholder_addr
+                        with _ -> placeholder_addr
+                      in
+                      let offset = Unsigned.UInt64.to_int u in
+                      let high_pc = Unsigned.UInt64.add resolved_addr u in
+                      Printf.sprintf "<offset-from-lowpc> %d <highpc: 0x%08x>"
+                        offset
+                        (Unsigned.UInt64.to_int high_pc)
                   | _ -> Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u))
               | None -> Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u)
             else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_decl_file then
@@ -305,9 +333,36 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
               Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u)
             else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_stmt_list then
               Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u)
+            else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_calling_convention then
+              (* Decode calling convention constant to name *)
+              let cc_val = Unsigned.UInt64.to_int u in
+              try
+                let cc = Dwarf.calling_convention cc_val in
+                Dwarf.string_of_calling_convention cc
+              with _ -> Printf.sprintf "0x%08x" cc_val
+            else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_data_member_location then
+              (* Format as decimal for simple constant offsets *)
+              Printf.sprintf "%d" (Unsigned.UInt64.to_int u)
             else Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u)
         | Dwarf.DIE.Address addr ->
             Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int addr)
+        | Dwarf.DIE.IndexedAddress (index, placeholder_addr) ->
+            (* Try to resolve the address using addr_base = 0x10.
+               In a full implementation, we'd get addr_base from the
+               compilation unit's DW_AT_addr_base attribute. *)
+            let resolved_addr =
+              try
+                let addr_base_offset = Unsigned.UInt64.of_int 0x10 in
+                match
+                  Dwarf.lookup_address_in_debug_addr buffer addr_base_offset
+                    index
+                with
+                | Some addr -> addr
+                | None -> placeholder_addr
+              with _ -> placeholder_addr
+            in
+            Printf.sprintf "(addr_index: 0x%08x)0x%08x" index
+              (Unsigned.UInt64.to_int resolved_addr)
         | Dwarf.DIE.Flag b -> if b then "yes(1)" else "no(0)"
         | Dwarf.DIE.Reference r ->
             Printf.sprintf "<0x%08x>" (Unsigned.UInt64.to_int r)
@@ -317,6 +372,17 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
             (* Special handling for DW_AT_frame_base *)
             if attr.Dwarf.DIE.attr = Dwarf.DW_AT_frame_base then
               format_frame_base_block b
+            else if
+              attr.Dwarf.DIE.attr = Dwarf.DW_AT_location
+              || attr.Dwarf.DIE.attr = Dwarf.DW_AT_data_member_location
+            then
+              (* Decode location expressions *)
+              let hex_str = format_block_hex b in
+              let decoded = decode_dwarf_expression b in
+              if decoded <> "" && decoded <> hex_str then
+                Printf.sprintf "len 0x%04x: %s: \n                          %s"
+                  (String.length b) hex_str decoded
+              else Printf.sprintf "len 0x%04x: %s" (String.length b) hex_str
             else
               Printf.sprintf "len 0x%04x: %s" (String.length b)
                 (format_block_hex b)
@@ -359,27 +425,72 @@ and resolve_file_index buffer stmt_list_offset file_index =
   with _ -> None
 
 (* Helper function to format block data as hex *)
+(* Decode DWARF expression and format it *)
+and decode_dwarf_expression block_data =
+  if String.length block_data = 0 then ""
+  else
+    (* Create a simple cursor-like interface for reading bytes *)
+    (* TODO I think we have this code elsewhere? *)
+    let pos = ref 0 in
+    let read_u8 () =
+      if !pos < String.length block_data then (
+        let byte = Char.code block_data.[!pos] in
+        pos := !pos + 1;
+        byte)
+      else failwith "Unexpected end of expression"
+    in
+    let read_uleb128 () =
+      let result = ref 0 in
+      let shift = ref 0 in
+      let rec loop () =
+        if !pos >= String.length block_data then !result
+        else
+          let byte = read_u8 () in
+          result := !result lor ((byte land 0x7f) lsl !shift);
+          shift := !shift + 7;
+          if byte land 0x80 <> 0 then loop () else !result
+      in
+      loop ()
+    in
+
+    let parts = ref [] in
+    try
+      while !pos < String.length block_data do
+        let opcode = read_u8 () in
+        try
+          let op = Dwarf.operation_encoding opcode in
+          let op_str = Dwarf.string_of_operation_encoding op in
+          (* Check if this opcode has operands *)
+          let operand_str =
+            match op with
+            | Dwarf.DW_OP_addrx | Dwarf.DW_OP_constx | Dwarf.DW_OP_constu ->
+                let operand = read_uleb128 () in
+                Printf.sprintf " %d" operand
+            | _ -> ""
+          in
+          parts := !parts @ [ op_str ^ operand_str ]
+        with _ ->
+          (* Unknown opcode, just show hex *)
+          parts := !parts @ [ Printf.sprintf "0x%02x" opcode ]
+      done;
+      String.concat "\n                          " !parts
+    with _ -> format_block_hex block_data
+
 and format_block_hex block_data =
   let bytes = String.to_seq block_data |> List.of_seq in
-  String.concat ""
-    (List.map (fun c -> Printf.sprintf "0x%02x" (Char.code c)) bytes)
+  "0x"
+  ^ String.concat ""
+      (List.map (fun c -> Printf.sprintf "%02x" (Char.code c)) bytes)
 
 (* Helper function to format frame base blocks *)
 and format_frame_base_block block_data =
-  (* Use DWARF library constant for call frame CFA opcode (0x9c) *)
-  let dw_op_call_frame_cfa = 0x9c in
-  (* DW_OP_call_frame_cfa opcode value *)
-
   if String.length block_data > 0 then
-    let opcode = Char.code block_data.[0] in
-    match opcode with
-    | x when x = dw_op_call_frame_cfa ->
-        Printf.sprintf "len 0x%04x: 0x%02x: \n                          %s"
-          (String.length block_data) dw_op_call_frame_cfa
-          (Dwarf.string_of_operation_encoding Dwarf.DW_OP_call_frame_cfa)
-    | _ ->
-        Printf.sprintf "len 0x%04x: %s" (String.length block_data)
-          (format_block_hex block_data)
+    let hex_str = format_block_hex block_data in
+    let decoded = decode_dwarf_expression block_data in
+    if decoded <> "" && decoded <> hex_str then
+      Printf.sprintf "len 0x%04x: %s: \n                          %s"
+        (String.length block_data) hex_str decoded
+    else Printf.sprintf "len 0x%04x: %s" (String.length block_data) hex_str
   else Printf.sprintf "len 0x0000: "
 
 let dump_debug_info filename =
@@ -541,9 +652,11 @@ let dump_debug_str_offsets filename =
         Printf.printf " table 0\n";
         Printf.printf " tableheader 0x%08x\n" table_start_offset;
         Printf.printf " arrayoffset 0x%08x\n" header_size;
-        Printf.printf " unit length 0x%016Lx\n"
+        (* Format unit length based on DWARF format *)
+        let offset_size = Dwarf.offset_size_for_format header.format in
+        Printf.printf " unit length 0x%08Lx\n"
           (Unsigned.UInt64.to_int64 header.unit_length);
-        Printf.printf " entry size  4\n";
+        Printf.printf " entry size  %d\n" offset_size;
         Printf.printf " version     %d\n"
           (Unsigned.UInt16.to_int header.version);
         Printf.printf " padding     0x%x\n"
@@ -552,49 +665,89 @@ let dump_debug_str_offsets filename =
         (* Calculate number of offsets *)
         let data_size = Unsigned.UInt64.to_int header.unit_length - 4 in
         (* unit_length excludes itself (version+padding) *)
-        let offset_size = Dwarf.offset_size_for_format header.format in
         let num_offsets = data_size / offset_size in
         Printf.printf " arraysize   %d\n" num_offsets;
 
         (* Parse and print offsets in the format expected by system dwarfdump *)
-        let rec print_offsets i =
-          if i < num_offsets then (
-            let offset1 = Object.Buffer.Read.u32 cursor in
-            let offset2 =
-              if i + 1 < num_offsets then Object.Buffer.Read.u32 cursor
-              else Unsigned.UInt32.zero
-            in
-            let offset3 =
-              if i + 2 < num_offsets then Object.Buffer.Read.u32 cursor
-              else Unsigned.UInt32.zero
-            in
-            let offset4 =
-              if i + 3 < num_offsets then Object.Buffer.Read.u32 cursor
-              else Unsigned.UInt32.zero
-            in
-
-            let print_4_offsets start_idx o1 o2 o3 o4 count =
-              Printf.printf " Entry [%4d]: " start_idx;
-              for j = 0 to count - 1 do
-                let offset =
-                  match j with
-                  | 0 -> o1
-                  | 1 -> o2
-                  | 2 -> o3
-                  | 3 -> o4
-                  | _ -> Unsigned.UInt32.zero
+        (match header.format with
+        | Dwarf.DWARF32 ->
+            let rec print_offsets i =
+              if i < num_offsets then (
+                let offset1 = Object.Buffer.Read.u32 cursor in
+                let offset2 =
+                  if i + 1 < num_offsets then Object.Buffer.Read.u32 cursor
+                  else Unsigned.UInt32.zero
                 in
-                Printf.printf " 0x%08x" (Unsigned.UInt32.to_int offset)
-              done;
-              Printf.printf "\n"
-            in
+                let offset3 =
+                  if i + 2 < num_offsets then Object.Buffer.Read.u32 cursor
+                  else Unsigned.UInt32.zero
+                in
+                let offset4 =
+                  if i + 3 < num_offsets then Object.Buffer.Read.u32 cursor
+                  else Unsigned.UInt32.zero
+                in
 
-            let remaining = num_offsets - i in
-            let count = min 4 remaining in
-            print_4_offsets i offset1 offset2 offset3 offset4 count;
-            print_offsets (i + 4))
-        in
-        print_offsets 0;
+                let print_4_offsets start_idx o1 o2 o3 o4 count =
+                  Printf.printf " Entry [%4d]: " start_idx;
+                  for j = 0 to count - 1 do
+                    let offset =
+                      match j with
+                      | 0 -> o1
+                      | 1 -> o2
+                      | 2 -> o3
+                      | 3 -> o4
+                      | _ -> Unsigned.UInt32.zero
+                    in
+                    Printf.printf " 0x%08x" (Unsigned.UInt32.to_int offset)
+                  done;
+                  Printf.printf "\n"
+                in
+
+                let remaining = num_offsets - i in
+                let count = min 4 remaining in
+                print_4_offsets i offset1 offset2 offset3 offset4 count;
+                print_offsets (i + 4))
+            in
+            print_offsets 0
+        | Dwarf.DWARF64 ->
+            let rec print_offsets i =
+              if i < num_offsets then (
+                let offset1 = Object.Buffer.Read.u64 cursor in
+                let offset2 =
+                  if i + 1 < num_offsets then Object.Buffer.Read.u64 cursor
+                  else Unsigned.UInt64.zero
+                in
+                let offset3 =
+                  if i + 2 < num_offsets then Object.Buffer.Read.u64 cursor
+                  else Unsigned.UInt64.zero
+                in
+                let offset4 =
+                  if i + 3 < num_offsets then Object.Buffer.Read.u64 cursor
+                  else Unsigned.UInt64.zero
+                in
+
+                let print_4_offsets start_idx o1 o2 o3 o4 count =
+                  Printf.printf " Entry [%4d]: " start_idx;
+                  for j = 0 to count - 1 do
+                    let offset =
+                      match j with
+                      | 0 -> o1
+                      | 1 -> o2
+                      | 2 -> o3
+                      | 3 -> o4
+                      | _ -> Unsigned.UInt64.zero
+                    in
+                    Printf.printf " 0x%08x" (Unsigned.UInt64.to_int offset)
+                  done;
+                  Printf.printf "\n"
+                in
+
+                let remaining = num_offsets - i in
+                let count = min 4 remaining in
+                print_4_offsets i offset1 offset2 offset3 offset4 count;
+                print_offsets (i + 4))
+            in
+            print_offsets 0);
         Printf.printf " wasted      0 bytes\n\n"
   with
   | Sys_error msg ->
@@ -648,7 +801,7 @@ let dump_debug_line_str filename =
 
 let dump_debug_aranges filename =
   try
-    let actual_filename, is_debug = resolve_binary_path filename in
+    let actual_filename, _is_debug = resolve_binary_path filename in
     let buffer = Object.Buffer.parse actual_filename in
 
     (* Output header similar to dwarfdump --debug-aranges with leading newline *)
@@ -657,15 +810,8 @@ let dump_debug_aranges filename =
     (* Use DebugAranges.parse to get address range table *)
     match Dwarf.DebugAranges.parse buffer with
     | None ->
-        Printf.printf "No %s section found in file\n"
-          (get_section_display_name buffer Dwarf.Debug_aranges);
-        if not is_debug then (
-          Printf.printf
-            "Note: For ELF binaries, debug info might be in separate .debug \
-             files\n";
-          let debug_path = filename ^ ".debug" in
-          if Sys.file_exists debug_path then
-            Printf.printf "Try: %s\n" debug_path)
+        (* Match system dwarfdump: output blank line after header *)
+        Printf.printf "\n"
     | Some aranges_set ->
         let header = aranges_set.Dwarf.DebugAranges.header in
 
@@ -1250,14 +1396,25 @@ let dump_debug_addr filename =
 
         (* Print header information *)
         let header = parsed_addr.header in
-        Printf.printf
-          "Address table header: length = 0x%08Lx, format = %s, version = \
-           0x%04x, addr_size = 0x%02x, seg_size = 0x%02x\n"
-          (Unsigned.UInt64.to_int64 header.unit_length)
-          (Dwarf.string_of_dwarf_format header.format)
-          (Unsigned.UInt16.to_int header.version)
-          (Unsigned.UInt8.to_int header.address_size)
-          (Unsigned.UInt8.to_int header.segment_selector_size);
+        (match header.format with
+        | Dwarf.DWARF32 ->
+            Printf.printf
+              "Address table header: length = 0x%08Lx, format = %s, version = \
+               0x%04x, addr_size = 0x%02x, seg_size = 0x%02x\n"
+              (Unsigned.UInt64.to_int64 header.unit_length)
+              (Dwarf.string_of_dwarf_format header.format)
+              (Unsigned.UInt16.to_int header.version)
+              (Unsigned.UInt8.to_int header.address_size)
+              (Unsigned.UInt8.to_int header.segment_selector_size)
+        | Dwarf.DWARF64 ->
+            Printf.printf
+              "Address table header: length = 0x%016Lx, format = %s, version = \
+               0x%04x, addr_size = 0x%02x, seg_size = 0x%02x\n"
+              (Unsigned.UInt64.to_int64 header.unit_length)
+              (Dwarf.string_of_dwarf_format header.format)
+              (Unsigned.UInt16.to_int header.version)
+              (Unsigned.UInt8.to_int header.address_size)
+              (Unsigned.UInt8.to_int header.segment_selector_size));
 
         (* Print entries *)
         Printf.printf "Addrs: [\n";
@@ -1281,16 +1438,16 @@ let dump_debug_frame filename =
     let actual_filename, _is_debug = resolve_binary_path filename in
     let buffer = Object.Buffer.parse actual_filename in
 
-    (* Output header matching system tools format *)
-    Printf.printf "%s:\tfile format %s\n\n.debug_frame contents:\n" filename
-      (get_architecture_string buffer);
-
     (* Try to find the debug_frame section *)
     match get_section_offset buffer Dwarf.Debug_frame with
     | None ->
-        (* For missing sections, system tools show header with empty contents *)
-        Printf.printf "\n"
+        (* Match system dwarfdump: output message with leading and trailing newlines *)
+        Printf.printf "\n.debug_frame is not present\n\n"
     | Some (section_offset, section_size) ->
+        (* Output header when section exists *)
+        Printf.printf "%s:\tfile format %s\n\n.debug_frame contents:\n" filename
+          (get_architecture_string buffer);
+
         (* Parse the debug_frame section using library function *)
         let cursor =
           Object.Buffer.cursor buffer

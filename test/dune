@@ -1482,6 +1482,7 @@
    ocaml_dwarfdump_aranges_dwarf64.out)))
 
 ; --debug-addr comparison (DWARF64)
+; Linux dwarfdump doesn't have a flag for this so we use llvm-dwarfdump instead
 
 (rule
  (alias runtest)
@@ -1507,7 +1508,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump -a hello_world_dwarf64_cpp"))))
+   (system "llvm-dwarfdump --debug-addr hello_world_dwarf64_cpp"))))
 
 (rule
  (alias runtest)

@@ -511,6 +511,7 @@ type operation_encoding =
   | DW_OP_reinterpret (* DW_OP_lo_user 0xe0 ULEB128 type entry offset *)
   | DW_OP_hi_user
 
+val operation_encoding : int -> operation_encoding
 val string_of_operation_encoding : operation_encoding -> string
 
 type dwarf_expression_operation = {
@@ -674,6 +675,9 @@ type calling_convention =
   | DW_CC_pass_by_value
   | DW_CC_lo_user
   | DW_CC_hi_user
+
+val calling_convention : int -> calling_convention
+val string_of_calling_convention : calling_convention -> string
 
 (** Inlined encoding. The encodings of the constants used in the DW_AT_inline
     attribute. Table 7.20: Inline encodings *)
@@ -921,14 +925,14 @@ val resolve_string_index : Object.Buffer.t -> dwarf_format -> int -> string
 (** Resolve a string index to its actual string value using debug_str sections
 *)
 
-val resolve_address_index : Object.Buffer.t -> int -> u64 -> u64
-(** Resolve an address index to its actual address value using debug_addr
-    section. Parameters: buffer, address_index, addr_base_offset Returns the
-    resolved address or the index value if resolution fails *)
-
 val lookup_address_in_debug_addr : Object.Buffer.t -> u64 -> int -> u64 option
 (** Look up an address by index in the debug_addr section at given offset.
     Returns Some address if found, None if not found or section missing *)
+
+val resolve_address_index : Object.Buffer.t -> int -> u64 -> u64
+(** Resolve an address index to its actual address value using debug_addr
+    section. Returns the resolved address if found, or the index value as
+    fallback *)
 
 (** Object module as a wrapper around a buffer for an object file. *)
 module Object_file : sig
@@ -944,9 +948,14 @@ module DIE : sig
   (** Attribute values that can appear in DWARF Debug Information Entries *)
   type attribute_value =
     | String of string  (** String value from DW_FORM_string or DW_FORM_strp *)
+    | IndexedString of int * string
+        (** Indexed string from DW_FORM_strx* with index and resolved value *)
     | UData of u64  (** Unsigned integer from DW_FORM_udata, DW_FORM_data* *)
     | SData of i64  (** Signed integer from DW_FORM_sdata *)
     | Address of u64  (** Address from DW_FORM_addr *)
+    | IndexedAddress of int * u64
+        (** Indexed address from DW_FORM_addrx* with index and resolved address
+        *)
     | Flag of bool  (** Boolean from DW_FORM_flag or DW_FORM_flag_present *)
     | Reference of u64  (** Reference from DW_FORM_ref* *)
     | Block of string  (** Block of data from DW_FORM_block* *)
