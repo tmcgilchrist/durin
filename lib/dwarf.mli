@@ -2618,3 +2618,104 @@ module CompactUnwind : sig
       @return Optional tuple of (unwind_info, architecture) if parsing succeeds
   *)
 end
+
+(** DWARF Expression Evaluator.
+
+    This module provides an architecture-independent stack-based evaluator for
+    DWARF expressions (DW_OP_* operations) used in variable locations and other
+    DWARF attributes.
+
+    The evaluator uses a callback-based design where external data (registers,
+    memory, frame base, CFA) is requested via result types rather than passed
+    directly. This keeps the evaluator architecture-independent - it works only
+    with abstract register numbers.
+
+    For architecture-specific register name mappings, see the Dwarf_arch module.
+*)
+module Expression : sig
+  (** Architecture-independent register - just a number. Architecture modules
+      map these to names. *)
+  type register = Dwarf_arch.register = Register of int
+
+  (** Values on the DWARF expression stack *)
+  type value =
+    | Generic of int64  (** Generic integer value *)
+    | Address of int64  (** Address value (for DW_OP_stack_value) *)
+
+  type piece = {
+    size_in_bits : int option;
+    bit_offset : int option;
+    location : value option;
+  }
+  (** Location pieces for composite locations *)
+
+  (** Results from evaluation - used for callback pattern *)
+  type evaluation_result =
+    | Complete  (** Evaluation finished successfully *)
+    | RequiresRegister of { register : register; offset : int64 option }
+        (** Need caller to provide register value. If offset is Some, add it to
+            the register value. *)
+    | RequiresMemory of { address : int64; size : int }
+        (** Need caller to provide memory at address *)
+    | RequiresFrameBase of { offset : int64 }
+        (** Need caller to provide frame base address. The offset will be added
+            to the frame base. *)
+    | RequiresCFA  (** Need caller to provide canonical frame address *)
+
+  type evaluation_state
+  (** Evaluation state *)
+
+  val start_evaluation :
+    bytecode:string -> encoding:encoding -> evaluation_state
+  (** Start evaluating a DWARF expression.
+
+      @param bytecode The DWARF expression bytecode
+      @param encoding The compilation unit encoding (for address_size)
+      @return Initial evaluation state *)
+
+  val evaluate : evaluation_state -> evaluation_result
+  (** Evaluate the expression until completion or until external data is needed.
+
+      @param state Current evaluation state
+      @return Evaluation result indicating completion or required data *)
+
+  val resume_with_register : evaluation_state -> value -> evaluation_result
+  (** Resume evaluation after providing a register value.
+
+      @param state Current evaluation state
+      @param value The register value (Generic or Address)
+      @return Next evaluation result *)
+
+  val resume_with_memory : evaluation_state -> string -> evaluation_result
+  (** Resume evaluation after providing memory contents.
+
+      @param state Current evaluation state
+      @param bytes The memory contents (as string)
+      @return Next evaluation result *)
+
+  val resume_with_frame_base : evaluation_state -> int64 -> evaluation_result
+  (** Resume evaluation after providing frame base address.
+
+      @param state Current evaluation state
+      @param address The frame base address
+      @return Next evaluation result *)
+
+  val resume_with_cfa : evaluation_state -> int64 -> evaluation_result
+  (** Resume evaluation after providing canonical frame address.
+
+      @param state Current evaluation state
+      @param address The CFA
+      @return Next evaluation result *)
+
+  val result : evaluation_state -> value list
+  (** Get the final result stack after Complete evaluation.
+
+      @param state Completed evaluation state
+      @return Values on the stack (top = head) *)
+
+  val pieces : evaluation_state -> piece list
+  (** Get location pieces for composite locations.
+
+      @param state Completed evaluation state
+      @return List of location pieces *)
+end

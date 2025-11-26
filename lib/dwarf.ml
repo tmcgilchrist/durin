@@ -2831,6 +2831,732 @@ let string_of_dwarf_expression (ops : dwarf_expression_operation list) : string
     =
   String.concat " " (List.map string_of_dwarf_operation ops)
 
+(** DWARF Expression Evaluator *)
+module Expression = struct
+  type register = Dwarf_arch.register = Register of int
+
+  type value =
+    | Generic of int64
+    | Address of int64
+
+  type piece = {
+    size_in_bits : int option;  (** Size in bits, None means rest of value *)
+    bit_offset : int option;  (** Bit offset within the piece *)
+    location : value option;  (** Location value, or None for empty piece *)
+  }
+
+  (** Evaluation result - used for callback pattern *)
+  type evaluation_result =
+    | Complete  (** Evaluation finished successfully *)
+    | RequiresRegister of {
+        register : register;
+        offset : int64 option;
+            (** Evaluator needs the caller to provide a register value. If
+                offset is Some, caller should add it to the register value. *)
+      }
+    | RequiresMemory of {
+        address : int64;
+        size : int;
+            (** Evaluator needs the caller to read memory at the given address
+            *)
+      }
+    | RequiresFrameBase of { offset : int64 }
+        (** Evaluator needs the caller to provide the frame base address. The
+            offset will be added to the frame base. *)
+    | RequiresCFA  (** Evaluator needs the Call Frame Address *)
+
+  type evaluation_state = {
+    bytecode : string;  (** The expression bytecode *)
+    mutable pc : int;  (** Program counter (position in bytecode) *)
+    mutable stack : value list;  (** Evaluation stack *)
+    mutable pieces : piece list;  (** Accumulated location pieces *)
+    encoding : encoding;  (** DWARF encoding (address size, format, version) *)
+    addr_mask : int64;  (** Mask for address size (computed from encoding) *)
+    mutable waiting_for : evaluation_result option;
+        (** What external data we're waiting for *)
+  }
+
+  (** Create address mask from address size *)
+  let make_addr_mask address_size =
+    let open Int64 in           (* TODO Int64.() pattern? *)
+    if address_size = 8 then minus_one
+    else sub (shift_left one (8 * address_size)) one
+
+  (** Start a new expression evaluation *)
+  let start_evaluation ~(bytecode : string) ~(encoding : encoding) :
+      evaluation_state =
+    let address_size = Unsigned.UInt8.to_int encoding.address_size in
+    {
+      bytecode;
+      pc = 0;
+      stack = [];
+      pieces = [];
+      encoding;
+      addr_mask = make_addr_mask address_size;
+      waiting_for = None;
+    }
+
+  (** Push a value onto the stack *)
+  let push state value = state.stack <- value :: state.stack
+
+  (** Pop a value from the stack *)
+  let pop state =
+    match state.stack with
+    | [] -> failwith "Stack underflow in DWARF expression evaluation"
+    | v :: rest ->
+        state.stack <- rest;
+        v
+
+  (** Convert value to int64 *)
+  (* TODO Necessary? *)
+  let to_int64 = function Generic v | Address v -> v
+
+  (** Apply address mask to a value *)
+  let mask_address state value = Int64.logand value state.addr_mask
+
+  (** Read ULEB128 from bytecode at current PC *)
+  let read_uleb128 state =
+    let value, next_pos = read_uleb128_from_string state.bytecode state.pc in
+    state.pc <- next_pos;
+    value
+
+  (** Read SLEB128 from bytecode at current PC *)
+  let read_sleb128 state =
+    let value, next_pos = read_sleb128_from_string state.bytecode state.pc in
+    state.pc <- next_pos;
+    Int64.of_int value
+
+  (** Read a single byte from bytecode *)
+  let read_u8 state =
+    if state.pc < String.length state.bytecode then (
+      let b = Char.code state.bytecode.[state.pc] in
+      state.pc <- state.pc + 1;
+      b)
+    else failwith "Unexpected end of expression bytecode"
+
+  (** Read 2 bytes (little-endian) from bytecode *)
+  let read_u16 state =
+    let b1 = read_u8 state in
+    let b2 = read_u8 state in
+    b1 lor (b2 lsl 8)
+
+  (** Read 4 bytes (little-endian) from bytecode *)
+  let read_u32 state =
+    let b1 = read_u8 state in
+    let b2 = read_u8 state in
+    let b3 = read_u8 state in
+    let b4 = read_u8 state in
+    b1 lor (b2 lsl 8) lor (b3 lsl 16) lor (b4 lsl 24)
+
+  (** Read 8 bytes (little-endian) from bytecode *)
+  (* TODO What is this function? *)
+  let read_u64 state =
+    let b1 = Int64.of_int (read_u8 state) in
+    let b2 = Int64.of_int (read_u8 state) in
+    let b3 = Int64.of_int (read_u8 state) in
+    let b4 = Int64.of_int (read_u8 state) in
+    let b5 = Int64.of_int (read_u8 state) in
+    let b6 = Int64.of_int (read_u8 state) in
+    let b7 = Int64.of_int (read_u8 state) in
+    let b8 = Int64.of_int (read_u8 state) in
+    Int64.(
+      logor
+        (logor
+           (logor
+              (logor
+                 (logor
+                    (logor (logor b1 (shift_left b2 8)) (shift_left b3 16))
+                    (shift_left b4 24))
+                 (shift_left b5 32))
+              (shift_left b6 40))
+           (shift_left b7 48))
+        (shift_left b8 56))
+
+  (** Evaluate one step of the expression *)
+  let rec evaluate_step state =
+    if state.pc >= String.length state.bytecode then Complete
+    else
+      let opcode_byte = read_u8 state in
+      try
+        let opcode = operation_encoding opcode_byte in
+        match opcode with
+        (* Literals *)
+        | DW_OP_lit0 ->
+            push state (Generic 0L);
+            evaluate_step state
+        | DW_OP_lit1 ->
+            push state (Generic 1L);
+            evaluate_step state
+        | DW_OP_lit2 ->
+            push state (Generic 2L);
+            evaluate_step state
+        | DW_OP_lit3 ->
+            push state (Generic 3L);
+            evaluate_step state
+        | DW_OP_lit4 ->
+            push state (Generic 4L);
+            evaluate_step state
+        | DW_OP_lit5 ->
+            push state (Generic 5L);
+            evaluate_step state
+        | DW_OP_lit6 ->
+            push state (Generic 6L);
+            evaluate_step state
+        | DW_OP_lit7 ->
+            push state (Generic 7L);
+            evaluate_step state
+        | DW_OP_lit8 ->
+            push state (Generic 8L);
+            evaluate_step state
+        | DW_OP_lit9 ->
+            push state (Generic 9L);
+            evaluate_step state
+        | DW_OP_lit10 ->
+            push state (Generic 10L);
+            evaluate_step state
+        | DW_OP_lit11 ->
+            push state (Generic 11L);
+            evaluate_step state
+        | DW_OP_lit12 ->
+            push state (Generic 12L);
+            evaluate_step state
+        | DW_OP_lit13 ->
+            push state (Generic 13L);
+            evaluate_step state
+        | DW_OP_lit14 ->
+            push state (Generic 14L);
+            evaluate_step state
+        | DW_OP_lit15 ->
+            push state (Generic 15L);
+            evaluate_step state
+        | DW_OP_lit16 ->
+            push state (Generic 16L);
+            evaluate_step state
+        | DW_OP_lit17 ->
+            push state (Generic 17L);
+            evaluate_step state
+        | DW_OP_lit18 ->
+            push state (Generic 18L);
+            evaluate_step state
+        | DW_OP_lit19 ->
+            push state (Generic 19L);
+            evaluate_step state
+        | DW_OP_lit20 ->
+            push state (Generic 20L);
+            evaluate_step state
+        | DW_OP_lit21 ->
+            push state (Generic 21L);
+            evaluate_step state
+        | DW_OP_lit22 ->
+            push state (Generic 22L);
+            evaluate_step state
+        | DW_OP_lit23 ->
+            push state (Generic 23L);
+            evaluate_step state
+        | DW_OP_lit24 ->
+            push state (Generic 24L);
+            evaluate_step state
+        | DW_OP_lit25 ->
+            push state (Generic 25L);
+            evaluate_step state
+        | DW_OP_lit26 ->
+            push state (Generic 26L);
+            evaluate_step state
+        | DW_OP_lit27 ->
+            push state (Generic 27L);
+            evaluate_step state
+        | DW_OP_lit28 ->
+            push state (Generic 28L);
+            evaluate_step state
+        | DW_OP_lit29 ->
+            push state (Generic 29L);
+            evaluate_step state
+        | DW_OP_lit30 ->
+            push state (Generic 30L);
+            evaluate_step state
+        | DW_OP_lit31 ->
+            push state (Generic 31L);
+            evaluate_step state
+        (* Constants with operands *)
+        | DW_OP_const1u ->
+            let v = read_u8 state in
+            push state (Generic (Int64.of_int v));
+            evaluate_step state
+        | DW_OP_const1s ->
+            let v = read_u8 state in
+            let signed = if v > 127 then v - 256 else v in
+            push state (Generic (Int64.of_int signed));
+            evaluate_step state
+        | DW_OP_const2u ->
+            let v = read_u16 state in
+            push state (Generic (Int64.of_int v));
+            evaluate_step state
+        | DW_OP_const2s ->
+            let v = read_u16 state in
+            let signed = if v > 32767 then v - 65536 else v in
+            push state (Generic (Int64.of_int signed));
+            evaluate_step state
+        | DW_OP_const4u ->
+            let v = read_u32 state in
+            (* Treat as unsigned - mask to 32 bits and convert to int64 *)
+            let unsigned_val = Int64.logand (Int64.of_int v) 0xFFFFFFFFL in
+            push state (Generic unsigned_val);
+            evaluate_step state
+        | DW_OP_const4s ->
+            let v = read_u32 state in
+            let signed =
+              if v > 0x7FFFFFFF then Int32.of_int (v - 0x100000000)
+              else Int32.of_int v
+            in
+            push state (Generic (Int64.of_int32 signed));
+            evaluate_step state
+        | DW_OP_const8u ->
+            let v = read_u64 state in
+            push state (Generic v);
+            evaluate_step state
+        | DW_OP_const8s ->
+            let v = read_u64 state in
+            push state (Generic v);
+            (* Already signed 64-bit *)
+            evaluate_step state
+        | DW_OP_constu ->
+            let v = read_uleb128 state in
+            push state (Generic (Int64.of_int v));
+            evaluate_step state
+        | DW_OP_consts ->
+            let v = read_sleb128 state in
+            push state (Generic v);
+            evaluate_step state
+        (* Stack operations *)
+        | DW_OP_dup -> (
+            match state.stack with
+            | v :: _ ->
+                push state v;
+                evaluate_step state
+            | [] -> failwith "DW_OP_dup on empty stack")
+        | DW_OP_drop ->
+            let _ = pop state in
+            evaluate_step state
+        | DW_OP_over -> (
+            match state.stack with
+            | _ :: v :: _ ->
+                push state v;
+                evaluate_step state
+            | _ -> failwith "DW_OP_over requires at least 2 stack items")
+        | DW_OP_swap -> (
+            match state.stack with
+            | a :: b :: rest ->
+                state.stack <- b :: a :: rest;
+                evaluate_step state
+            | _ -> failwith "DW_OP_swap requires at least 2 stack items")
+        | DW_OP_rot -> (
+            match state.stack with
+            | a :: b :: c :: rest ->
+                state.stack <- c :: a :: b :: rest;
+                evaluate_step state
+            | _ -> failwith "DW_OP_rot requires at least 3 stack items")
+        (* Arithmetic operations *)
+        | DW_OP_abs ->
+            let v = pop state |> to_int64 in
+            push state (Generic (Int64.abs v));
+            evaluate_step state
+        | DW_OP_and ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (Int64.logand a b));
+            evaluate_step state
+        | DW_OP_div ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            if b = 0L then failwith "Division by zero in DWARF expression"
+            else (
+              push state (Generic (Int64.div a b));
+              evaluate_step state)
+        | DW_OP_minus ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (Int64.sub a b));
+            evaluate_step state
+        | DW_OP_mod ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            if b = 0L then failwith "Modulo by zero in DWARF expression"
+            else (
+              push state (Generic (Int64.rem a b));
+              evaluate_step state)
+        | DW_OP_mul ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (Int64.mul a b));
+            evaluate_step state
+        | DW_OP_neg ->
+            let v = pop state |> to_int64 in
+            push state (Generic (Int64.neg v));
+            evaluate_step state
+        | DW_OP_not ->
+            let v = pop state |> to_int64 in
+            push state (Generic (Int64.lognot v));
+            evaluate_step state
+        | DW_OP_or ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (Int64.logor a b));
+            evaluate_step state
+        | DW_OP_plus ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            let result = mask_address state (Int64.add a b) in
+            push state (Generic result);
+            evaluate_step state
+        | DW_OP_plus_uconst ->
+            let addend = read_uleb128 state in
+            let v = pop state |> to_int64 in
+            let result =
+              mask_address state (Int64.add v (Int64.of_int addend))
+            in
+            push state (Generic result);
+            evaluate_step state
+        | DW_OP_shl ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (Int64.shift_left a (Int64.to_int b)));
+            evaluate_step state
+        | DW_OP_shr ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (Int64.shift_right_logical a (Int64.to_int b)));
+            evaluate_step state
+        | DW_OP_shra ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (Int64.shift_right a (Int64.to_int b)));
+            evaluate_step state
+        | DW_OP_xor ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (Int64.logxor a b));
+            evaluate_step state
+        (* Comparison operations *)
+        | DW_OP_eq ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (if a = b then 1L else 0L));
+            evaluate_step state
+        | DW_OP_ge ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (if a >= b then 1L else 0L));
+            evaluate_step state
+        | DW_OP_gt ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (if a > b then 1L else 0L));
+            evaluate_step state
+        | DW_OP_le ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (if a <= b then 1L else 0L));
+            evaluate_step state
+        | DW_OP_lt ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (if a < b then 1L else 0L));
+            evaluate_step state
+        | DW_OP_ne ->
+            let b = pop state |> to_int64 in
+            let a = pop state |> to_int64 in
+            push state (Generic (if a <> b then 1L else 0L));
+            evaluate_step state
+        (* Register operations - these require external data *)
+        | DW_OP_reg0 ->
+            RequiresRegister { register = Register 0; offset = None }
+        | DW_OP_reg1 ->
+            RequiresRegister { register = Register 1; offset = None }
+        | DW_OP_reg2 ->
+            RequiresRegister { register = Register 2; offset = None }
+        | DW_OP_reg3 ->
+            RequiresRegister { register = Register 3; offset = None }
+        | DW_OP_reg4 ->
+            RequiresRegister { register = Register 4; offset = None }
+        | DW_OP_reg5 ->
+            RequiresRegister { register = Register 5; offset = None }
+        | DW_OP_reg6 ->
+            RequiresRegister { register = Register 6; offset = None }
+        | DW_OP_reg7 ->
+            RequiresRegister { register = Register 7; offset = None }
+        | DW_OP_reg8 ->
+            RequiresRegister { register = Register 8; offset = None }
+        | DW_OP_reg9 ->
+            RequiresRegister { register = Register 9; offset = None }
+        | DW_OP_reg10 ->
+            RequiresRegister { register = Register 10; offset = None }
+        | DW_OP_reg11 ->
+            RequiresRegister { register = Register 11; offset = None }
+        | DW_OP_reg12 ->
+            RequiresRegister { register = Register 12; offset = None }
+        | DW_OP_reg13 ->
+            RequiresRegister { register = Register 13; offset = None }
+        | DW_OP_reg14 ->
+            RequiresRegister { register = Register 14; offset = None }
+        | DW_OP_reg15 ->
+            RequiresRegister { register = Register 15; offset = None }
+        | DW_OP_reg16 ->
+            RequiresRegister { register = Register 16; offset = None }
+        | DW_OP_reg17 ->
+            RequiresRegister { register = Register 17; offset = None }
+        | DW_OP_reg18 ->
+            RequiresRegister { register = Register 18; offset = None }
+        | DW_OP_reg19 ->
+            RequiresRegister { register = Register 19; offset = None }
+        | DW_OP_reg20 ->
+            RequiresRegister { register = Register 20; offset = None }
+        | DW_OP_reg21 ->
+            RequiresRegister { register = Register 21; offset = None }
+        | DW_OP_reg22 ->
+            RequiresRegister { register = Register 22; offset = None }
+        | DW_OP_reg23 ->
+            RequiresRegister { register = Register 23; offset = None }
+        | DW_OP_reg24 ->
+            RequiresRegister { register = Register 24; offset = None }
+        | DW_OP_reg25 ->
+            RequiresRegister { register = Register 25; offset = None }
+        | DW_OP_reg26 ->
+            RequiresRegister { register = Register 26; offset = None }
+        | DW_OP_reg27 ->
+            RequiresRegister { register = Register 27; offset = None }
+        | DW_OP_reg28 ->
+            RequiresRegister { register = Register 28; offset = None }
+        | DW_OP_reg29 ->
+            RequiresRegister { register = Register 29; offset = None }
+        | DW_OP_reg30 ->
+            RequiresRegister { register = Register 30; offset = None }
+        | DW_OP_reg31 ->
+            RequiresRegister { register = Register 31; offset = None }
+        | DW_OP_regx ->
+            let reg_num = read_uleb128 state in
+            RequiresRegister { register = Register reg_num; offset = None }
+        (* Base register + offset *)
+        | DW_OP_breg0 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 0; offset = Some offset }
+        | DW_OP_breg1 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 1; offset = Some offset }
+        | DW_OP_breg2 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 2; offset = Some offset }
+        | DW_OP_breg3 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 3; offset = Some offset }
+        | DW_OP_breg4 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 4; offset = Some offset }
+        | DW_OP_breg5 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 5; offset = Some offset }
+        | DW_OP_breg6 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 6; offset = Some offset }
+        | DW_OP_breg7 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 7; offset = Some offset }
+        | DW_OP_breg8 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 8; offset = Some offset }
+        | DW_OP_breg9 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 9; offset = Some offset }
+        | DW_OP_breg10 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 10; offset = Some offset }
+        | DW_OP_breg11 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 11; offset = Some offset }
+        | DW_OP_breg12 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 12; offset = Some offset }
+        | DW_OP_breg13 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 13; offset = Some offset }
+        | DW_OP_breg14 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 14; offset = Some offset }
+        | DW_OP_breg15 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 15; offset = Some offset }
+        | DW_OP_breg16 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 16; offset = Some offset }
+        | DW_OP_breg17 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 17; offset = Some offset }
+        | DW_OP_breg18 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 18; offset = Some offset }
+        | DW_OP_breg19 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 19; offset = Some offset }
+        | DW_OP_breg20 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 20; offset = Some offset }
+        | DW_OP_breg21 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 21; offset = Some offset }
+        | DW_OP_breg22 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 22; offset = Some offset }
+        | DW_OP_breg23 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 23; offset = Some offset }
+        | DW_OP_breg24 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 24; offset = Some offset }
+        | DW_OP_breg25 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 25; offset = Some offset }
+        | DW_OP_breg26 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 26; offset = Some offset }
+        | DW_OP_breg27 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 27; offset = Some offset }
+        | DW_OP_breg28 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 28; offset = Some offset }
+        | DW_OP_breg29 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 29; offset = Some offset }
+        | DW_OP_breg30 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 30; offset = Some offset }
+        | DW_OP_breg31 ->
+            let offset = read_sleb128 state in
+            RequiresRegister { register = Register 31; offset = Some offset }
+        | DW_OP_bregx ->
+            let reg_num = read_uleb128 state in
+            let offset = read_sleb128 state in
+            RequiresRegister
+              { register = Register reg_num; offset = Some offset }
+        | DW_OP_fbreg ->
+            let offset = read_sleb128 state in
+            RequiresFrameBase { offset }
+        | DW_OP_call_frame_cfa -> RequiresCFA
+        | DW_OP_nop -> evaluate_step state
+        | DW_OP_stack_value -> (
+            (* Mark top of stack as an address value *)
+            match pop state with
+            | Generic v ->
+                push state (Address v);
+                evaluate_step state
+            | Address _ as addr ->
+                push state addr;
+                evaluate_step state)
+        | _ ->
+            failwith
+              (Printf.sprintf "Unimplemented operation: %s"
+                 (string_of_operation_encoding opcode))
+      with Failure msg ->
+        failwith (Printf.sprintf "Expression evaluation error: %s" msg)
+
+  (** Start evaluation and run until we need external data or complete *)
+  let evaluate state =
+    match state.waiting_for with
+    | Some result -> result
+    | None ->
+        let result = evaluate_step state in
+        state.waiting_for <- Some result;
+        result
+
+  (** Resume evaluation after providing a register value *)
+  let resume_with_register state value =
+    match state.waiting_for with
+    | Some (RequiresRegister { offset; _ }) ->
+        let final_value =
+          match offset with
+          | None -> value
+          | Some off -> Generic (Int64.add (to_int64 value) off)
+        in
+        push state final_value;
+        state.waiting_for <- None;
+        evaluate state
+    | _ ->
+        failwith
+          "resume_with_register called but not waiting for register value"
+
+  (** Resume evaluation after providing memory contents *)
+  let resume_with_memory state bytes =
+    match state.waiting_for with
+    | Some (RequiresMemory _) ->
+        (* Convert bytes to int64 based on size *)
+        let value =
+          match String.length bytes with
+          | 1 -> Int64.of_int (Char.code bytes.[0])
+          | 2 ->
+             (* TODO Feels like these patterns could be simplier? *)
+              let b0 = Char.code bytes.[0] in
+              let b1 = Char.code bytes.[1] in
+              Int64.of_int (b0 lor (b1 lsl 8))
+          | 4 ->
+              let b0 = Int64.of_int (Char.code bytes.[0]) in
+              let b1 = Int64.of_int (Char.code bytes.[1]) in
+              let b2 = Int64.of_int (Char.code bytes.[2]) in
+              let b3 = Int64.of_int (Char.code bytes.[3]) in
+              Int64.(
+                logor b0
+                  (logor (shift_left b1 8)
+                     (logor (shift_left b2 16) (shift_left b3 24))))
+          | 8 ->
+              let b0 = Int64.of_int (Char.code bytes.[0]) in
+              let b1 = Int64.of_int (Char.code bytes.[1]) in
+              let b2 = Int64.of_int (Char.code bytes.[2]) in
+              let b3 = Int64.of_int (Char.code bytes.[3]) in
+              let b4 = Int64.of_int (Char.code bytes.[4]) in
+              let b5 = Int64.of_int (Char.code bytes.[5]) in
+              let b6 = Int64.of_int (Char.code bytes.[6]) in
+              let b7 = Int64.of_int (Char.code bytes.[7]) in
+              Int64.(
+                logor b0
+                  (logor (shift_left b1 8)
+                     (logor (shift_left b2 16)
+                        (logor (shift_left b3 24)
+                           (logor (shift_left b4 32)
+                              (logor (shift_left b5 40)
+                                 (logor (shift_left b6 48) (shift_left b7 56))))))))
+          | _ -> failwith "Unsupported memory read size"
+        in
+        push state (Generic value);
+        state.waiting_for <- None;
+        evaluate state
+    | _ -> failwith "resume_with_memory called but not waiting for memory read"
+
+  (** Resume evaluation after providing frame base *)
+  let resume_with_frame_base state frame_base =
+    match state.waiting_for with
+    | Some (RequiresFrameBase { offset }) ->
+        (* Add the offset to the frame base *)
+        let result = Int64.add frame_base offset in
+        push state (Generic result);
+        state.waiting_for <- None;
+        evaluate state
+    | _ ->
+        failwith "resume_with_frame_base called but not waiting for frame base"
+
+  (** Resume evaluation after providing CFA *)
+  let resume_with_cfa state cfa =
+    match state.waiting_for with
+    | Some RequiresCFA ->
+        push state (Address cfa);
+        state.waiting_for <- None;
+        evaluate state
+    | _ -> failwith "resume_with_cfa called but not waiting for CFA"
+
+  (** Get the final result stack *)
+  let result state = state.stack
+
+  (** Get location pieces for composite locations *)
+  let pieces state = state.pieces
+end
+
 type range_list_entry =
   | DW_RLE_end_of_list
   | DW_RLE_base_addressx
