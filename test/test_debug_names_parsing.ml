@@ -29,7 +29,8 @@ let test_calculate_entry_address () =
 let test_calculate_section_addresses () =
   let header =
     {
-      Dwarf.DebugNames.unit_length = Unsigned.UInt32.of_int 0x98;
+      Dwarf.DebugNames.format = Dwarf.DWARF32;
+      unit_length = Unsigned.UInt64.of_int 0x98;
       version = Unsigned.UInt16.of_int 5;
       padding = Unsigned.UInt16.of_int 0;
       comp_unit_count = Unsigned.UInt32.of_int 1;

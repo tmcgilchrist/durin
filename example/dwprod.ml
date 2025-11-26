@@ -26,7 +26,7 @@ let process_file filename =
         (* For now, just get some basic info to show the unit exists *)
         let parsed_data = Dwarf.CompileUnit.header unit in
         Printf.printf "  Unit at offset: 0x%x\n"
-          (Unsigned.UInt32.to_int parsed_data.debug_abbrev_offset);
+          (Unsigned.UInt64.to_int parsed_data.debug_abbrev_offset);
         Printf.printf "  Producer: <TODO: not implemented>\n")
       units
   with exn ->
