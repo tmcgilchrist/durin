@@ -323,8 +323,7 @@ let test_cfa_callback () =
       | [ Dwarf.Expression.Address v ] ->
           Alcotest.(check int64) "CFA is 2000" 2000L v
       | _ -> Alcotest.fail "unexpected stack after resume")
-  | Complete | RequiresFrameBase _ | RequiresRegister _ | RequiresMemory _ ->
-      Alcotest.fail "expected RequiresCFA"
+  | _ -> Alcotest.fail "expected RequiresCFA"
 
 (* Test address size masking for 32-bit *)
 let test_address_size_32bit () =
@@ -1267,6 +1266,42 @@ let test_32bit_shr_masking () =
   let v = eval_to_int64_32bit bytecode in
   Alcotest.(check int64) "32-bit masks SHR input" 1L v
 
+let test_32bit_lt_sign_extend () =
+  (* In 32-bit mode, 0xFFFFFFFF should be sign-extended to -1 *)
+  (* const4u(0xFFFFFFFF) < lit1 should be true (signed: -1 < 1) *)
+  (* DW_OP_const4u(0xFFFFFFFF) DW_OP_lit1 DW_OP_lt *)
+  let bytecode = "\x0c\xff\xff\xff\xff\x31\x2d" in
+  let v = eval_to_int64_32bit bytecode in
+  Alcotest.(check int64) "32-bit 0xFFFFFFFF < 1 (signed)" 1L v
+
+let test_32bit_abs_sign_extend () =
+  (* In 32-bit mode, abs(0xFFFFFFFF) should treat it as -1, result = 1 *)
+  (* DW_OP_const4u(0xFFFFFFFF) DW_OP_abs *)
+  let bytecode = "\x0c\xff\xff\xff\xff\x19" in
+  let v = eval_to_int64_32bit bytecode in
+  Alcotest.(check int64) "32-bit abs(0xFFFFFFFF) = 1" 1L v
+
+let test_32bit_neg_sign_extend () =
+  (* In 32-bit mode, neg(0xFFFFFFFF) should treat it as -1, result = 1 *)
+  (* DW_OP_const4u(0xFFFFFFFF) DW_OP_neg *)
+  let bytecode = "\x0c\xff\xff\xff\xff\x1f" in
+  let v = eval_to_int64_32bit bytecode in
+  Alcotest.(check int64) "32-bit neg(0xFFFFFFFF) = 1" 1L v
+
+let test_32bit_div_sign_extend () =
+  (* In 32-bit, const4u(0xFFFFFFFE) / 2 should be -1 (signed: -2/2=-1) *)
+  (* DW_OP_const4u(0xFFFFFFFE) DW_OP_lit2 DW_OP_div *)
+  let bytecode = "\x0c\xfe\xff\xff\xff\x32\x1b" in
+  let v = eval_to_int64_32bit bytecode in
+  Alcotest.(check int64) "32-bit 0xFFFFFFFE / 2 = -1 (signed)" (-1L) v
+
+let test_32bit_shra_sign_extend () =
+  (* In 32-bit mode, shra(0xFFFFFFFF, 1) should sign-extend to -1 >> 1 = -1 *)
+  (* DW_OP_const4u(0xFFFFFFFF) DW_OP_lit1 DW_OP_shra *)
+  let bytecode = "\x0c\xff\xff\xff\xff\x31\x26" in
+  let v = eval_to_int64_32bit bytecode in
+  Alcotest.(check int64) "32-bit shra(0xFFFFFFFF, 1) = -1" (-1L) v
+
 let test_32bit_deref_size () =
   (* In 32-bit mode, deref requests 4 bytes *)
   let bytecode = "\x30\x06" in
@@ -1396,6 +1431,189 @@ let test_empty_expression () =
     (result = Dwarf.Expression.Complete);
   let stack = Dwarf.Expression.result state in
   Alcotest.(check int) "empty stack" 0 (List.length stack)
+
+(* ================================================================ *)
+(* DWARF 4/5 operation tests                                        *)
+(* ================================================================ *)
+
+let test_implicit_value () =
+  (* DW_OP_implicit_value(4, "\xde\xad\xbe\xef") *)
+  (* 0x9e = DW_OP_implicit_value, ULEB128(4), then 4 bytes *)
+  let bytecode = "\x9e\x04\xde\xad\xbe\xef" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  Alcotest.(check bool) "completes" true (result = Dwarf.Expression.Complete);
+  let stack = Dwarf.Expression.result state in
+  Alcotest.(check int) "stack has one value" 1 (List.length stack);
+  match stack with
+  | [ Dwarf.Expression.ImplicitValue bytes ] ->
+      Alcotest.(check int) "4 bytes" 4 (String.length bytes);
+      Alcotest.(check int) "byte 0" 0xde (Char.code bytes.[0]);
+      Alcotest.(check int) "byte 1" 0xad (Char.code bytes.[1]);
+      Alcotest.(check int) "byte 2" 0xbe (Char.code bytes.[2]);
+      Alcotest.(check int) "byte 3" 0xef (Char.code bytes.[3])
+  | _ -> Alcotest.fail "expected ImplicitValue"
+
+let test_xderef () =
+  (* Push address, push address space, then xderef *)
+  (* DW_OP_const4u(0x1000) DW_OP_lit0 DW_OP_xderef(0x18) *)
+  let bytecode = "\x0c\x00\x10\x00\x00\x30\x18" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  match result with
+  | Dwarf.Expression.RequiresMemory { address; size } ->
+      Alcotest.(check int64) "xderef address" 0x1000L address;
+      Alcotest.(check int) "xderef size is addr_size" 8 size
+  | _ -> Alcotest.fail "expected RequiresMemory from xderef"
+
+let test_xderef_size () =
+  (* Push address, push address space, then xderef_size(2) *)
+  (* DW_OP_const4u(0x2000) DW_OP_lit0 DW_OP_xderef_size(0x95) 2 *)
+  let bytecode = "\x0c\x00\x20\x00\x00\x30\x95\x02" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  match result with
+  | Dwarf.Expression.RequiresMemory { address; size } ->
+      Alcotest.(check int64) "xderef_size address" 0x2000L address;
+      Alcotest.(check int) "xderef_size is 2" 2 size
+  | _ -> Alcotest.fail "expected RequiresMemory from xderef_size"
+
+let test_form_tls_address () =
+  (* DW_OP_lit5 DW_OP_form_tls_address(0x9b) *)
+  let bytecode = "\x35\x9b" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  match result with
+  | Dwarf.Expression.RequiresTLSAddress { address } -> (
+      Alcotest.(check int64) "TLS address is 5" 5L address;
+      let result2 = Dwarf.Expression.resume_with_tls_address state 0x7000L in
+      Alcotest.(check bool)
+        "completes after TLS" true
+        (result2 = Dwarf.Expression.Complete);
+      match Dwarf.Expression.result state with
+      | [ Dwarf.Expression.Address v ] ->
+          Alcotest.(check int64) "TLS result is 0x7000" 0x7000L v
+      | _ -> Alcotest.fail "unexpected stack after TLS resume")
+  | _ -> Alcotest.fail "expected RequiresTLSAddress"
+
+let test_push_object_address () =
+  (* DW_OP_push_object_address(0x97) *)
+  let bytecode = "\x97" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  match result with
+  | Dwarf.Expression.RequiresObjectAddress -> (
+      let result2 = Dwarf.Expression.resume_with_object_address state 0x5000L in
+      Alcotest.(check bool)
+        "completes after object addr" true
+        (result2 = Dwarf.Expression.Complete);
+      match Dwarf.Expression.result state with
+      | [ Dwarf.Expression.Address v ] ->
+          Alcotest.(check int64) "object address is 0x5000" 0x5000L v
+      | _ -> Alcotest.fail "unexpected stack after object address resume")
+  | _ -> Alcotest.fail "expected RequiresObjectAddress"
+
+let test_addrx () =
+  (* DW_OP_addrx(0xa1) with ULEB128 index 3 *)
+  let bytecode = "\xa1\x03" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  match result with
+  | Dwarf.Expression.RequiresIndexedAddress { index; is_constant } -> (
+      Alcotest.(check int) "addrx index is 3" 3 index;
+      Alcotest.(check bool) "addrx is not constant" false is_constant;
+      let result2 =
+        Dwarf.Expression.resume_with_indexed_address state 0x400000L
+      in
+      Alcotest.(check bool)
+        "completes after addrx" true
+        (result2 = Dwarf.Expression.Complete);
+      match Dwarf.Expression.result state with
+      | [ Dwarf.Expression.Address v ] ->
+          Alcotest.(check int64) "addrx result is Address" 0x400000L v
+      | _ -> Alcotest.fail "expected Address value from addrx")
+  | _ -> Alcotest.fail "expected RequiresIndexedAddress"
+
+let test_constx () =
+  (* DW_OP_constx(0xa2) with ULEB128 index 7 *)
+  let bytecode = "\xa2\x07" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  match result with
+  | Dwarf.Expression.RequiresIndexedAddress { index; is_constant } -> (
+      Alcotest.(check int) "constx index is 7" 7 index;
+      Alcotest.(check bool) "constx is constant" true is_constant;
+      let result2 = Dwarf.Expression.resume_with_indexed_address state 42L in
+      Alcotest.(check bool)
+        "completes after constx" true
+        (result2 = Dwarf.Expression.Complete);
+      match Dwarf.Expression.result state with
+      | [ Dwarf.Expression.Generic v ] ->
+          Alcotest.(check int64) "constx result is Generic" 42L v
+      | _ -> Alcotest.fail "expected Generic value from constx")
+  | _ -> Alcotest.fail "expected RequiresIndexedAddress"
+
+let test_call2 () =
+  (* DW_OP_call2(0x98) with 2-byte offset 0x0100 (256) LE *)
+  let bytecode = "\x98\x00\x01" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  match result with
+  | Dwarf.Expression.RequiresSubExpression { offset } -> (
+      Alcotest.(check int64) "call2 offset is 256" 256L offset;
+      let result2 =
+        Dwarf.Expression.resume_with_sub_expression state
+          [ Dwarf.Expression.Generic 99L ]
+      in
+      Alcotest.(check bool)
+        "completes after call2" true
+        (result2 = Dwarf.Expression.Complete);
+      match Dwarf.Expression.result state with
+      | [ Dwarf.Expression.Generic v ] ->
+          Alcotest.(check int64) "sub-expression pushed 99" 99L v
+      | _ -> Alcotest.fail "unexpected stack after sub-expression resume")
+  | _ -> Alcotest.fail "expected RequiresSubExpression"
+
+let test_entry_value () =
+  (* DW_OP_entry_value(0xa3) with ULEB128 len=2,
+     bytecode="\x35\x22" *)
+  let bytecode = "\xa3\x02\x35\x22" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  match result with
+  | Dwarf.Expression.RequiresEntryValue { bytecode = bc } -> (
+      Alcotest.(check int) "entry value bytecode length" 2 (String.length bc);
+      Alcotest.(check int) "byte 0 is DW_OP_lit5" 0x35 (Char.code bc.[0]);
+      let result2 =
+        Dwarf.Expression.resume_with_entry_value state
+          (Dwarf.Expression.Generic 77L)
+      in
+      Alcotest.(check bool)
+        "completes after entry_value" true
+        (result2 = Dwarf.Expression.Complete);
+      match Dwarf.Expression.result state with
+      | [ Dwarf.Expression.Generic v ] ->
+          Alcotest.(check int64) "entry value pushed 77" 77L v
+      | _ -> Alcotest.fail "unexpected stack after entry value resume")
+  | _ -> Alcotest.fail "expected RequiresEntryValue"
 
 let () =
   let existing_tests =
@@ -1548,6 +1766,11 @@ let () =
       ("32bit_and_masking", `Quick, test_32bit_and_masking);
       ("32bit_shl_masking", `Quick, test_32bit_shl_masking);
       ("32bit_shr_masking", `Quick, test_32bit_shr_masking);
+      ("32bit_lt_sign_extend", `Quick, test_32bit_lt_sign_extend);
+      ("32bit_abs_sign_extend", `Quick, test_32bit_abs_sign_extend);
+      ("32bit_neg_sign_extend", `Quick, test_32bit_neg_sign_extend);
+      ("32bit_div_sign_extend", `Quick, test_32bit_div_sign_extend);
+      ("32bit_shra_sign_extend", `Quick, test_32bit_shra_sign_extend);
       ("32bit_deref_size", `Quick, test_32bit_deref_size);
       ("32bit_addr", `Quick, test_32bit_addr);
     ]
@@ -1560,6 +1783,19 @@ let () =
     ]
   in
   let misc_tests = [ ("empty_expression", `Quick, test_empty_expression) ] in
+  let dwarf45_tests =
+    [
+      ("implicit_value", `Quick, test_implicit_value);
+      ("xderef", `Quick, test_xderef);
+      ("xderef_size", `Quick, test_xderef_size);
+      ("form_tls_address", `Quick, test_form_tls_address);
+      ("push_object_address", `Quick, test_push_object_address);
+      ("addrx", `Quick, test_addrx);
+      ("constx", `Quick, test_constx);
+      ("call2", `Quick, test_call2);
+      ("entry_value", `Quick, test_entry_value);
+    ]
+  in
   Alcotest.run "Expression_Evaluator"
     [
       ("evaluator", existing_tests);
@@ -1574,4 +1810,5 @@ let () =
       ("32bit_mode", addr_32bit_tests);
       ("multi_step", multi_step_tests);
       ("misc", misc_tests);
+      ("dwarf4_5_ops", dwarf45_tests);
     ]

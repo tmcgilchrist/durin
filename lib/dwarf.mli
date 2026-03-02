@@ -2641,6 +2641,7 @@ module Expression : sig
   type value =
     | Generic of int64  (** Generic integer value *)
     | Address of int64  (** Address value (for DW_OP_stack_value) *)
+    | ImplicitValue of string  (** Implicit value (raw bytes) *)
 
   type piece = {
     size_in_bits : int option;
@@ -2661,6 +2662,16 @@ module Expression : sig
         (** Need caller to provide frame base address. The offset will be added
             to the frame base. *)
     | RequiresCFA  (** Need caller to provide canonical frame address *)
+    | RequiresTLSAddress of { address : int64 }
+        (** Need caller to provide TLS address for the given offset *)
+    | RequiresObjectAddress  (** Need caller to provide the object address *)
+    | RequiresIndexedAddress of { index : int; is_constant : bool }
+        (** Need caller to provide an address from the address table.
+            is_constant is true for DW_OP_constx, false for DW_OP_addrx *)
+    | RequiresSubExpression of { offset : int64 }
+        (** Need caller to evaluate a sub-expression at the given offset *)
+    | RequiresEntryValue of { bytecode : string }
+        (** Need caller to evaluate the entry value expression *)
 
   type evaluation_state
   (** Evaluation state *)
@@ -2705,6 +2716,45 @@ module Expression : sig
 
       @param state Current evaluation state
       @param address The CFA
+      @return Next evaluation result *)
+
+  val resume_with_tls_address : evaluation_state -> int64 -> evaluation_result
+  (** Resume evaluation after providing a TLS address.
+
+      @param state Current evaluation state
+      @param address The resolved TLS address
+      @return Next evaluation result *)
+
+  val resume_with_object_address :
+    evaluation_state -> int64 -> evaluation_result
+  (** Resume evaluation after providing the object address.
+
+      @param state Current evaluation state
+      @param address The object address
+      @return Next evaluation result *)
+
+  val resume_with_indexed_address :
+    evaluation_state -> int64 -> evaluation_result
+  (** Resume evaluation after providing an indexed address. Pushes as Address
+      for DW_OP_addrx, Generic for DW_OP_constx.
+
+      @param state Current evaluation state
+      @param value The resolved address or constant value
+      @return Next evaluation result *)
+
+  val resume_with_sub_expression :
+    evaluation_state -> value list -> evaluation_result
+  (** Resume evaluation after evaluating a sub-expression.
+
+      @param state Current evaluation state
+      @param values The sub-expression result stack
+      @return Next evaluation result *)
+
+  val resume_with_entry_value : evaluation_state -> value -> evaluation_result
+  (** Resume evaluation after computing an entry value.
+
+      @param state Current evaluation state
+      @param value The entry value result
       @return Next evaluation result *)
 
   val result : evaluation_state -> value list

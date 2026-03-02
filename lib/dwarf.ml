@@ -2834,7 +2834,7 @@ let string_of_dwarf_expression (ops : dwarf_expression_operation list) : string
 (** DWARF Expression Evaluator *)
 module Expression = struct
   type register = Dwarf_arch.register = Register of int
-  type value = Generic of int64 | Address of int64
+  type value = Generic of int64 | Address of int64 | ImplicitValue of string
 
   type piece = {
     size_in_bits : int option;  (** Size in bits, None means rest of value *)
@@ -2861,6 +2861,16 @@ module Expression = struct
         (** Evaluator needs the caller to provide the frame base address. The
             offset will be added to the frame base. *)
     | RequiresCFA  (** Evaluator needs the Call Frame Address *)
+    | RequiresTLSAddress of { address : int64 }
+        (** Evaluator needs the TLS address for the given offset *)
+    | RequiresObjectAddress  (** Evaluator needs the object address *)
+    | RequiresIndexedAddress of { index : int; is_constant : bool }
+        (** Evaluator needs an address from the address table. is_constant
+            distinguishes DW_OP_constx from DW_OP_addrx *)
+    | RequiresSubExpression of { offset : int64 }
+        (** Evaluator needs the result of a sub-expression *)
+    | RequiresEntryValue of { bytecode : string }
+        (** Evaluator needs the entry value of the given expression *)
 
   type evaluation_state = {
     bytecode : string;  (** The expression bytecode *)
@@ -2905,10 +2915,19 @@ module Expression = struct
         v
 
   (** Convert value to int64 *)
-  let to_int64 = function Generic v | Address v -> v
+  let to_int64 = function
+    | Generic v | Address v -> v
+    | ImplicitValue _ -> failwith "Cannot convert ImplicitValue to int64"
 
   (** Apply address mask to a value *)
   let mask_address state value = Int64.logand value state.addr_mask
+
+  (** Sign-extend a value according to address size *)
+  let sign_extend state value =
+    let sign_bit = Int64.add (Int64.shift_right_logical state.addr_mask 1) 1L in
+    if Int64.logand value sign_bit <> 0L then
+      Int64.logor value (Int64.lognot state.addr_mask)
+    else Int64.logand value state.addr_mask
 
   (** Read ULEB128 from bytecode at current PC *)
   let read_uleb128 state =
@@ -3084,7 +3103,7 @@ module Expression = struct
               | _ -> failwith "DW_OP_rot requires at least 3 stack items")
           (* Arithmetic operations *)
           | DW_OP_abs ->
-              let v = pop state |> to_int64 in
+              let v = pop state |> to_int64 |> sign_extend state in
               push state (Generic (Int64.abs v));
               evaluate_step state
           | DW_OP_and ->
@@ -3093,8 +3112,8 @@ module Expression = struct
               push state (Generic (Int64.logand a b));
               evaluate_step state
           | DW_OP_div ->
-              let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let b = pop state |> to_int64 |> sign_extend state in
+              let a = pop state |> to_int64 |> sign_extend state in
               if b = 0L then failwith "Division by zero in DWARF expression"
               else (
                 push state (Generic (Int64.div a b));
@@ -3119,7 +3138,7 @@ module Expression = struct
               push state (Generic result);
               evaluate_step state
           | DW_OP_neg ->
-              let v = pop state |> to_int64 in
+              let v = pop state |> to_int64 |> sign_extend state in
               push state (Generic (Int64.neg v));
               evaluate_step state
           | DW_OP_not ->
@@ -3158,7 +3177,7 @@ module Expression = struct
               evaluate_step state
           | DW_OP_shra ->
               let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 |> mask_address state in
+              let a = pop state |> to_int64 |> sign_extend state in
               push state (Generic (Int64.shift_right a (Int64.to_int b)));
               evaluate_step state
           | DW_OP_xor ->
@@ -3168,33 +3187,33 @@ module Expression = struct
               evaluate_step state
           (* Comparison operations *)
           | DW_OP_eq ->
-              let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let b = pop state |> to_int64 |> sign_extend state in
+              let a = pop state |> to_int64 |> sign_extend state in
               push state (Generic (if a = b then 1L else 0L));
               evaluate_step state
           | DW_OP_ge ->
-              let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let b = pop state |> to_int64 |> sign_extend state in
+              let a = pop state |> to_int64 |> sign_extend state in
               push state (Generic (if a >= b then 1L else 0L));
               evaluate_step state
           | DW_OP_gt ->
-              let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let b = pop state |> to_int64 |> sign_extend state in
+              let a = pop state |> to_int64 |> sign_extend state in
               push state (Generic (if a > b then 1L else 0L));
               evaluate_step state
           | DW_OP_le ->
-              let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let b = pop state |> to_int64 |> sign_extend state in
+              let a = pop state |> to_int64 |> sign_extend state in
               push state (Generic (if a <= b then 1L else 0L));
               evaluate_step state
           | DW_OP_lt ->
-              let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let b = pop state |> to_int64 |> sign_extend state in
+              let a = pop state |> to_int64 |> sign_extend state in
               push state (Generic (if a < b then 1L else 0L));
               evaluate_step state
           | DW_OP_ne ->
-              let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let b = pop state |> to_int64 |> sign_extend state in
+              let a = pop state |> to_int64 |> sign_extend state in
               push state (Generic (if a <> b then 1L else 0L));
               evaluate_step state
           (* Control flow *)
@@ -3280,6 +3299,28 @@ module Expression = struct
                     };
                   ];
               evaluate_step state
+          | DW_OP_implicit_value ->
+              let len = read_uleb128 state in
+              if state.pc + len > String.length state.bytecode then
+                failwith "DW_OP_implicit_value: block extends past bytecode";
+              let bytes = String.sub state.bytecode state.pc len in
+              state.pc <- state.pc + len;
+              push state (ImplicitValue bytes);
+              evaluate_step state
+          | DW_OP_xderef ->
+              let _addr_space = pop state |> to_int64 in
+              let addr = pop state |> to_int64 in
+              let size = Unsigned.UInt8.to_int state.encoding.address_size in
+              state.waiting_for <-
+                Some (RequiresMemory { address = addr; size });
+              RequiresMemory { address = addr; size }
+          | DW_OP_xderef_size ->
+              let size = read_u8 state in
+              let _addr_space = pop state |> to_int64 in
+              let addr = pop state |> to_int64 in
+              state.waiting_for <-
+                Some (RequiresMemory { address = addr; size });
+              RequiresMemory { address = addr; size }
           | DW_OP_nop -> evaluate_step state
           | DW_OP_stack_value -> (
               match pop state with
@@ -3289,6 +3330,51 @@ module Expression = struct
               | Address _ as addr ->
                   push state addr;
                   evaluate_step state)
+          | DW_OP_form_tls_address ->
+              let addr = pop state |> to_int64 in
+              state.waiting_for <- Some (RequiresTLSAddress { address = addr });
+              RequiresTLSAddress { address = addr }
+          | DW_OP_push_object_address ->
+              state.waiting_for <- Some RequiresObjectAddress;
+              RequiresObjectAddress
+          | DW_OP_addrx ->
+              let index = read_uleb128 state in
+              state.waiting_for <-
+                Some (RequiresIndexedAddress { index; is_constant = false });
+              RequiresIndexedAddress { index; is_constant = false }
+          | DW_OP_constx ->
+              let index = read_uleb128 state in
+              state.waiting_for <-
+                Some (RequiresIndexedAddress { index; is_constant = true });
+              RequiresIndexedAddress { index; is_constant = true }
+          | DW_OP_call2 ->
+              let offset = read_u16 state in
+              let off64 = Int64.of_int offset in
+              state.waiting_for <-
+                Some (RequiresSubExpression { offset = off64 });
+              RequiresSubExpression { offset = off64 }
+          | DW_OP_call4 ->
+              let offset = read_u32 state in
+              let off64 = Int64.of_int offset in
+              state.waiting_for <-
+                Some (RequiresSubExpression { offset = off64 });
+              RequiresSubExpression { offset = off64 }
+          | DW_OP_call_ref ->
+              let offset =
+                match state.encoding.format with
+                | DWARF32 -> Int64.of_int (read_u32 state)
+                | DWARF64 -> read_u64 state
+              in
+              state.waiting_for <- Some (RequiresSubExpression { offset });
+              RequiresSubExpression { offset }
+          | DW_OP_entry_value ->
+              let len = read_uleb128 state in
+              if state.pc + len > String.length state.bytecode then
+                failwith "DW_OP_entry_value: block extends past bytecode";
+              let bytecode = String.sub state.bytecode state.pc len in
+              state.pc <- state.pc + len;
+              state.waiting_for <- Some (RequiresEntryValue { bytecode });
+              RequiresEntryValue { bytecode }
           | _ ->
               failwith
                 (Printf.sprintf "Unimplemented operation: %s"
@@ -3355,6 +3441,63 @@ module Expression = struct
         state.waiting_for <- None;
         evaluate state
     | _ -> failwith "resume_with_cfa called but not waiting for CFA"
+
+  (** Resume evaluation after providing a TLS address *)
+  let resume_with_tls_address state addr =
+    match state.waiting_for with
+    | Some (RequiresTLSAddress _) ->
+        push state (Address addr);
+        state.waiting_for <- None;
+        evaluate state
+    | _ ->
+        failwith
+          "resume_with_tls_address called but not waiting for TLS address"
+
+  (** Resume evaluation after providing the object address *)
+  let resume_with_object_address state addr =
+    match state.waiting_for with
+    | Some RequiresObjectAddress ->
+        push state (Address addr);
+        state.waiting_for <- None;
+        evaluate state
+    | _ ->
+        failwith
+          "resume_with_object_address called but not waiting for object address"
+
+  (** Resume evaluation after providing an indexed address *)
+  let resume_with_indexed_address state value =
+    match state.waiting_for with
+    | Some (RequiresIndexedAddress { is_constant; _ }) ->
+        let v = if is_constant then Generic value else Address value in
+        push state v;
+        state.waiting_for <- None;
+        evaluate state
+    | _ ->
+        failwith
+          "resume_with_indexed_address called but not waiting for indexed \
+           address"
+
+  (** Resume evaluation after providing sub-expression results *)
+  let resume_with_sub_expression state values =
+    match state.waiting_for with
+    | Some (RequiresSubExpression _) ->
+        List.iter (fun v -> push state v) (List.rev values);
+        state.waiting_for <- None;
+        evaluate state
+    | _ ->
+        failwith
+          "resume_with_sub_expression called but not waiting for sub-expression"
+
+  (** Resume evaluation after providing an entry value *)
+  let resume_with_entry_value state value =
+    match state.waiting_for with
+    | Some (RequiresEntryValue _) ->
+        push state value;
+        state.waiting_for <- None;
+        evaluate state
+    | _ ->
+        failwith
+          "resume_with_entry_value called but not waiting for entry value"
 
   (** Get the final result stack *)
   let result state = state.stack
