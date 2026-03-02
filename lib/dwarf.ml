@@ -3088,8 +3088,8 @@ module Expression = struct
               push state (Generic (Int64.abs v));
               evaluate_step state
           | DW_OP_and ->
-              let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let b = pop state |> to_int64 |> mask_address state in
+              let a = pop state |> to_int64 |> mask_address state in
               push state (Generic (Int64.logand a b));
               evaluate_step state
           | DW_OP_div ->
@@ -3102,7 +3102,8 @@ module Expression = struct
           | DW_OP_minus ->
               let b = pop state |> to_int64 in
               let a = pop state |> to_int64 in
-              push state (Generic (Int64.sub a b));
+              let result = mask_address state (Int64.sub a b) in
+              push state (Generic result);
               evaluate_step state
           | DW_OP_mod ->
               let b = pop state |> to_int64 in
@@ -3114,7 +3115,8 @@ module Expression = struct
           | DW_OP_mul ->
               let b = pop state |> to_int64 in
               let a = pop state |> to_int64 in
-              push state (Generic (Int64.mul a b));
+              let result = mask_address state (Int64.mul a b) in
+              push state (Generic result);
               evaluate_step state
           | DW_OP_neg ->
               let v = pop state |> to_int64 in
@@ -3125,8 +3127,8 @@ module Expression = struct
               push state (Generic (Int64.lognot v));
               evaluate_step state
           | DW_OP_or ->
-              let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let b = pop state |> to_int64 |> mask_address state in
+              let a = pop state |> to_int64 |> mask_address state in
               push state (Generic (Int64.logor a b));
               evaluate_step state
           | DW_OP_plus ->
@@ -3145,23 +3147,23 @@ module Expression = struct
               evaluate_step state
           | DW_OP_shl ->
               let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let a = pop state |> to_int64 |> mask_address state in
               push state (Generic (Int64.shift_left a (Int64.to_int b)));
               evaluate_step state
           | DW_OP_shr ->
               let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let a = pop state |> to_int64 |> mask_address state in
               push state
                 (Generic (Int64.shift_right_logical a (Int64.to_int b)));
               evaluate_step state
           | DW_OP_shra ->
               let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let a = pop state |> to_int64 |> mask_address state in
               push state (Generic (Int64.shift_right a (Int64.to_int b)));
               evaluate_step state
           | DW_OP_xor ->
-              let b = pop state |> to_int64 in
-              let a = pop state |> to_int64 in
+              let b = pop state |> to_int64 |> mask_address state in
+              let a = pop state |> to_int64 |> mask_address state in
               push state (Generic (Int64.logxor a b));
               evaluate_step state
           (* Comparison operations *)

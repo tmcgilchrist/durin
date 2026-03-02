@@ -668,6 +668,10 @@ let test_error_deref_size_exceeds_addr_size () =
       in
       Alcotest.(check bool) "error mentions exceeds" true contains
 
+let test_error_stack_value_empty () =
+  (* DW_OP_stack_value on empty stack *)
+  expect_failure "\x9f" "Stack underflow"
+
 let test_error_resume_register_wrong_state () =
   (* Try resume_with_register when not waiting *)
   let bytecode = "\x35" in
@@ -781,6 +785,20 @@ let test_shra_negative () =
   let bytecode = "\x11\x7e\x31\x26" in
   let v = eval_to_int64 bytecode in
   Alcotest.(check int64) "shra(-2, 1) = -1" (-1L) v
+
+let test_shl_large_shift () =
+  (* 1 << 64 — OCaml Int64.shift_left masks to 0..63, so this is 1<<0=1 *)
+  (* DW_OP_lit1 DW_OP_const1u(64) DW_OP_shl *)
+  let bytecode = "\x31\x08\x40\x24" in
+  let v = eval_to_int64 bytecode in
+  (* OCaml: Int64.shift_left masks shift amount mod 64 *)
+  Alcotest.(check int64) "1 << 64 wraps (OCaml behavior)" 1L v
+
+let test_shr_large_shift () =
+  (* 0xFF >> 64 — same wrapping behavior *)
+  let bytecode = "\x08\xff\x08\x40\x25" in
+  let v = eval_to_int64 bytecode in
+  Alcotest.(check int64) "0xFF >> 64 wraps (OCaml behavior)" 0xFFL v
 
 let test_mul_overflow () =
   (* Large multiplication that overflows *)
@@ -1037,6 +1055,28 @@ let test_eq_false () =
   let v = eval_to_int64 bytecode in
   Alcotest.(check int64) "5 == 10 = 0" 0L v
 
+let test_lt_signed_negative () =
+  (* -1 < 1 should be true (signed comparison) *)
+  (* DW_OP_consts(-1) DW_OP_lit1 DW_OP_lt *)
+  (* SLEB128 of -1 = 0x7f *)
+  let bytecode = "\x11\x7f\x31\x2d" in
+  let v = eval_to_int64 bytecode in
+  Alcotest.(check int64) "-1 < 1 = 1 (signed)" 1L v
+
+let test_gt_signed_negative () =
+  (* 1 > -1 should be true (signed comparison) *)
+  (* DW_OP_lit1 DW_OP_consts(-1) DW_OP_gt *)
+  let bytecode = "\x31\x11\x7f\x2b" in
+  let v = eval_to_int64 bytecode in
+  Alcotest.(check int64) "1 > -1 = 1 (signed)" 1L v
+
+let test_ge_signed_negative () =
+  (* -1 >= -1 should be true *)
+  (* DW_OP_consts(-1) DW_OP_consts(-1) DW_OP_ge *)
+  let bytecode = "\x11\x7f\x11\x7f\x2a" in
+  let v = eval_to_int64 bytecode in
+  Alcotest.(check int64) "-1 >= -1 = 1 (signed)" 1L v
+
 (* ================================================================ *)
 (* Untested operations: register variants                           *)
 (* ================================================================ *)
@@ -1119,6 +1159,31 @@ let test_multi_piece () =
       | _ -> Alcotest.fail "expected Generic locations")
   | _ -> Alcotest.fail "unexpected pieces"
 
+let test_skip_backward () =
+  (* Simple loop: push 3, decrement, branch back if non-zero *)
+  (* DW_OP_lit3 DW_OP_lit1 DW_OP_minus DW_OP_dup DW_OP_bra(-4) *)
+  (* After loop: stack has [0] *)
+  (* Layout:
+     0: 0x33        DW_OP_lit3
+     1: 0x31        DW_OP_lit1
+     2: 0x1c        DW_OP_minus
+     3: 0x12        DW_OP_dup
+     4: 0x28        DW_OP_bra
+     5: 0xfb 0xff   offset = -5 (signed 16-bit LE)
+     After bra reads offset, pc=7. pc+(-5)=2, which is DW_OP_minus.
+     But we want to go back to DW_OP_lit1, so offset = -6: 0xfa 0xff
+     pc after reading offset = 7. 7 + (-6) = 1 = DW_OP_lit1. *)
+  let bytecode = "\x33\x31\x1c\x12\x28\xfa\xff" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  Alcotest.(check bool) "completes" true (result = Dwarf.Expression.Complete);
+  match Dwarf.Expression.result state with
+  | Dwarf.Expression.Generic v :: _ ->
+      Alcotest.(check int64) "loop result is 0" 0L v
+  | _ -> Alcotest.fail "unexpected stack"
+
 let test_piece_empty () =
   (* DW_OP_piece(4) with empty stack = empty piece *)
   let bytecode = "\x93\x04" in
@@ -1153,6 +1218,54 @@ let test_32bit_addition_masking () =
   | [ Dwarf.Expression.Generic v ] ->
       Alcotest.(check int64) "32-bit overflow wraps to 0" 0L v
   | _ -> Alcotest.fail "unexpected stack"
+
+let eval_to_int64_32bit bytecode =
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode
+      ~encoding:(make_encoding ~address_size:4 ())
+  in
+  let result = Dwarf.Expression.evaluate state in
+  Alcotest.(check bool) "completes" true (result = Dwarf.Expression.Complete);
+  match Dwarf.Expression.result state with
+  | [ Dwarf.Expression.Generic v ] -> v
+  | _ -> Alcotest.fail "expected single Generic on stack"
+
+let test_32bit_subtraction_masking () =
+  (* 0 - 1 in 32-bit mode should wrap to 0xFFFFFFFF *)
+  (* DW_OP_lit0 DW_OP_lit1 DW_OP_minus *)
+  let bytecode = "\x30\x31\x1c" in
+  let v = eval_to_int64_32bit bytecode in
+  Alcotest.(check int64) "32-bit 0-1 = 0xFFFFFFFF" 0xFFFFFFFFL v
+
+let test_32bit_multiplication_masking () =
+  (* 0x80000000 * 2 in 32-bit mode should wrap to 0 *)
+  (* DW_OP_const4u(0x80000000) DW_OP_lit2 DW_OP_mul *)
+  let bytecode = "\x0c\x00\x00\x00\x80\x32\x1e" in
+  let v = eval_to_int64_32bit bytecode in
+  Alcotest.(check int64) "32-bit 0x80000000*2 = 0" 0L v
+
+let test_32bit_and_masking () =
+  (* In 32-bit, inputs should be masked before AND *)
+  (* const8u(0x1_FFFFFFFF) AND const8u(0x1_FFFFFFFF) = 0xFFFFFFFF *)
+  let bytecode =
+    "\x0e\xff\xff\xff\xff\x01\x00\x00\x00\x0e\xff\xff\xff\xff\x01\x00\x00\x00\x1a"
+  in
+  let v = eval_to_int64_32bit bytecode in
+  Alcotest.(check int64) "32-bit masks AND inputs" 0xFFFFFFFFL v
+
+let test_32bit_shl_masking () =
+  (* In 32-bit, input masked before shift *)
+  (* const8u(0x1_00000001) << 1 = 2 (input masked to 1, then shifted) *)
+  let bytecode = "\x0e\x01\x00\x00\x00\x01\x00\x00\x00\x31\x24" in
+  let v = eval_to_int64_32bit bytecode in
+  Alcotest.(check int64) "32-bit masks SHL input" 2L v
+
+let test_32bit_shr_masking () =
+  (* In 32-bit, input masked before shift *)
+  (* const8u(0x1_00000002) >> 1 = 1 (input masked to 2, then shifted) *)
+  let bytecode = "\x0e\x02\x00\x00\x00\x01\x00\x00\x00\x31\x25" in
+  let v = eval_to_int64_32bit bytecode in
+  Alcotest.(check int64) "32-bit masks SHR input" 1L v
 
 let test_32bit_deref_size () =
   (* In 32-bit mode, deref requests 4 bytes *)
@@ -1206,6 +1319,38 @@ let test_deref_then_computation () =
           Alcotest.(check int64) "10 + 5 = 15" 15L v
       | _ -> Alcotest.fail "unexpected stack")
   | _ -> Alcotest.fail "expected RequiresMemory"
+
+let test_two_register_lookups () =
+  (* DW_OP_breg5(0) DW_OP_breg7(0) DW_OP_plus *)
+  (* Two different register lookups then add *)
+  let bytecode = "\x75\x00\x77\x00\x22" in
+  let state =
+    Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
+  in
+  (* First: needs register 5 *)
+  let result = Dwarf.Expression.evaluate state in
+  (match result with
+  | Dwarf.Expression.RequiresRegister
+      { register = Register n; offset = Some 0L } ->
+      Alcotest.(check int) "first reg is 5" 5 n
+  | _ -> Alcotest.fail "expected RequiresRegister for reg5");
+  let result2 =
+    Dwarf.Expression.resume_with_register state (Dwarf.Expression.Generic 100L)
+  in
+  (* Second: needs register 7 *)
+  (match result2 with
+  | Dwarf.Expression.RequiresRegister
+      { register = Register n; offset = Some 0L } ->
+      Alcotest.(check int) "second reg is 7" 7 n
+  | _ -> Alcotest.fail "expected RequiresRegister for reg7");
+  let result3 =
+    Dwarf.Expression.resume_with_register state (Dwarf.Expression.Generic 200L)
+  in
+  Alcotest.(check bool) "completes" true (result3 = Dwarf.Expression.Complete);
+  match Dwarf.Expression.result state with
+  | [ Dwarf.Expression.Generic v ] ->
+      Alcotest.(check int64) "100 + 200 = 300" 300L v
+  | _ -> Alcotest.fail "unexpected stack"
 
 let test_fbreg_then_deref () =
   (* DW_OP_fbreg(-8) DW_OP_deref *)
@@ -1300,6 +1445,7 @@ let () =
       ("error_bra_out_of_bounds", `Quick, test_error_bra_out_of_bounds);
       ("error_div_by_zero", `Quick, test_error_div_by_zero);
       ("error_mod_by_zero", `Quick, test_error_mod_by_zero);
+      ("error_stack_value_empty", `Quick, test_error_stack_value_empty);
       ("error_invalid_memory_size", `Quick, test_error_invalid_memory_size);
       ( "error_deref_size_exceeds_addr_size",
         `Quick,
@@ -1327,6 +1473,8 @@ let () =
       ("shift_by_zero", `Quick, test_shift_by_zero);
       ("shr_logical", `Quick, test_shr_logical);
       ("shra_negative", `Quick, test_shra_negative);
+      ("shl_large_shift", `Quick, test_shl_large_shift);
+      ("shr_large_shift", `Quick, test_shr_large_shift);
       ("mul_overflow", `Quick, test_mul_overflow);
     ]
   in
@@ -1376,6 +1524,9 @@ let () =
       ("lt", `Quick, test_lt);
       ("lt_false", `Quick, test_lt_false);
       ("eq_false", `Quick, test_eq_false);
+      ("lt_signed_negative", `Quick, test_lt_signed_negative);
+      ("gt_signed_negative", `Quick, test_gt_signed_negative);
+      ("ge_signed_negative", `Quick, test_ge_signed_negative);
     ]
   in
   let register_tests =
@@ -1383,6 +1534,7 @@ let () =
   in
   let composite_tests =
     [
+      ("skip_backward", `Quick, test_skip_backward);
       ("bit_piece", `Quick, test_bit_piece);
       ("multi_piece", `Quick, test_multi_piece);
       ("piece_empty", `Quick, test_piece_empty);
@@ -1391,12 +1543,18 @@ let () =
   let addr_32bit_tests =
     [
       ("32bit_addition_masking", `Quick, test_32bit_addition_masking);
+      ("32bit_subtraction_masking", `Quick, test_32bit_subtraction_masking);
+      ("32bit_multiplication_masking", `Quick, test_32bit_multiplication_masking);
+      ("32bit_and_masking", `Quick, test_32bit_and_masking);
+      ("32bit_shl_masking", `Quick, test_32bit_shl_masking);
+      ("32bit_shr_masking", `Quick, test_32bit_shr_masking);
       ("32bit_deref_size", `Quick, test_32bit_deref_size);
       ("32bit_addr", `Quick, test_32bit_addr);
     ]
   in
   let multi_step_tests =
     [
+      ("two_register_lookups", `Quick, test_two_register_lookups);
       ("deref_then_computation", `Quick, test_deref_then_computation);
       ("fbreg_then_deref", `Quick, test_fbreg_then_deref);
     ]
