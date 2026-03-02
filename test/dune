@@ -49,6 +49,12 @@
  (action
   (run %{exe:test_dwarf64_parsing.exe})))
 
+(test
+ (name test_dwarf4_support)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_dwarf4_support.exe})))
+
 ; =============================================================================
 ; MACOS PLATFORM TESTS
 ; =============================================================================

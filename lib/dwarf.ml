@@ -14,6 +14,10 @@ type dwarf_section =
   | Debug_addr
   | Debug_macro
   | Debug_frame
+  | Debug_loc
+  | Debug_ranges
+  | Debug_pubnames
+  | Debug_pubtypes
 
 (** Convert Mach-O cpu_type to architecture string *)
 let string_of_cpu_type = function
@@ -156,7 +160,11 @@ let object_format_to_section_name format section =
       | Debug_names -> "__debug_names"
       | Debug_addr -> "__debug_addr"
       | Debug_macro -> "__debug_macro"
-      | Debug_frame -> "__debug_frame")
+      | Debug_frame -> "__debug_frame"
+      | Debug_loc -> "__debug_loc"
+      | Debug_ranges -> "__debug_ranges"
+      | Debug_pubnames -> "__debug_pubnames"
+      | Debug_pubtypes -> "__debug_pubtypes")
   | Object_format.ELF -> (
       match section with
       | Debug_info -> ".debug_info"
@@ -171,7 +179,11 @@ let object_format_to_section_name format section =
       | Debug_names -> ".debug_names"
       | Debug_addr -> ".debug_addr"
       | Debug_macro -> ".debug_macro"
-      | Debug_frame -> ".debug_frame")
+      | Debug_frame -> ".debug_frame"
+      | Debug_loc -> ".debug_loc"
+      | Debug_ranges -> ".debug_ranges"
+      | Debug_pubnames -> ".debug_pubnames"
+      | Debug_pubtypes -> ".debug_pubtypes")
 
 include Dwarf_abbreviation_tag
 include Dwarf_attribute
@@ -1760,7 +1772,7 @@ module DIE = struct
       (fun attr -> if attr.attr = attr_name then Some attr.value else None)
       die.attributes
 
-  let parse_attribute_value (cur : Object.Buffer.cursor)
+  let rec parse_attribute_value (cur : Object.Buffer.cursor)
       (form : attribute_form_encoding) (encoding : encoding)
       (full_buffer : Object.Buffer.t) : attribute_value =
     match form with
@@ -1933,9 +1945,16 @@ module DIE = struct
             | None -> String (Printf.sprintf "<line_strp_offset:%d>" offset_int)
             )
         | None -> String (Printf.sprintf "<line_strp_offset:%d>" offset_int))
-    | _ ->
-        (* For unsupported forms, skip and return placeholder *)
-        String "<unsupported_form>"
+    | DW_FORM_ref_addr ->
+        let offset = read_offset_for_format encoding.format cur in
+        Reference offset
+    | DW_FORM_indirect ->
+        let actual_form_code = Object.Buffer.Read.uleb128 cur in
+        let actual_form =
+          attribute_form_encoding (Unsigned.UInt64.of_int actual_form_code)
+        in
+        parse_attribute_value cur actual_form encoding full_buffer
+    | _ -> String "<unsupported_form>"
 
   let process_language_attribute (raw_value : attribute_value) : attribute_value
       =
@@ -2074,18 +2093,29 @@ type t = {
 let parse_compile_unit_header (cur : Object.Buffer.cursor) :
     span * CompileUnit.header =
   let start = cur.position in
-  (* Parse DWARF 5 compile unit header with format detection *)
   let format, unit_length = parse_initial_length cur in
   let version = Object.Buffer.Read.u16 cur in
-  let unit_type = Object.Buffer.Read.u8 cur in
-  let address_size = Object.Buffer.Read.u8 cur in
-  let debug_abbrev_offset = read_offset_for_format format cur in
+  let version_int = Unsigned.UInt16.to_int version in
+  let unit_type, address_size, debug_abbrev_offset =
+    if version_int = 5 then
+      (* DWARF 5: unit_type, address_size, abbrev_offset *)
+      let unit_type = Object.Buffer.Read.u8 cur in
+      let address_size = Object.Buffer.Read.u8 cur in
+      let debug_abbrev_offset = read_offset_for_format format cur in
+      (unit_type, address_size, debug_abbrev_offset)
+    else if version_int = 4 then
+      (* DWARF 4: abbrev_offset, address_size (no unit_type) *)
+      let debug_abbrev_offset = read_offset_for_format format cur in
+      let address_size = Object.Buffer.Read.u8 cur in
+      let unit_type = Unsigned.UInt8.of_int 0x01 in
+      (unit_type, address_size, debug_abbrev_offset)
+    else
+      failwith
+        (Printf.sprintf "Unsupported DWARF version: %d (only 4 and 5 supported)"
+           version_int)
+  in
 
   let parsed_unit_type = unit_type_of_u8 unit_type in
-
-  (* Only support DWARF version 5 *)
-  if version <> Unsigned.UInt16.of_int 5 then
-    failwith "Only DWARF version 5 is supported";
 
   (* Only support compile unit type DW_UT_compile *)
   if parsed_unit_type <> DW_UT_compile then
@@ -2094,8 +2124,9 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
       ^ string_of_unit_type parsed_unit_type);
 
   (* Validate address size *)
-  if address_size <> Unsigned.UInt8.of_int 8 then
-    failwith "Invalid address size of DWARF";
+  let addr_int = Unsigned.UInt8.to_int address_size in
+  if addr_int <> 4 && addr_int <> 8 then
+    failwith (Printf.sprintf "Invalid address size: %d" addr_int);
 
   let header_end = cur.position in
   let header_size = header_end - start in
@@ -2289,8 +2320,19 @@ module LineTable = struct
       line_program_header =
     let format, unit_length = parse_initial_length cur in
     let version = Object.Buffer.Read.u16 cur in
-    let address_size = Object.Buffer.Read.u8 cur in
-    let segment_selector_size = Object.Buffer.Read.u8 cur in
+    let version_int = Unsigned.UInt16.to_int version in
+    if version_int <> 4 && version_int <> 5 then
+      failwith
+        (Printf.sprintf
+           "Unsupported line table version: %d (only 4 and 5 supported)"
+           version_int);
+    let address_size, segment_selector_size =
+      if version_int = 5 then
+        let a = Object.Buffer.Read.u8 cur in
+        let s = Object.Buffer.Read.u8 cur in
+        (a, s)
+      else (Unsigned.UInt8.of_int 0, Unsigned.UInt8.of_int 0)
+    in
     let header_length = read_offset_for_format format cur in
     let minimum_instruction_length = Object.Buffer.Read.u8 cur in
     let maximum_operations_per_instruction = Object.Buffer.Read.u8 cur in
@@ -2315,239 +2357,291 @@ module LineTable = struct
       standard_opcode_lengths.(i) <- Object.Buffer.Read.u8 cur
     done;
 
-    let directory_entry_format_count = Object.Buffer.Read.u8 cur in
-    let directory_entry_formats =
-      Array.make
-        (Unsigned.UInt8.to_int directory_entry_format_count)
-        (DW_LNCT_path, DW_FORM_string)
-    in
-    for i = 0 to Array.length directory_entry_formats - 1 do
-      (* DWARF 5 spec 6.2.4: Each description consists of a pair of ULEB128 values *)
-      let content_type_code = Object.Buffer.Read.uleb128 cur in
-      let form_code = Object.Buffer.Read.uleb128 cur in
-      let content_type = line_number_header_entry content_type_code in
-      let form = attribute_form_encoding (Unsigned.UInt64.of_int form_code) in
-      directory_entry_formats.(i) <- (content_type, form)
-    done;
-
-    let directories_count =
-      Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
-    in
-    let directories =
-      Array.make (Unsigned.UInt32.to_int directories_count) ""
-    in
-    for i = 0 to Array.length directories - 1 do
-      (* Parse directory entry according to the format descriptors *)
-      let path_ref = ref "" in
-      for j = 0 to Array.length directory_entry_formats - 1 do
-        let content_type, form = directory_entry_formats.(j) in
-        match (content_type, form) with
-        | DW_LNCT_path, DW_FORM_string -> (
-            path_ref :=
-              match Object.Buffer.Read.zero_string cur () with
-              | Some s -> s
-              | None -> "")
-        | DW_LNCT_path, DW_FORM_line_strp ->
-            (* Read offset into .debug_line_str section *)
-            let offset = read_offset_for_format format cur in
-            (* Resolve line_strp offset to actual string *)
-            path_ref := resolve_line_strp_offset buffer offset
-        (* Section 6.2 (Line Number Information) of the DWARF 5 spec does not seem to
-           constrain which DW_LNCT content types are valid for directory entries.
-           https://www.mail-archive.com/dwarf-discuss@lists.dwarfstd.org/msg01394.html *)
-        | DW_LNCT_directory_index, _ ->
-            failwith
-              "DW_LNCT_directory_index is not valid for directory entries \
-               (DWARF 5 spec)"
-        | DW_LNCT_timestamp, _ ->
-            failwith
-              "DW_LNCT_timestamp is not valid for directory entries (DWARF 5 \
-               spec)"
-        | DW_LNCT_size, _ ->
-            failwith
-              "DW_LNCT_size is not valid for directory entries (DWARF 5 spec)"
-        | DW_LNCT_MD5, _ ->
-            failwith
-              "DW_LNCT_MD5 is not valid for directory entries (DWARF 5 spec)"
-        | DW_LNCT_lo_user, _ | DW_LNCT_hi_user, _ -> (
-            (* Vendor-defined content types - skip with form-based parsing *)
-            match form with
-            | DW_FORM_string -> ignore (Object.Buffer.Read.zero_string cur ())
-            | DW_FORM_data1 -> ignore (Object.Buffer.Read.u8 cur)
-            | DW_FORM_data2 -> ignore (Object.Buffer.Read.u16 cur)
-            | DW_FORM_data4 -> ignore (Object.Buffer.Read.u32 cur)
-            | DW_FORM_data8 -> ignore (Object.Buffer.Read.u64 cur)
-            | DW_FORM_udata -> ignore (Object.Buffer.Read.uleb128 cur)
-            | _ ->
-                failwith
-                  "Unsupported form for vendor-defined directory entry content \
-                   type")
-        | DW_LNCT_path, _form ->
-            failwith
-              "Unsupported form for DW_LNCT_path in directory entry (expected \
-               DW_FORM_string or DW_FORM_line_strp)"
-      done;
-      directories.(i) <- !path_ref
-    done;
-
-    let file_name_entry_format_count = Object.Buffer.Read.u8 cur in
-    let file_name_entry_formats =
-      Array.make
-        (Unsigned.UInt8.to_int file_name_entry_format_count)
-        (DW_LNCT_path, DW_FORM_string)
-    in
-    for i = 0 to Array.length file_name_entry_formats - 1 do
-      (* DWARF 5 spec 6.2.4: Each description consists of a pair of ULEB128 values *)
-      let content_type_code = Object.Buffer.Read.uleb128 cur in
-      let form_code = Object.Buffer.Read.uleb128 cur in
-      let content_type = line_number_header_entry content_type_code in
-      let form = attribute_form_encoding (Unsigned.UInt64.of_int form_code) in
-      file_name_entry_formats.(i) <- (content_type, form)
-    done;
-
-    let file_names_count =
-      Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
-    in
-    let file_names =
-      Array.make
-        (Unsigned.UInt32.to_int file_names_count)
-        {
-          name = "";
-          timestamp = Unsigned.UInt64.of_int 0;
-          size = Unsigned.UInt64.of_int 0;
-          directory = "";
-          md5_checksum = None;
-        }
-    in
-    for i = 0 to Array.length file_names - 1 do
-      (* DWARF 5 spec 6.2.4: Parse file entry to populate file_names array with
-         path, directory_index, timestamp, size, and MD5 data based on format descriptors *)
-      let path_ref = ref "" in
-      let dir_index_ref = ref 0 in
-      let timestamp_ref = ref (Unsigned.UInt64.of_int 0) in
-      let file_size_ref = ref (Unsigned.UInt64.of_int 0) in
-      let md5_ref = ref None in
-
-      for j = 0 to Array.length file_name_entry_formats - 1 do
-        let content_type, form = file_name_entry_formats.(j) in
-        match (content_type, form) with
-        | DW_LNCT_path, DW_FORM_string -> (
-            path_ref :=
-              match Object.Buffer.Read.zero_string cur () with
-              | Some s -> s
-              | None -> "")
-        | DW_LNCT_path, DW_FORM_line_strp ->
-            (* Read offset into .debug_line_str section and resolve *)
-            let offset = read_offset_for_format format cur in
-            path_ref := resolve_line_strp_offset buffer offset
-        | DW_LNCT_directory_index, DW_FORM_udata ->
-            dir_index_ref := Object.Buffer.Read.uleb128 cur
-        | DW_LNCT_timestamp, DW_FORM_udata ->
-            timestamp_ref :=
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
-        | DW_LNCT_size, DW_FORM_udata ->
-            file_size_ref :=
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
-        | DW_LNCT_MD5, DW_FORM_data16 ->
-            (* Read MD5 hash (16 bytes) *)
-            let md5_bytes = Array.make 16 (Unsigned.UInt8.of_int 0) in
-            for k = 0 to 15 do
-              md5_bytes.(k) <- Object.Buffer.Read.u8 cur
-            done;
-            (* Convert to hex string *)
-            let md5_hex =
-              String.concat ""
-                (Array.to_list
-                   (Array.map
-                      (fun b -> Printf.sprintf "%02x" (Unsigned.UInt8.to_int b))
-                      md5_bytes))
-            in
-            md5_ref := Some md5_hex
-        | DW_LNCT_directory_index, DW_FORM_data1 ->
-            dir_index_ref := Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int
-        | DW_LNCT_directory_index, DW_FORM_data2 ->
-            dir_index_ref :=
-              Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int
-        | DW_LNCT_timestamp, DW_FORM_data4 ->
-            timestamp_ref :=
-              Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int
-              |> Unsigned.UInt64.of_int
-        | DW_LNCT_timestamp, DW_FORM_data8 ->
-            timestamp_ref := Object.Buffer.Read.u64 cur
-        | DW_LNCT_size, DW_FORM_data1 ->
-            file_size_ref :=
-              Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int
-              |> Unsigned.UInt64.of_int
-        | DW_LNCT_size, DW_FORM_data2 ->
-            file_size_ref :=
-              Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int
-              |> Unsigned.UInt64.of_int
-        | DW_LNCT_size, DW_FORM_data4 ->
-            file_size_ref :=
-              Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int
-              |> Unsigned.UInt64.of_int
-        | DW_LNCT_size, DW_FORM_data8 ->
-            file_size_ref := Object.Buffer.Read.u64 cur
-        | DW_LNCT_lo_user, _ | DW_LNCT_hi_user, _ -> (
-            (* Vendor-defined content types - skip with form-based parsing *)
-            match form with
-            | DW_FORM_string -> ignore (Object.Buffer.Read.zero_string cur ())
-            | DW_FORM_data1 -> ignore (Object.Buffer.Read.u8 cur)
-            | DW_FORM_data2 -> ignore (Object.Buffer.Read.u16 cur)
-            | DW_FORM_data4 -> ignore (Object.Buffer.Read.u32 cur)
-            | DW_FORM_data8 -> ignore (Object.Buffer.Read.u64 cur)
-            | DW_FORM_data16 ->
-                for _k = 0 to 15 do
-                  ignore (Object.Buffer.Read.u8 cur)
-                done
-            | DW_FORM_udata -> ignore (Object.Buffer.Read.uleb128 cur)
-            | _ ->
-                failwith
-                  "Unsupported form for vendor-defined file entry content type")
-        | _content_type, _form ->
-            failwith
-              "Invalid content_type/form combination for file entry (DWARF 5 \
-               spec)"
-      done;
-
-      let dir_name =
-        if !dir_index_ref < Array.length directories then
-          directories.(!dir_index_ref)
-        else ""
+    if version_int = 5 then (
+      let directory_entry_format_count = Object.Buffer.Read.u8 cur in
+      let directory_entry_formats =
+        Array.make
+          (Unsigned.UInt8.to_int directory_entry_format_count)
+          (DW_LNCT_path, DW_FORM_string)
       in
-      file_names.(i) <-
-        {
-          name = !path_ref;
-          timestamp = !timestamp_ref;
-          size = !file_size_ref;
-          directory = dir_name;
-          md5_checksum = !md5_ref;
-        }
-    done;
+      for i = 0 to Array.length directory_entry_formats - 1 do
+        let content_type_code = Object.Buffer.Read.uleb128 cur in
+        let form_code = Object.Buffer.Read.uleb128 cur in
+        let content_type = line_number_header_entry content_type_code in
+        let form = attribute_form_encoding (Unsigned.UInt64.of_int form_code) in
+        directory_entry_formats.(i) <- (content_type, form)
+      done;
 
-    {
-      format;
-      unit_length;
-      version;
-      address_size;
-      segment_selector_size;
-      header_length;
-      minimum_instruction_length;
-      maximum_operations_per_instruction;
-      default_is_stmt;
-      line_base;
-      line_range;
-      opcode_base;
-      standard_opcode_lengths;
-      directory_entry_format_count;
-      directory_entry_formats;
-      directories_count;
-      directories;
-      file_name_entry_format_count;
-      file_name_entry_formats;
-      file_names_count;
-      file_names;
-    }
+      let directories_count =
+        Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+      in
+      let directories =
+        Array.make (Unsigned.UInt32.to_int directories_count) ""
+      in
+      for i = 0 to Array.length directories - 1 do
+        let path_ref = ref "" in
+        for j = 0 to Array.length directory_entry_formats - 1 do
+          let content_type, form = directory_entry_formats.(j) in
+          match (content_type, form) with
+          | DW_LNCT_path, DW_FORM_string -> (
+              path_ref :=
+                match Object.Buffer.Read.zero_string cur () with
+                | Some s -> s
+                | None -> "")
+          | DW_LNCT_path, DW_FORM_line_strp ->
+              let offset = read_offset_for_format format cur in
+              path_ref := resolve_line_strp_offset buffer offset
+          | DW_LNCT_directory_index, _ ->
+              failwith
+                "DW_LNCT_directory_index is not valid for directory entries \
+                 (DWARF 5 spec)"
+          | DW_LNCT_timestamp, _ ->
+              failwith
+                "DW_LNCT_timestamp is not valid for directory entries (DWARF 5 \
+                 spec)"
+          | DW_LNCT_size, _ ->
+              failwith
+                "DW_LNCT_size is not valid for directory entries (DWARF 5 spec)"
+          | DW_LNCT_MD5, _ ->
+              failwith
+                "DW_LNCT_MD5 is not valid for directory entries (DWARF 5 spec)"
+          | DW_LNCT_lo_user, _ | DW_LNCT_hi_user, _ -> (
+              match form with
+              | DW_FORM_string -> ignore (Object.Buffer.Read.zero_string cur ())
+              | DW_FORM_data1 -> ignore (Object.Buffer.Read.u8 cur)
+              | DW_FORM_data2 -> ignore (Object.Buffer.Read.u16 cur)
+              | DW_FORM_data4 -> ignore (Object.Buffer.Read.u32 cur)
+              | DW_FORM_data8 -> ignore (Object.Buffer.Read.u64 cur)
+              | DW_FORM_udata -> ignore (Object.Buffer.Read.uleb128 cur)
+              | _ ->
+                  failwith
+                    "Unsupported form for vendor-defined directory entry \
+                     content type")
+          | DW_LNCT_path, _form ->
+              failwith
+                "Unsupported form for DW_LNCT_path in directory entry \
+                 (expected DW_FORM_string or DW_FORM_line_strp)"
+        done;
+        directories.(i) <- !path_ref
+      done;
+
+      let file_name_entry_format_count = Object.Buffer.Read.u8 cur in
+      let file_name_entry_formats =
+        Array.make
+          (Unsigned.UInt8.to_int file_name_entry_format_count)
+          (DW_LNCT_path, DW_FORM_string)
+      in
+      for i = 0 to Array.length file_name_entry_formats - 1 do
+        let content_type_code = Object.Buffer.Read.uleb128 cur in
+        let form_code = Object.Buffer.Read.uleb128 cur in
+        let content_type = line_number_header_entry content_type_code in
+        let form = attribute_form_encoding (Unsigned.UInt64.of_int form_code) in
+        file_name_entry_formats.(i) <- (content_type, form)
+      done;
+
+      let file_names_count =
+        Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+      in
+      let file_names =
+        Array.make
+          (Unsigned.UInt32.to_int file_names_count)
+          {
+            name = "";
+            timestamp = Unsigned.UInt64.of_int 0;
+            size = Unsigned.UInt64.of_int 0;
+            directory = "";
+            md5_checksum = None;
+          }
+      in
+      for i = 0 to Array.length file_names - 1 do
+        let path_ref = ref "" in
+        let dir_index_ref = ref 0 in
+        let timestamp_ref = ref (Unsigned.UInt64.of_int 0) in
+        let file_size_ref = ref (Unsigned.UInt64.of_int 0) in
+        let md5_ref = ref None in
+
+        for j = 0 to Array.length file_name_entry_formats - 1 do
+          let content_type, form = file_name_entry_formats.(j) in
+          match (content_type, form) with
+          | DW_LNCT_path, DW_FORM_string -> (
+              path_ref :=
+                match Object.Buffer.Read.zero_string cur () with
+                | Some s -> s
+                | None -> "")
+          | DW_LNCT_path, DW_FORM_line_strp ->
+              let offset = read_offset_for_format format cur in
+              path_ref := resolve_line_strp_offset buffer offset
+          | DW_LNCT_directory_index, DW_FORM_udata ->
+              dir_index_ref := Object.Buffer.Read.uleb128 cur
+          | DW_LNCT_timestamp, DW_FORM_udata ->
+              timestamp_ref :=
+                Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
+          | DW_LNCT_size, DW_FORM_udata ->
+              file_size_ref :=
+                Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
+          | DW_LNCT_MD5, DW_FORM_data16 ->
+              let md5_bytes = Array.make 16 (Unsigned.UInt8.of_int 0) in
+              for k = 0 to 15 do
+                md5_bytes.(k) <- Object.Buffer.Read.u8 cur
+              done;
+              let md5_hex =
+                String.concat ""
+                  (Array.to_list
+                     (Array.map
+                        (fun b ->
+                          Printf.sprintf "%02x" (Unsigned.UInt8.to_int b))
+                        md5_bytes))
+              in
+              md5_ref := Some md5_hex
+          | DW_LNCT_directory_index, DW_FORM_data1 ->
+              dir_index_ref :=
+                Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int
+          | DW_LNCT_directory_index, DW_FORM_data2 ->
+              dir_index_ref :=
+                Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int
+          | DW_LNCT_timestamp, DW_FORM_data4 ->
+              timestamp_ref :=
+                Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int
+                |> Unsigned.UInt64.of_int
+          | DW_LNCT_timestamp, DW_FORM_data8 ->
+              timestamp_ref := Object.Buffer.Read.u64 cur
+          | DW_LNCT_size, DW_FORM_data1 ->
+              file_size_ref :=
+                Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int
+                |> Unsigned.UInt64.of_int
+          | DW_LNCT_size, DW_FORM_data2 ->
+              file_size_ref :=
+                Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int
+                |> Unsigned.UInt64.of_int
+          | DW_LNCT_size, DW_FORM_data4 ->
+              file_size_ref :=
+                Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int
+                |> Unsigned.UInt64.of_int
+          | DW_LNCT_size, DW_FORM_data8 ->
+              file_size_ref := Object.Buffer.Read.u64 cur
+          | DW_LNCT_lo_user, _ | DW_LNCT_hi_user, _ -> (
+              match form with
+              | DW_FORM_string -> ignore (Object.Buffer.Read.zero_string cur ())
+              | DW_FORM_data1 -> ignore (Object.Buffer.Read.u8 cur)
+              | DW_FORM_data2 -> ignore (Object.Buffer.Read.u16 cur)
+              | DW_FORM_data4 -> ignore (Object.Buffer.Read.u32 cur)
+              | DW_FORM_data8 -> ignore (Object.Buffer.Read.u64 cur)
+              | DW_FORM_data16 ->
+                  for _k = 0 to 15 do
+                    ignore (Object.Buffer.Read.u8 cur)
+                  done
+              | DW_FORM_udata -> ignore (Object.Buffer.Read.uleb128 cur)
+              | _ ->
+                  failwith
+                    "Unsupported form for vendor-defined file entry content \
+                     type")
+          | _content_type, _form ->
+              failwith
+                "Invalid content_type/form combination for file entry (DWARF 5 \
+                 spec)"
+        done;
+
+        let dir_name =
+          if !dir_index_ref < Array.length directories then
+            directories.(!dir_index_ref)
+          else ""
+        in
+        file_names.(i) <-
+          {
+            name = !path_ref;
+            timestamp = !timestamp_ref;
+            size = !file_size_ref;
+            directory = dir_name;
+            md5_checksum = !md5_ref;
+          }
+      done;
+
+      {
+        format;
+        unit_length;
+        version;
+        address_size;
+        segment_selector_size;
+        header_length;
+        minimum_instruction_length;
+        maximum_operations_per_instruction;
+        default_is_stmt;
+        line_base;
+        line_range;
+        opcode_base;
+        standard_opcode_lengths;
+        directory_entry_format_count;
+        directory_entry_formats;
+        directories_count;
+        directories;
+        file_name_entry_format_count;
+        file_name_entry_formats;
+        file_names_count;
+        file_names;
+      })
+    else
+      (* DWARF 4: null-terminated directory and file lists *)
+      let dirs = ref [] in
+      let rec read_dirs () =
+        match Object.Buffer.Read.zero_string cur () with
+        | Some s when String.length s > 0 ->
+            dirs := s :: !dirs;
+            read_dirs ()
+        | _ -> ()
+      in
+      read_dirs ();
+      let directories = Array.of_list (List.rev !dirs) in
+
+      let files = ref [] in
+      let rec read_files () =
+        match Object.Buffer.Read.zero_string cur () with
+        | Some name when String.length name > 0 ->
+            let dir_idx = Object.Buffer.Read.uleb128 cur in
+            let mtime = Object.Buffer.Read.uleb128 cur in
+            let flen = Object.Buffer.Read.uleb128 cur in
+            let dir_name =
+              if dir_idx >= 1 && dir_idx <= Array.length directories then
+                directories.(dir_idx - 1)
+              else ""
+            in
+            files :=
+              {
+                name;
+                timestamp = Unsigned.UInt64.of_int mtime;
+                size = Unsigned.UInt64.of_int flen;
+                directory = dir_name;
+                md5_checksum = None;
+              }
+              :: !files;
+            read_files ()
+        | _ -> ()
+      in
+      read_files ();
+      let file_names = Array.of_list (List.rev !files) in
+
+      {
+        format;
+        unit_length;
+        version;
+        address_size;
+        segment_selector_size;
+        header_length;
+        minimum_instruction_length;
+        maximum_operations_per_instruction;
+        default_is_stmt;
+        line_base;
+        line_range;
+        opcode_base;
+        standard_opcode_lengths;
+        directory_entry_format_count = Unsigned.UInt8.of_int 0;
+        directory_entry_formats = [||];
+        directories_count = Unsigned.UInt32.of_int (Array.length directories);
+        directories;
+        file_name_entry_format_count = Unsigned.UInt8.of_int 0;
+        file_name_entry_formats = [||];
+        file_names_count = Unsigned.UInt32.of_int (Array.length file_names);
+        file_names;
+      }
 
   (** Parse the line number program following the header.
 
@@ -2557,13 +2651,16 @@ module LineTable = struct
   let parse_line_program (cur : Object.Buffer.cursor)
       (header : line_program_header) : line_table_entry list =
     (* Calculate program length from header.
-       unit_length includes everything after the initial_length field:
-       - version (2) + address_size (1) + segment_selector_size (1) + header_length field (4 or 8)
-       - + header content (header_length bytes) + line program
-       So: program_length = unit_length - (4 + offset_size + header_length) *)
+       unit_length includes everything after the initial_length field.
+       DWARF 5: version(2) + address_size(1) + segment_selector_size(1)
+                + header_length_field(offset_size) = 4 + offset_size
+       DWARF 4: version(2) + header_length_field(offset_size)
+                = 2 + offset_size *)
     let offset_size = offset_size_for_format header.format in
-    let header_overhead = 4 + offset_size in
-    (* Fixed fields: version(2) + address_size(1) + segment_selector_size(1) + header_length field *)
+    let version_int = Unsigned.UInt16.to_int header.version in
+    let header_overhead =
+      if version_int >= 5 then 4 + offset_size else 2 + offset_size
+    in
     let total_program_length =
       Unsigned.UInt64.to_int header.unit_length
       - header_overhead
@@ -2797,6 +2894,80 @@ module LineTable = struct
       with End_of_file | _ -> program_done := true
     done;
 
+    List.rev !entries
+end
+
+module DebugLoc = struct
+  type entry =
+    | EndOfList
+    | BaseAddress of u64
+    | Location of { begin_addr : u64; end_addr : u64; expr : string }
+
+  let parse_list (cur : Object.Buffer.cursor) (address_size : int) : entry list
+      =
+    let max_addr =
+      if address_size = 4 then Unsigned.UInt64.of_int 0xFFFFFFFF
+      else Unsigned.UInt64.max_int
+    in
+    let read_addr () =
+      if address_size = 4 then
+        Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cur)
+      else Object.Buffer.Read.u64 cur
+    in
+    let entries = ref [] in
+    let done_ = ref false in
+    while not !done_ do
+      let addr1 = read_addr () in
+      let addr2 = read_addr () in
+      if
+        Unsigned.UInt64.compare addr1 Unsigned.UInt64.zero = 0
+        && Unsigned.UInt64.compare addr2 Unsigned.UInt64.zero = 0
+      then (
+        entries := EndOfList :: !entries;
+        done_ := true)
+      else if Unsigned.UInt64.compare addr1 max_addr = 0 then
+        entries := BaseAddress addr2 :: !entries
+      else
+        let len = Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int in
+        let expr = Object.Buffer.Read.fixed_string cur len in
+        entries :=
+          Location { begin_addr = addr1; end_addr = addr2; expr } :: !entries
+    done;
+    List.rev !entries
+end
+
+module DebugRanges = struct
+  type entry =
+    | EndOfList
+    | BaseAddress of u64
+    | Range of { begin_addr : u64; end_addr : u64 }
+
+  let parse_list (cur : Object.Buffer.cursor) (address_size : int) : entry list
+      =
+    let max_addr =
+      if address_size = 4 then Unsigned.UInt64.of_int 0xFFFFFFFF
+      else Unsigned.UInt64.max_int
+    in
+    let read_addr () =
+      if address_size = 4 then
+        Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cur)
+      else Object.Buffer.Read.u64 cur
+    in
+    let entries = ref [] in
+    let done_ = ref false in
+    while not !done_ do
+      let addr1 = read_addr () in
+      let addr2 = read_addr () in
+      if
+        Unsigned.UInt64.compare addr1 Unsigned.UInt64.zero = 0
+        && Unsigned.UInt64.compare addr2 Unsigned.UInt64.zero = 0
+      then (
+        entries := EndOfList :: !entries;
+        done_ := true)
+      else if Unsigned.UInt64.compare addr1 max_addr = 0 then
+        entries := BaseAddress addr2 :: !entries
+      else entries := Range { begin_addr = addr1; end_addr = addr2 } :: !entries
+    done;
     List.rev !entries
 end
 

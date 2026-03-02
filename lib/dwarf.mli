@@ -832,7 +832,7 @@ val parse_debug_macro_section :
   Object.Buffer.cursor -> int -> debug_macro_section
 (** Parse the entire debug_macro section from binary data *)
 
-(** Sections that hold DWARF 5 debugging information. *)
+(** Sections that hold DWARF debugging information. *)
 type dwarf_section =
   | Debug_info
   | Debug_abbrev
@@ -847,6 +847,10 @@ type dwarf_section =
   | Debug_addr
   | Debug_macro
   | Debug_frame
+  | Debug_loc
+  | Debug_ranges
+  | Debug_pubnames
+  | Debug_pubtypes
 
 (** Call frame instructions. Table 7.29: Call frame instruction encodings *)
 type call_frame_instruction =
@@ -981,6 +985,14 @@ module DIE : sig
     Object.Buffer.t ->
     t option
   (** Parse a single DIE from a buffer using abbreviation table. *)
+
+  val parse_attribute_value :
+    Object.Buffer.cursor ->
+    attribute_form_encoding ->
+    encoding ->
+    Object.Buffer.t ->
+    attribute_value
+  (** Parse a single attribute value from a buffer. *)
 
   val find_attribute : t -> attribute_encoding -> attribute_value option
   (** Find an attribute by name in a DIE *)
@@ -1313,6 +1325,31 @@ end
     interoperability between different tools and compilers.
 
     Reference: DWARF 5 specification, section 6.4 "Call Frame Information" *)
+
+(** DWARF 4 location list parsing for .debug_loc section. *)
+module DebugLoc : sig
+  type entry =
+    | EndOfList
+    | BaseAddress of u64
+    | Location of { begin_addr : u64; end_addr : u64; expr : string }
+
+  val parse_list : Object.Buffer.cursor -> int -> entry list
+  (** Parse a location list from the .debug_loc section. The [int] parameter is
+      the address size (4 or 8). *)
+end
+
+(** DWARF 4 range list parsing for .debug_ranges section. *)
+module DebugRanges : sig
+  type entry =
+    | EndOfList
+    | BaseAddress of u64
+    | Range of { begin_addr : u64; end_addr : u64 }
+
+  val parse_list : Object.Buffer.cursor -> int -> entry list
+  (** Parse a range list from the .debug_ranges section. The [int] parameter is
+      the address size (4 or 8). *)
+end
+
 module CallFrame : sig
   val debug_frame_cie_id : u32
   (** Distinguished CIE identifier (0xffffffff) for .debug_frame sections *)
