@@ -549,6 +549,210 @@ let test_dwarf4_line_table_header () =
   check string "file name" "test.c" header.file_names.(0).name;
   check string "file directory" "mydir" header.file_names.(0).directory
 
+(* ---- DW_FORM_addr with 4-byte address ---- *)
+
+let test_dw_form_addr_4byte () =
+  let bytes = [ 0x78; 0x56; 0x34; 0x12 ] in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let encoding : Dwarf.encoding =
+    { format = Dwarf.DWARF32; address_size = u8 4; version = u16 4 }
+  in
+  let value =
+    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_addr encoding buffer
+  in
+  match value with
+  | Dwarf.DIE.Address addr ->
+      check int64 "addr 0x12345678" (Unsigned.UInt64.to_int64 addr) 0x12345678L
+  | _ -> fail "expected Address"
+
+let test_dw_form_addr_8byte () =
+  let bytes = [ 0xf0; 0xde; 0xbc; 0x9a; 0x78; 0x56; 0x34; 0x12 ] in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let encoding : Dwarf.encoding =
+    { format = Dwarf.DWARF32; address_size = u8 8; version = u16 5 }
+  in
+  let value =
+    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_addr encoding buffer
+  in
+  match value with
+  | Dwarf.DIE.Address addr ->
+      check int64 "addr 8-byte"
+        (Unsigned.UInt64.to_int64 addr)
+        (Int64.of_string "0x123456789abcdef0")
+  | _ -> fail "expected Address"
+
+(* ---- DebugTypes tests ---- *)
+
+let test_debug_types_header () =
+  (* DWARF 4 type unit header (DWARF32):
+     initial_length: 4 bytes
+     version: 2 bytes (4)
+     abbrev_offset: 4 bytes (0x30)
+     address_size: 1 byte (8)
+     type_signature: 8 bytes (0xDEADBEEFCAFEBABE)
+     type_offset: 4 bytes (0x20) *)
+  let bytes =
+    [
+      (* initial_length: 23 = 2+4+1+8+4 + some DIE data *)
+      0x17;
+      0x00;
+      0x00;
+      0x00;
+      (* version: 4 *)
+      0x04;
+      0x00;
+      (* abbrev_offset: 0x30 *)
+      0x30;
+      0x00;
+      0x00;
+      0x00;
+      (* address_size: 8 *)
+      0x08;
+      (* type_signature: 0xDEADBEEFCAFEBABE LE *)
+      0xBE;
+      0xBA;
+      0xFE;
+      0xCA;
+      0xEF;
+      0xBE;
+      0xAD;
+      0xDE;
+      (* type_offset: 0x20 *)
+      0x20;
+      0x00;
+      0x00;
+      0x00;
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let _span, header = Dwarf.DebugTypes.parse_type_unit_header cursor in
+  check int "version is 4" (Unsigned.UInt16.to_int header.version) 4;
+  check int64 "abbrev_offset is 0x30"
+    (Unsigned.UInt64.to_int64 header.debug_abbrev_offset)
+    0x30L;
+  check int "address_size is 8" (Unsigned.UInt8.to_int header.address_size) 8;
+  check int64 "type_signature"
+    (Unsigned.UInt64.to_int64 header.type_signature)
+    (Int64.of_string "-0x2152411035014542");
+  check int64 "type_offset is 0x20"
+    (Unsigned.UInt64.to_int64 header.type_offset)
+    0x20L
+
+(* ---- DebugPubnames tests ---- *)
+
+let test_debug_pubnames_set () =
+  (* pubnames set: DWARF32
+     initial_length, version=2, info_offset=0, info_length=0x100
+     entry: offset=0x2a, name="main"
+     terminator: offset=0 *)
+  let name_bytes = List.map Char.code (List.of_seq (String.to_seq "main")) in
+  let bytes =
+    [
+      (* initial_length: compute later — use a big value *)
+      0x1a;
+      0x00;
+      0x00;
+      0x00;
+      (* version: 2 *)
+      0x02;
+      0x00;
+      (* debug_info_offset: 0 *)
+      0x00;
+      0x00;
+      0x00;
+      0x00;
+      (* debug_info_length: 0x100 *)
+      0x00;
+      0x01;
+      0x00;
+      0x00;
+      (* entry offset: 0x2a *)
+      0x2a;
+      0x00;
+      0x00;
+      0x00;
+    ]
+    @ name_bytes
+    @ [
+        0x00;
+        (* null terminator for name *)
+        (* terminator: offset=0 *)
+        0x00;
+        0x00;
+        0x00;
+        0x00;
+      ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let header, entries = Dwarf.DebugPubnames.parse_set cursor in
+  check int "version is 2" (Unsigned.UInt16.to_int header.version) 2;
+  check int64 "info_offset is 0"
+    (Unsigned.UInt64.to_int64 header.debug_info_offset)
+    0L;
+  check int64 "info_length is 0x100"
+    (Unsigned.UInt64.to_int64 header.debug_info_length)
+    0x100L;
+  check int "one entry" 1 (List.length entries);
+  let e = List.hd entries in
+  check int64 "entry offset 0x2a" (Unsigned.UInt64.to_int64 e.offset) 0x2aL;
+  check string "entry name" "main" e.name
+
+let test_debug_pubtypes_set () =
+  (* pubtypes set: similar to pubnames *)
+  let name_bytes = List.map Char.code (List.of_seq (String.to_seq "int")) in
+  let bytes =
+    [
+      0x19;
+      0x00;
+      0x00;
+      0x00;
+      (* initial_length *)
+      0x02;
+      0x00;
+      (* version: 2 *)
+      0x00;
+      0x00;
+      0x00;
+      0x00;
+      (* debug_info_offset: 0 *)
+      0x80;
+      0x00;
+      0x00;
+      0x00;
+      (* debug_info_length: 0x80 *)
+      0x10;
+      0x00;
+      0x00;
+      0x00;
+      (* entry offset: 0x10 *)
+    ]
+    @ name_bytes
+    @ [ 0x00; (* null terminator *) 0x00; 0x00; 0x00; 0x00 (* terminator *) ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let header, entries = Dwarf.DebugPubtypes.parse_set cursor in
+  check int "version is 2" (Unsigned.UInt16.to_int header.version) 2;
+  check int64 "info_length is 0x80"
+    (Unsigned.UInt64.to_int64 header.debug_info_length)
+    0x80L;
+  check int "one entry" 1 (List.length entries);
+  let e = List.hd entries in
+  check int64 "entry offset 0x10" (Unsigned.UInt64.to_int64 e.offset) 0x10L;
+  check string "entry name" "int" e.name
+
+(* ---- Debug_types section name ---- *)
+
+let test_debug_types_section_name () =
+  check string "ELF debug_types" ".debug_types"
+    (Dwarf.object_format_to_section_name Object_format.ELF Dwarf.Debug_types);
+  check string "MachO debug_types" "__debug_types"
+    (Dwarf.object_format_to_section_name Object_format.MACHO Dwarf.Debug_types)
+
 let () =
   run "DWARF 4 Support"
     [
@@ -563,8 +767,11 @@ let () =
             test_unsupported_version_rejected;
         ] );
       ( "section_types",
-        [ test_case "DWARF 4 section names" `Quick test_dwarf4_section_names ]
-      );
+        [
+          test_case "DWARF 4 section names" `Quick test_dwarf4_section_names;
+          test_case "debug_types section name" `Quick
+            test_debug_types_section_name;
+        ] );
       ( "debug_loc",
         [
           test_case "end of list" `Quick test_debug_loc_end_of_list;
@@ -582,10 +789,18 @@ let () =
         [
           test_case "DW_FORM_ref_addr" `Quick test_dw_form_ref_addr;
           test_case "DW_FORM_indirect" `Quick test_dw_form_indirect;
+          test_case "DW_FORM_addr 4-byte" `Quick test_dw_form_addr_4byte;
+          test_case "DW_FORM_addr 8-byte" `Quick test_dw_form_addr_8byte;
         ] );
       ( "line_table",
         [
           test_case "DWARF 4 line table header" `Quick
             test_dwarf4_line_table_header;
         ] );
+      ( "debug_types",
+        [ test_case "type unit header" `Quick test_debug_types_header ] );
+      ( "debug_pubnames",
+        [ test_case "pubnames set" `Quick test_debug_pubnames_set ] );
+      ( "debug_pubtypes",
+        [ test_case "pubtypes set" `Quick test_debug_pubtypes_set ] );
     ]

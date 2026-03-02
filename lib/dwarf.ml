@@ -18,6 +18,7 @@ type dwarf_section =
   | Debug_ranges
   | Debug_pubnames
   | Debug_pubtypes
+  | Debug_types
 
 (** Convert Mach-O cpu_type to architecture string *)
 let string_of_cpu_type = function
@@ -164,7 +165,8 @@ let object_format_to_section_name format section =
       | Debug_loc -> "__debug_loc"
       | Debug_ranges -> "__debug_ranges"
       | Debug_pubnames -> "__debug_pubnames"
-      | Debug_pubtypes -> "__debug_pubtypes")
+      | Debug_pubtypes -> "__debug_pubtypes"
+      | Debug_types -> "__debug_types")
   | Object_format.ELF -> (
       match section with
       | Debug_info -> ".debug_info"
@@ -183,7 +185,8 @@ let object_format_to_section_name format section =
       | Debug_loc -> ".debug_loc"
       | Debug_ranges -> ".debug_ranges"
       | Debug_pubnames -> ".debug_pubnames"
-      | Debug_pubtypes -> ".debug_pubtypes")
+      | Debug_pubtypes -> ".debug_pubtypes"
+      | Debug_types -> ".debug_types")
 
 include Dwarf_abbreviation_tag
 include Dwarf_attribute
@@ -1799,7 +1802,12 @@ module DIE = struct
         let value = Object.Buffer.Read.sleb128 cur in
         SData (Signed.Int64.of_int value)
     | DW_FORM_addr ->
-        let addr = Object.Buffer.Read.u64 cur in
+        let addr =
+          let size = Unsigned.UInt8.to_int encoding.address_size in
+          if size = 4 then
+            Object.Buffer.Read.u32 cur |> Unsigned.UInt64.of_uint32
+          else Object.Buffer.Read.u64 cur
+        in
         Address addr
     | DW_FORM_flag ->
         let flag = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
@@ -2668,10 +2676,14 @@ module LineTable = struct
     in
     let bytes_read = ref 0 in
 
-    (* Initialize the line number state machine *)
+    (* Initialize the line number state machine.
+       DWARF 5: file register starts at 0 (0-based indices).
+       DWARF 4: file register starts at 1 (1-based indices). *)
+    let is_dwarf4 = version_int < 5 in
+    let init_file = if is_dwarf4 then 1 else 0 in
     let address = ref (Unsigned.UInt64.of_int 0) in
     let op_index = ref (Unsigned.UInt32.of_int 0) in
-    let file_index = ref (Unsigned.UInt32.of_int 1) in
+    let file_index = ref (Unsigned.UInt32.of_int init_file) in
     let line = ref (Unsigned.UInt32.of_int 1) in
     let column = ref (Unsigned.UInt32.of_int 0) in
     let is_stmt = ref header.default_is_stmt in
@@ -2689,7 +2701,7 @@ module LineTable = struct
     let reset_state () =
       address := Unsigned.UInt64.of_int 0;
       op_index := Unsigned.UInt32.of_int 0;
-      file_index := Unsigned.UInt32.of_int 1;
+      file_index := Unsigned.UInt32.of_int init_file;
       line := Unsigned.UInt32.of_int 1;
       column := Unsigned.UInt32.of_int 0;
       is_stmt := header.default_is_stmt;
@@ -2701,13 +2713,20 @@ module LineTable = struct
       discriminator := Unsigned.UInt32.of_int 0
     in
 
-    (* Helper function to create a line table entry *)
+    (* Helper function to create a line table entry.
+       Normalizes file_index to 0-based for both DWARF 4 and 5. *)
     let make_entry () =
+      let normalized_file_index =
+        if is_dwarf4 then
+          let v = Unsigned.UInt32.to_int !file_index in
+          Unsigned.UInt32.of_int (max 0 (v - 1))
+        else !file_index
+      in
       {
         address = !address;
         line = !line;
         column = !column;
-        file_index = !file_index;
+        file_index = normalized_file_index;
         isa = !isa;
         discriminator = !discriminator;
         op_index = !op_index;
@@ -2969,6 +2988,127 @@ module DebugRanges = struct
       else entries := Range { begin_addr = addr1; end_addr = addr2 } :: !entries
     done;
     List.rev !entries
+end
+
+module DebugTypes = struct
+  type type_unit_header = {
+    format : dwarf_format;
+    unit_length : u64;
+    version : u16;
+    debug_abbrev_offset : u64;
+    address_size : u8;
+    type_signature : u64;
+    type_offset : u64;
+    header_span : span;
+  }
+
+  let parse_type_unit_header (cur : Object.Buffer.cursor) :
+      span * type_unit_header =
+    let start = cur.position in
+    let format, unit_length = parse_initial_length cur in
+    let version = Object.Buffer.Read.u16 cur in
+    let version_int = Unsigned.UInt16.to_int version in
+    if version_int <> 4 then
+      failwith
+        (Printf.sprintf
+           "Unsupported .debug_types version: %d (only 4 supported)" version_int);
+    let debug_abbrev_offset = read_offset_for_format format cur in
+    let address_size = Object.Buffer.Read.u8 cur in
+    let type_signature = Object.Buffer.Read.u64 cur in
+    let type_offset = read_offset_for_format format cur in
+    let header_end = cur.position in
+    let header_size = header_end - start in
+    let header_span =
+      {
+        start = Unsigned.UInt64.of_int start;
+        size = Unsigned.UInt64.of_int header_size;
+      }
+    in
+    let length_field_size = match format with DWARF32 -> 4 | DWARF64 -> 12 in
+    let total_size = start + length_field_size in
+    let span =
+      {
+        start = Unsigned.UInt64.of_int start;
+        size = Unsigned.UInt64.of_int total_size;
+      }
+    in
+    ( span,
+      {
+        format;
+        unit_length;
+        version;
+        debug_abbrev_offset;
+        address_size;
+        type_signature;
+        type_offset;
+        header_span;
+      } )
+end
+
+module DebugPubnames = struct
+  type header = {
+    format : dwarf_format;
+    unit_length : u64;
+    version : u16;
+    debug_info_offset : u64;
+    debug_info_length : u64;
+  }
+
+  type entry = { offset : u64; name : string }
+
+  let parse_set (cur : Object.Buffer.cursor) : header * entry list =
+    let format, unit_length = parse_initial_length cur in
+    let version = Object.Buffer.Read.u16 cur in
+    let debug_info_offset = read_offset_for_format format cur in
+    let debug_info_length = read_offset_for_format format cur in
+    let header =
+      { format; unit_length; version; debug_info_offset; debug_info_length }
+    in
+    let entries = ref [] in
+    let done_ = ref false in
+    while not !done_ do
+      let offset = read_offset_for_format format cur in
+      if Unsigned.UInt64.compare offset Unsigned.UInt64.zero = 0 then
+        done_ := true
+      else
+        match Object.Buffer.Read.zero_string cur () with
+        | Some name -> entries := { offset; name } :: !entries
+        | None -> done_ := true
+    done;
+    (header, List.rev !entries)
+end
+
+module DebugPubtypes = struct
+  type header = {
+    format : dwarf_format;
+    unit_length : u64;
+    version : u16;
+    debug_info_offset : u64;
+    debug_info_length : u64;
+  }
+
+  type entry = { offset : u64; name : string }
+
+  let parse_set (cur : Object.Buffer.cursor) : header * entry list =
+    let format, unit_length = parse_initial_length cur in
+    let version = Object.Buffer.Read.u16 cur in
+    let debug_info_offset = read_offset_for_format format cur in
+    let debug_info_length = read_offset_for_format format cur in
+    let header =
+      { format; unit_length; version; debug_info_offset; debug_info_length }
+    in
+    let entries = ref [] in
+    let done_ = ref false in
+    while not !done_ do
+      let offset = read_offset_for_format format cur in
+      if Unsigned.UInt64.compare offset Unsigned.UInt64.zero = 0 then
+        done_ := true
+      else
+        match Object.Buffer.Read.zero_string cur () with
+        | Some name -> entries := { offset; name } :: !entries
+        | None -> done_ := true
+    done;
+    (header, List.rev !entries)
 end
 
 (** Call frame information parsing for Debug_frame section *)

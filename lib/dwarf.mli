@@ -851,6 +851,7 @@ type dwarf_section =
   | Debug_ranges
   | Debug_pubnames
   | Debug_pubtypes
+  | Debug_types
 
 (** Call frame instructions. Table 7.29: Call frame instruction encodings *)
 type call_frame_instruction =
@@ -1348,6 +1349,55 @@ module DebugRanges : sig
   val parse_list : Object.Buffer.cursor -> int -> entry list
   (** Parse a range list from the .debug_ranges section. The [int] parameter is
       the address size (4 or 8). *)
+end
+
+(** DWARF 4 type unit header parsing for .debug_types section. *)
+module DebugTypes : sig
+  type type_unit_header = {
+    format : dwarf_format;
+    unit_length : u64;
+    version : u16;
+    debug_abbrev_offset : u64;
+    address_size : u8;
+    type_signature : u64;
+    type_offset : u64;
+    header_span : span;
+  }
+
+  val parse_type_unit_header : Object.Buffer.cursor -> span * type_unit_header
+  (** Parse a type unit header from the .debug_types section. *)
+end
+
+(** DWARF 4 .debug_pubnames section parsing. *)
+module DebugPubnames : sig
+  type header = {
+    format : dwarf_format;
+    unit_length : u64;
+    version : u16;
+    debug_info_offset : u64;
+    debug_info_length : u64;
+  }
+
+  type entry = { offset : u64; name : string }
+
+  val parse_set : Object.Buffer.cursor -> header * entry list
+  (** Parse one pubnames set (header + entries terminated by a zero offset). *)
+end
+
+(** DWARF 4 .debug_pubtypes section parsing. *)
+module DebugPubtypes : sig
+  type header = {
+    format : dwarf_format;
+    unit_length : u64;
+    version : u16;
+    debug_info_offset : u64;
+    debug_info_length : u64;
+  }
+
+  type entry = { offset : u64; name : string }
+
+  val parse_set : Object.Buffer.cursor -> header * entry list
+  (** Parse one pubtypes set (header + entries terminated by a zero offset). *)
 end
 
 module CallFrame : sig
