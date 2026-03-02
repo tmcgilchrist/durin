@@ -4,7 +4,6 @@ type register = Register of int
 
 module type ARCH = sig
   val register_name : register -> string option
-
   val name_to_register : string -> register option
 end
 

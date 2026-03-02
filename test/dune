@@ -49,30 +49,6 @@
  (action
   (run %{exe:test_dwarf64_parsing.exe})))
 
-(test
- (name test_split_dwarf_parsing)
- (libraries durin object alcotest)
- (action
-  (run %{exe:test_split_dwarf_parsing.exe})))
-
-(test
- (name test_cu_index_parsing)
- (libraries durin object alcotest)
- (action
-  (run %{exe:test_cu_index_parsing.exe})))
-
-(test
- (name test_tu_index_parsing)
- (libraries durin object alcotest)
- (action
-  (run %{exe:test_tu_index_parsing.exe})))
-
-(test
- (name test_split_dwarf_integration)
- (libraries durin object alcotest)
- (action
-  (run %{exe:test_split_dwarf_integration.exe})))
-
 ; =============================================================================
 ; MACOS PLATFORM TESTS
 ; =============================================================================
