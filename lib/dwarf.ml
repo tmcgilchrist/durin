@@ -2078,7 +2078,10 @@ module CompileUnit = struct
     debug_abbrev_offset : u64;
     address_size : u8;
     header_span : span;
-    addr_base : u64 option; (* Address table base offset from DW_AT_addr_base *)
+    addr_base : u64 option;
+    type_signature : u64 option;
+    type_offset : u64 option;
+    dwo_id : u64 option;
   }
 
   type t = {
@@ -2153,16 +2156,23 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
 
   let parsed_unit_type = unit_type_of_u8 unit_type in
 
-  (* Only support compile unit type DW_UT_compile *)
-  if parsed_unit_type <> DW_UT_compile then
-    failwith
-      ("Only DW_UT_compile unit type is supported, got: "
-      ^ string_of_unit_type parsed_unit_type);
-
   (* Validate address size *)
   let addr_int = Unsigned.UInt8.to_int address_size in
   if addr_int <> 4 && addr_int <> 8 then
     failwith (Printf.sprintf "Invalid address size: %d" addr_int);
+
+  (* Parse extra fields based on unit type (DWARF 5 only) *)
+  let type_signature, type_offset, dwo_id =
+    match parsed_unit_type with
+    | DW_UT_type | DW_UT_split_type ->
+        let sig8 = Object.Buffer.Read.u64 cur in
+        let toff = read_offset_for_format format cur in
+        (Some sig8, Some toff, None)
+    | DW_UT_skeleton | DW_UT_split_compile ->
+        let id = Object.Buffer.Read.u64 cur in
+        (None, None, Some id)
+    | _ -> (None, None, None)
+  in
 
   let header_end = cur.position in
   let header_size = header_end - start in
@@ -2194,7 +2204,9 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
       address_size;
       header_span;
       addr_base = None;
-      (* Will be populated later from DIE parsing *)
+      type_signature;
+      type_offset;
+      dwo_id;
     } )
 
 let parse_compile_unit (object_file : Object_file.t)

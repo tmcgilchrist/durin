@@ -1026,13 +1026,22 @@ module CompileUnit : sig
   type header = {
     format : dwarf_format;  (** DWARF32 or DWARF64 format *)
     unit_length : u64;  (** Length of this unit excluding the length field *)
-    version : u16;  (** DWARF version (must be 5) *)
+    version : u16;  (** DWARF version (4 or 5) *)
     unit_type : u8;
+        (** Unit type byte (0x01=compile, 0x02=type, 0x03=partial,
+            0x04=skeleton, 0x05=split_compile, 0x06=split_type).
+            Synthesized as 0x01 for DWARF 4. *)
     debug_abbrev_offset : u64;  (** Offset into debug abbreviation table *)
-    address_size : u8;  (** Size of addresses in bytes (must be 8) *)
+    address_size : u8;  (** Size of addresses in bytes (4 or 8) *)
     header_span : span;  (** Span indicating the header's position and size *)
     addr_base : u64 option;
         (** Address table base offset from DW_AT_addr_base *)
+    type_signature : u64 option;
+        (** Type signature for DW_UT_type and DW_UT_split_type units *)
+    type_offset : u64 option;
+        (** Offset to the type DIE within the unit, for type units *)
+    dwo_id : u64 option;
+        (** DWO id for DW_UT_skeleton and DW_UT_split_compile units *)
   }
   (** Parsed header data from a compilation unit. This contains the essential
       metadata needed to interpret the unit's content. *)

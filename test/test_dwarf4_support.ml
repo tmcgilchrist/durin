@@ -140,6 +140,137 @@ let test_unsupported_version_rejected () =
     (Failure "Unsupported DWARF version: 3 (only 4 and 5 supported)") (fun () ->
       ignore (Dwarf.parse_compile_unit_header cursor))
 
+(* ---- Non-compile unit type tests ---- *)
+
+let test_dwarf5_type_unit_header () =
+  (* DWARF 5 type unit: DW_UT_type (0x02)
+     Header: initial_length, version=5, unit_type=0x02,
+     address_size=8, abbrev_offset=0,
+     type_signature=0xDEADBEEFCAFEBABE,
+     type_offset=0x20 *)
+  let bytes =
+    [
+      (* initial_length: enough for header *)
+      0x1d; 0x00; 0x00; 0x00;
+      (* version: 5 *)
+      0x05; 0x00;
+      (* unit_type: DW_UT_type *)
+      0x02;
+      (* address_size: 8 *)
+      0x08;
+      (* debug_abbrev_offset: 0 *)
+      0x00; 0x00; 0x00; 0x00;
+      (* type_signature LE *)
+      0xBE; 0xBA; 0xFE; 0xCA; 0xEF; 0xBE; 0xAD; 0xDE;
+      (* type_offset: 0x20 *)
+      0x20; 0x00; 0x00; 0x00;
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let _span, header =
+    Dwarf.parse_compile_unit_header cursor
+  in
+  check int "unit_type is 0x02"
+    (Unsigned.UInt8.to_int header.unit_type) 0x02;
+  check int "version is 5"
+    (Unsigned.UInt16.to_int header.version) 5;
+  (match header.type_signature with
+  | Some sig8 ->
+      check int64 "type_signature"
+        (Unsigned.UInt64.to_int64 sig8)
+        (Int64.of_string "-0x2152411035014542")
+  | None -> fail "expected type_signature");
+  (match header.type_offset with
+  | Some toff ->
+      check int64 "type_offset 0x20"
+        (Unsigned.UInt64.to_int64 toff) 0x20L
+  | None -> fail "expected type_offset");
+  check bool "no dwo_id" true (header.dwo_id = None)
+
+let test_dwarf5_partial_unit_header () =
+  (* DW_UT_partial (0x03) — same layout as compile *)
+  let bytes =
+    [
+      0x19; 0x00; 0x00; 0x00;
+      0x05; 0x00;
+      0x03; (* DW_UT_partial *)
+      0x08;
+      0x00; 0x00; 0x00; 0x00;
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let _span, header =
+    Dwarf.parse_compile_unit_header cursor
+  in
+  check int "unit_type is 0x03"
+    (Unsigned.UInt8.to_int header.unit_type) 0x03;
+  check bool "no type_signature" true
+    (header.type_signature = None);
+  check bool "no dwo_id" true (header.dwo_id = None)
+
+let test_dwarf5_skeleton_unit_header () =
+  (* DW_UT_skeleton (0x04): extra dwo_id (8 bytes) *)
+  let bytes =
+    [
+      0x19; 0x00; 0x00; 0x00;
+      0x05; 0x00;
+      0x04; (* DW_UT_skeleton *)
+      0x08;
+      0x00; 0x00; 0x00; 0x00;
+      (* dwo_id: 0x0102030405060708 LE *)
+      0x08; 0x07; 0x06; 0x05; 0x04; 0x03; 0x02; 0x01;
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let _span, header =
+    Dwarf.parse_compile_unit_header cursor
+  in
+  check int "unit_type is 0x04"
+    (Unsigned.UInt8.to_int header.unit_type) 0x04;
+  (match header.dwo_id with
+  | Some id ->
+      check int64 "dwo_id"
+        (Unsigned.UInt64.to_int64 id)
+        (Int64.of_string "0x0102030405060708")
+  | None -> fail "expected dwo_id");
+  check bool "no type_signature" true
+    (header.type_signature = None)
+
+let test_dwarf5_split_compile_unit_header () =
+  (* DW_UT_split_compile (0x05): extra dwo_id *)
+  let bytes =
+    [
+      0x19; 0x00; 0x00; 0x00;
+      0x05; 0x00;
+      0x05; (* DW_UT_split_compile *)
+      0x04; (* 32-bit addresses *)
+      0x10; 0x00; 0x00; 0x00; (* abbrev_offset 0x10 *)
+      (* dwo_id *)
+      0xAA; 0xBB; 0xCC; 0xDD; 0xEE; 0xFF; 0x00; 0x11;
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let _span, header =
+    Dwarf.parse_compile_unit_header cursor
+  in
+  check int "unit_type is 0x05"
+    (Unsigned.UInt8.to_int header.unit_type) 0x05;
+  check int "address_size is 4"
+    (Unsigned.UInt8.to_int header.address_size) 4;
+  check int64 "abbrev_offset 0x10"
+    (Unsigned.UInt64.to_int64 header.debug_abbrev_offset)
+    0x10L;
+  (match header.dwo_id with
+  | Some id ->
+      check int64 "dwo_id"
+        (Unsigned.UInt64.to_int64 id)
+        (Int64.of_string "0x1100FFEEDDCCBBAA")
+  | None -> fail "expected dwo_id")
+
 (* ---- PR 3: Section type tests ---- *)
 
 let test_dwarf4_section_names () =
@@ -1175,6 +1306,14 @@ let () =
             test_dwarf4_cu_header_32bit;
           test_case "unsupported version rejected" `Quick
             test_unsupported_version_rejected;
+          test_case "DWARF 5 type unit" `Quick
+            test_dwarf5_type_unit_header;
+          test_case "DWARF 5 partial unit" `Quick
+            test_dwarf5_partial_unit_header;
+          test_case "DWARF 5 skeleton unit" `Quick
+            test_dwarf5_skeleton_unit_header;
+          test_case "DWARF 5 split compile unit" `Quick
+            test_dwarf5_split_compile_unit_header;
         ] );
       ( "section_types",
         [
