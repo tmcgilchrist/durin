@@ -980,32 +980,20 @@ let dump_debug_loclists filename =
           (* No debug_loclists section found - this is normal for simple programs.
              Show empty section output to match system dwarfdump behavior *)
           ()
-      | Some (section_offset, _section_size) ->
-          (* Parse the debug_loclists section *)
-          let loclists_section =
-            Dwarf.DebugLoclists.parse buffer
-              (Unsigned.UInt64.to_uint32 section_offset)
-          in
-
-          (* Check if section is empty (indicated by zero unit_length) *)
-          if
-            Unsigned.UInt64.equal loclists_section.header.unit_length
-              Unsigned.UInt64.zero
-          then
-            (* Empty section - no output needed, this matches system dwarfdump *)
-            ()
-          else
-            (* Format output similar to other debug sections *)
-            Printf.printf
-              "Location lists header: length = 0x%08Lx, format = DWARF32, \
-               version = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x, \
-               offset_entry_count = 0x%08lx\n"
-              (Unsigned.UInt64.to_int64 loclists_section.header.unit_length)
-              (Unsigned.UInt16.to_int loclists_section.header.version)
-              (Unsigned.UInt8.to_int loclists_section.header.address_size)
-              (Unsigned.UInt8.to_int loclists_section.header.segment_size)
-              (Unsigned.UInt32.to_int32
-                 loclists_section.header.offset_entry_count))
+      | Some (_section_offset, _section_size) ->
+          (match Dwarf.DebugLoclists.parse buffer with
+          | None -> ()
+          | Some loclists_section ->
+              Printf.printf
+                "Location lists header: length = 0x%08Lx, format = DWARF32, \
+                 version = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x, \
+                 offset_entry_count = 0x%08lx\n"
+                (Unsigned.UInt64.to_int64 loclists_section.header.unit_length)
+                (Unsigned.UInt16.to_int loclists_section.header.version)
+                (Unsigned.UInt8.to_int loclists_section.header.address_size)
+                (Unsigned.UInt8.to_int loclists_section.header.segment_size)
+                (Unsigned.UInt32.to_int32
+                   loclists_section.header.offset_entry_count)))
 
 (* Command line interface *)
 let filename =

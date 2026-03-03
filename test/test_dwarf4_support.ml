@@ -418,7 +418,7 @@ let test_dw_form_ref_addr () =
   in
   let value =
     Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_ref_addr encoding
-      buffer
+      buffer ()
   in
   match value with
   | Dwarf.DIE.Reference offset ->
@@ -451,7 +451,7 @@ let test_dw_form_indirect () =
   in
   let value =
     Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_indirect encoding
-      buffer
+      buffer ()
   in
   match value with
   | Dwarf.DIE.UData v ->
@@ -559,7 +559,7 @@ let test_dw_form_addr_4byte () =
     { format = Dwarf.DWARF32; address_size = u8 4; version = u16 4 }
   in
   let value =
-    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_addr encoding buffer
+    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_addr encoding buffer ()
   in
   match value with
   | Dwarf.DIE.Address addr ->
@@ -574,7 +574,7 @@ let test_dw_form_addr_8byte () =
     { format = Dwarf.DWARF32; address_size = u8 8; version = u16 5 }
   in
   let value =
-    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_addr encoding buffer
+    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_addr encoding buffer ()
   in
   match value with
   | Dwarf.DIE.Address addr ->
@@ -582,6 +582,373 @@ let test_dw_form_addr_8byte () =
         (Unsigned.UInt64.to_int64 addr)
         (Int64.of_string "0x123456789abcdef0")
   | _ -> fail "expected Address"
+
+(* ---- DW_FORM_implicit_const test ---- *)
+
+let test_dw_form_implicit_const () =
+  let bytes = [] in
+  let buffer = buffer_of_bytes (0x00 :: bytes) in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let encoding : Dwarf.encoding =
+    { format = Dwarf.DWARF32; address_size = u8 8; version = u16 5 }
+  in
+  let value =
+    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_implicit_const encoding
+      buffer ~implicit_const:42L ()
+  in
+  match value with
+  | Dwarf.DIE.SData v ->
+      check int64 "implicit_const value" (Signed.Int64.to_int64 v) 42L
+  | _ -> fail "expected SData"
+
+let test_dw_form_implicit_const_negative () =
+  let buffer = buffer_of_bytes [ 0x00 ] in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let encoding : Dwarf.encoding =
+    { format = Dwarf.DWARF32; address_size = u8 8; version = u16 5 }
+  in
+  let value =
+    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_implicit_const encoding
+      buffer ~implicit_const:(-5L) ()
+  in
+  match value with
+  | Dwarf.DIE.SData v ->
+      check int64 "negative implicit_const" (Signed.Int64.to_int64 v) (-5L)
+  | _ -> fail "expected SData"
+
+(* ---- DW_FORM_loclistx / rnglistx / ref_udata / ref_sig8 ---- *)
+
+let test_dw_form_loclistx () =
+  (* ULEB128 index = 3 *)
+  let bytes = [ 0x03 ] in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let encoding : Dwarf.encoding =
+    { format = Dwarf.DWARF32; address_size = u8 8; version = u16 5 }
+  in
+  let value =
+    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_loclistx
+      encoding buffer ()
+  in
+  match value with
+  | Dwarf.DIE.UData v ->
+      check int64 "loclistx index 3"
+        (Unsigned.UInt64.to_int64 v) 3L
+  | _ -> fail "expected UData"
+
+let test_dw_form_rnglistx () =
+  (* ULEB128 index = 7 *)
+  let bytes = [ 0x07 ] in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let encoding : Dwarf.encoding =
+    { format = Dwarf.DWARF32; address_size = u8 8; version = u16 5 }
+  in
+  let value =
+    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_rnglistx
+      encoding buffer ()
+  in
+  match value with
+  | Dwarf.DIE.UData v ->
+      check int64 "rnglistx index 7"
+        (Unsigned.UInt64.to_int64 v) 7L
+  | _ -> fail "expected UData"
+
+let test_dw_form_ref_udata () =
+  (* ULEB128 = 0x80 0x01 = 128 *)
+  let bytes = [ 0x80; 0x01 ] in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let encoding : Dwarf.encoding =
+    { format = Dwarf.DWARF32; address_size = u8 8; version = u16 5 }
+  in
+  let value =
+    Dwarf.DIE.parse_attribute_value cursor
+      Dwarf.DW_FORM_ref_udata encoding buffer ()
+  in
+  match value with
+  | Dwarf.DIE.Reference v ->
+      check int64 "ref_udata 128"
+        (Unsigned.UInt64.to_int64 v) 128L
+  | _ -> fail "expected Reference"
+
+let test_dw_form_ref_sig8 () =
+  let bytes =
+    [ 0xBE; 0xBA; 0xFE; 0xCA; 0xEF; 0xBE; 0xAD; 0xDE ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let encoding : Dwarf.encoding =
+    { format = Dwarf.DWARF32; address_size = u8 8; version = u16 5 }
+  in
+  let value =
+    Dwarf.DIE.parse_attribute_value cursor
+      Dwarf.DW_FORM_ref_sig8 encoding buffer ()
+  in
+  match value with
+  | Dwarf.DIE.Reference v ->
+      check int64 "ref_sig8"
+        (Unsigned.UInt64.to_int64 v)
+        (Int64.of_string "-0x2152411035014542")
+  | _ -> fail "expected Reference"
+
+(* ---- DebugLoclists tests (DWARF 5) ---- *)
+
+let test_loclists_end_of_list () =
+  (* DW_LLE_end_of_list = 0x00 *)
+  let bytes = [ 0x00 ] in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let ll =
+    Dwarf.DebugLoclists.parse_location_list cursor (u8 8)
+  in
+  check int "one entry" 1 (List.length ll.entries);
+  match ll.entries with
+  | [ Dwarf.DebugLoclists.LLE_end_of_list ] -> ()
+  | _ -> fail "expected LLE_end_of_list"
+
+let test_loclists_offset_pair () =
+  (* DW_LLE_offset_pair (0x04): start=0x10, end=0x30,
+     expr_len=2, expr=[0x50, 0x00] (DW_OP_reg0)
+     then end_of_list *)
+  let bytes =
+    [
+      0x04; (* DW_LLE_offset_pair *)
+      0x10; (* start_offset uleb128 *)
+      0x30; (* end_offset uleb128 *)
+      0x02; (* expr length uleb128 = 2 *)
+      0x50; 0x00; (* expression bytes *)
+      0x00; (* DW_LLE_end_of_list *)
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let ll =
+    Dwarf.DebugLoclists.parse_location_list cursor (u8 8)
+  in
+  check int "two entries" 2 (List.length ll.entries);
+  (match List.hd ll.entries with
+  | Dwarf.DebugLoclists.LLE_offset_pair
+      { start_offset; end_offset; expr } ->
+      check int64 "start 0x10"
+        (Unsigned.UInt64.to_int64 start_offset) 0x10L;
+      check int64 "end 0x30"
+        (Unsigned.UInt64.to_int64 end_offset) 0x30L;
+      check int "expr len 2" 2 (String.length expr)
+  | _ -> fail "expected LLE_offset_pair")
+
+let test_loclists_base_address () =
+  (* DW_LLE_base_address (0x06): 8-byte address
+     then end_of_list *)
+  let bytes =
+    [
+      0x06; (* DW_LLE_base_address *)
+      0x00; 0x40; 0x00; 0x00; 0x00; 0x00; 0x00; 0x00;
+      0x00; (* DW_LLE_end_of_list *)
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let ll =
+    Dwarf.DebugLoclists.parse_location_list cursor (u8 8)
+  in
+  check int "two entries" 2 (List.length ll.entries);
+  (match List.hd ll.entries with
+  | Dwarf.DebugLoclists.LLE_base_address { address } ->
+      check int64 "base 0x4000"
+        (Unsigned.UInt64.to_int64 address) 0x4000L
+  | _ -> fail "expected LLE_base_address")
+
+let test_loclists_start_end () =
+  (* DW_LLE_start_end (0x07): two 4-byte addresses, then expr
+     then end_of_list *)
+  let bytes =
+    [
+      0x07; (* DW_LLE_start_end *)
+      0x00; 0x10; 0x00; 0x00; (* start 0x1000 *)
+      0x00; 0x20; 0x00; 0x00; (* end 0x2000 *)
+      0x01; (* expr length = 1 *)
+      0x50; (* DW_OP_reg0 *)
+      0x00; (* end_of_list *)
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let ll =
+    Dwarf.DebugLoclists.parse_location_list cursor (u8 4)
+  in
+  check int "two entries" 2 (List.length ll.entries);
+  (match List.hd ll.entries with
+  | Dwarf.DebugLoclists.LLE_start_end
+      { start_addr; end_addr; expr } ->
+      check int64 "start 0x1000"
+        (Unsigned.UInt64.to_int64 start_addr) 0x1000L;
+      check int64 "end 0x2000"
+        (Unsigned.UInt64.to_int64 end_addr) 0x2000L;
+      check int "expr len 1" 1 (String.length expr)
+  | _ -> fail "expected LLE_start_end")
+
+let test_loclists_default_location () =
+  (* DW_LLE_default_location (0x05): expr_len=1, expr
+     then end_of_list *)
+  let bytes =
+    [
+      0x05; (* DW_LLE_default_location *)
+      0x01; (* expr length = 1 *)
+      0x50; (* DW_OP_reg0 *)
+      0x00; (* end_of_list *)
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let ll =
+    Dwarf.DebugLoclists.parse_location_list cursor (u8 8)
+  in
+  check int "two entries" 2 (List.length ll.entries);
+  (match List.hd ll.entries with
+  | Dwarf.DebugLoclists.LLE_default_location { expr } ->
+      check int "expr len 1" 1 (String.length expr)
+  | _ -> fail "expected LLE_default_location")
+
+let test_loclists_unknown_kind () =
+  let bytes = [ 0xFF ] in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  check_raises "unknown kind"
+    (Failure "Unknown DW_LLE entry kind: 0xff")
+    (fun () ->
+      ignore
+        (Dwarf.DebugLoclists.parse_location_list
+           cursor (u8 8)))
+
+(* ---- DebugRnglists tests (DWARF 5) ---- *)
+
+let test_rnglists_end_of_list () =
+  (* DW_RLE_end_of_list = 0x00 *)
+  let bytes = [ 0x00 ] in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let rl =
+    Dwarf.DebugRnglists.parse_range_list cursor (u8 8)
+  in
+  check int "one entry" 1 (List.length rl.entries);
+  match rl.entries with
+  | [ Dwarf.DebugRnglists.RLE_end_of_list ] -> ()
+  | _ -> fail "expected RLE_end_of_list"
+
+let test_rnglists_offset_pair () =
+  (* DW_RLE_offset_pair (0x04): start=0x10 (uleb), end=0x30 (uleb)
+     then DW_RLE_end_of_list (0x00) *)
+  let bytes =
+    [
+      0x04; (* DW_RLE_offset_pair *)
+      0x10; (* start_offset uleb128 = 0x10 *)
+      0x30; (* end_offset uleb128 = 0x30 *)
+      0x00; (* DW_RLE_end_of_list *)
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let rl =
+    Dwarf.DebugRnglists.parse_range_list cursor (u8 8)
+  in
+  check int "two entries" 2 (List.length rl.entries);
+  (match List.hd rl.entries with
+  | Dwarf.DebugRnglists.RLE_offset_pair
+      { start_offset; end_offset } ->
+      check int64 "start 0x10"
+        (Unsigned.UInt64.to_int64 start_offset) 0x10L;
+      check int64 "end 0x30"
+        (Unsigned.UInt64.to_int64 end_offset) 0x30L
+  | _ -> fail "expected RLE_offset_pair")
+
+let test_rnglists_base_address () =
+  (* DW_RLE_base_address (0x05): 8-byte address 0x4000
+     then DW_RLE_offset_pair (0x04): 0..0x20
+     then DW_RLE_end_of_list *)
+  let bytes =
+    [
+      0x05; (* DW_RLE_base_address *)
+      0x00; 0x40; 0x00; 0x00; 0x00; 0x00; 0x00; 0x00;
+      0x04; (* DW_RLE_offset_pair *)
+      0x00; (* start_offset = 0 *)
+      0x20; (* end_offset = 0x20 *)
+      0x00; (* DW_RLE_end_of_list *)
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let rl =
+    Dwarf.DebugRnglists.parse_range_list cursor (u8 8)
+  in
+  check int "three entries" 3 (List.length rl.entries);
+  (match List.hd rl.entries with
+  | Dwarf.DebugRnglists.RLE_base_address { address } ->
+      check int64 "base 0x4000"
+        (Unsigned.UInt64.to_int64 address) 0x4000L
+  | _ -> fail "expected RLE_base_address")
+
+let test_rnglists_start_end () =
+  (* DW_RLE_start_end (0x06): two 4-byte addresses
+     then end_of_list *)
+  let bytes =
+    [
+      0x06; (* DW_RLE_start_end *)
+      0x00; 0x10; 0x00; 0x00; (* start 0x1000, 4-byte *)
+      0x00; 0x20; 0x00; 0x00; (* end 0x2000, 4-byte *)
+      0x00; (* DW_RLE_end_of_list *)
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let rl =
+    Dwarf.DebugRnglists.parse_range_list cursor (u8 4)
+  in
+  check int "two entries" 2 (List.length rl.entries);
+  (match List.hd rl.entries with
+  | Dwarf.DebugRnglists.RLE_start_end
+      { start_addr; end_addr } ->
+      check int64 "start 0x1000"
+        (Unsigned.UInt64.to_int64 start_addr) 0x1000L;
+      check int64 "end 0x2000"
+        (Unsigned.UInt64.to_int64 end_addr) 0x2000L
+  | _ -> fail "expected RLE_start_end")
+
+let test_rnglists_startx_length () =
+  (* DW_RLE_startx_length (0x03): start_index=5, length=0x80
+     then end_of_list *)
+  let bytes =
+    [
+      0x03; (* DW_RLE_startx_length *)
+      0x05; (* start_index uleb128 = 5 *)
+      0x80; 0x01; (* length uleb128 = 128 *)
+      0x00; (* DW_RLE_end_of_list *)
+    ]
+  in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  let rl =
+    Dwarf.DebugRnglists.parse_range_list cursor (u8 8)
+  in
+  check int "two entries" 2 (List.length rl.entries);
+  (match List.hd rl.entries with
+  | Dwarf.DebugRnglists.RLE_startx_length
+      { start_index; length } ->
+      check int "start_index 5" start_index 5;
+      check int64 "length 128"
+        (Unsigned.UInt64.to_int64 length) 128L
+  | _ -> fail "expected RLE_startx_length")
+
+let test_rnglists_unknown_kind () =
+  (* Unknown kind 0xFF should raise *)
+  let bytes = [ 0xFF ] in
+  let buffer = buffer_of_bytes bytes in
+  let cursor = Object.Buffer.cursor buffer ~at:0 in
+  check_raises "unknown kind"
+    (Failure "Unknown DW_RLE entry kind: 0xff")
+    (fun () ->
+      ignore
+        (Dwarf.DebugRnglists.parse_range_list cursor (u8 8)))
 
 (* ---- DebugTypes tests ---- *)
 
@@ -834,11 +1201,44 @@ let () =
           test_case "DW_FORM_indirect" `Quick test_dw_form_indirect;
           test_case "DW_FORM_addr 4-byte" `Quick test_dw_form_addr_4byte;
           test_case "DW_FORM_addr 8-byte" `Quick test_dw_form_addr_8byte;
+          test_case "DW_FORM_implicit_const" `Quick test_dw_form_implicit_const;
+          test_case "DW_FORM_implicit_const negative" `Quick
+            test_dw_form_implicit_const_negative;
+          test_case "DW_FORM_loclistx" `Quick
+            test_dw_form_loclistx;
+          test_case "DW_FORM_rnglistx" `Quick
+            test_dw_form_rnglistx;
+          test_case "DW_FORM_ref_udata" `Quick
+            test_dw_form_ref_udata;
+          test_case "DW_FORM_ref_sig8" `Quick
+            test_dw_form_ref_sig8;
         ] );
       ( "line_table",
         [
           test_case "DWARF 4 line table header" `Quick
             test_dwarf4_line_table_header;
+        ] );
+      ( "debug_loclists",
+        [
+          test_case "end of list" `Quick test_loclists_end_of_list;
+          test_case "offset pair" `Quick test_loclists_offset_pair;
+          test_case "base address" `Quick test_loclists_base_address;
+          test_case "start end" `Quick test_loclists_start_end;
+          test_case "default location" `Quick
+            test_loclists_default_location;
+          test_case "unknown kind" `Quick
+            test_loclists_unknown_kind;
+        ] );
+      ( "debug_rnglists",
+        [
+          test_case "end of list" `Quick test_rnglists_end_of_list;
+          test_case "offset pair" `Quick test_rnglists_offset_pair;
+          test_case "base address" `Quick test_rnglists_base_address;
+          test_case "start end" `Quick test_rnglists_start_end;
+          test_case "startx length" `Quick
+            test_rnglists_startx_length;
+          test_case "unknown kind" `Quick
+            test_rnglists_unknown_kind;
         ] );
       ( "debug_types",
         [ test_case "type unit header" `Quick test_debug_types_header ] );

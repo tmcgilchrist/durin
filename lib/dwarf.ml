@@ -1580,7 +1580,7 @@ module Object_file = struct
   type t = { buffer : Buffer.t; format : Object_format.format }
 end
 
-type attr_spec = { attr : u64; form : u64 }
+type attr_spec = { attr : u64; form : u64; implicit_const : int64 option }
 
 type abbrev = {
   code : u64;
@@ -1659,10 +1659,16 @@ let parse_abbrev_table (elf : Object_file.t) (offset : u32) :
         let form = Read.uleb128 cur in
         if attr = 0 && form = 0 then List.rev acc (* End of attributes *)
         else
+          let implicit_const =
+            if form = 0x21 (* DW_FORM_implicit_const *) then
+              Some (Int64.of_int (Read.sleb128 cur))
+            else None
+          in
           let attr_spec =
             {
               attr = Unsigned.UInt64.of_int attr;
               form = Unsigned.UInt64.of_int form;
+              implicit_const;
             }
           in
           parse_attr_specs (attr_spec :: acc)
@@ -1777,8 +1783,13 @@ module DIE = struct
 
   let rec parse_attribute_value (cur : Object.Buffer.cursor)
       (form : attribute_form_encoding) (encoding : encoding)
-      (full_buffer : Object.Buffer.t) : attribute_value =
+      (full_buffer : Object.Buffer.t) ?(implicit_const : int64 option) () :
+      attribute_value =
     match form with
+    | DW_FORM_implicit_const -> (
+        match implicit_const with
+        | Some v -> SData (Signed.Int64.of_int64 v)
+        | None -> SData (Signed.Int64.of_int64 0L))
     | DW_FORM_string ->
         let str = Object.Buffer.Read.zero_string cur () in
         String (match str with Some s -> s | None -> "")
@@ -1956,12 +1967,28 @@ module DIE = struct
     | DW_FORM_ref_addr ->
         let offset = read_offset_for_format encoding.format cur in
         Reference offset
+    | DW_FORM_loclistx ->
+        let index = Object.Buffer.Read.uleb128 cur in
+        UData (Unsigned.UInt64.of_int index)
+    | DW_FORM_rnglistx ->
+        let index = Object.Buffer.Read.uleb128 cur in
+        UData (Unsigned.UInt64.of_int index)
+    | DW_FORM_ref_udata ->
+        let value = Object.Buffer.Read.uleb128 cur in
+        Reference (Unsigned.UInt64.of_int value)
+    | DW_FORM_ref_sig8 ->
+        let sig8 = Object.Buffer.Read.u64 cur in
+        Reference sig8
+    | DW_FORM_data16 ->
+        let lo = Object.Buffer.Read.u64 cur in
+        let _hi = Object.Buffer.Read.u64 cur in
+        UData lo
     | DW_FORM_indirect ->
         let actual_form_code = Object.Buffer.Read.uleb128 cur in
         let actual_form =
           attribute_form_encoding (Unsigned.UInt64.of_int actual_form_code)
         in
-        parse_attribute_value cur actual_form encoding full_buffer
+        parse_attribute_value cur actual_form encoding full_buffer ()
     | _ -> String "<unsupported_form>"
 
   let process_language_attribute (raw_value : attribute_value) : attribute_value
@@ -2015,6 +2042,7 @@ module DIE = struct
                   let form_encoding = attribute_form_encoding spec.form in
                   let raw_value =
                     parse_attribute_value cur form_encoding encoding full_buffer
+                      ?implicit_const:spec.implicit_const ()
                   in
                   let value =
                     (* Process special attributes that need conversion *)
@@ -5815,43 +5843,43 @@ module DebugLoclists = struct
     offset_entry_count : u32;
   }
 
-  type location_list_entry_type =
-    | DW_LLE_end_of_list (* 0x00 *)
-    | DW_LLE_base_addressx (* 0x01 *)
-    | DW_LLE_startx_endx (* 0x02 *)
-    | DW_LLE_startx_length (* 0x03 *)
-    | DW_LLE_offset_pair (* 0x04 *)
-    | DW_LLE_default_location (* 0x05 *)
-    | DW_LLE_base_address (* 0x06 *)
-    | DW_LLE_start_end (* 0x07 *)
-    | DW_LLE_start_length (* 0x08 *)
+  type location_entry =
+    | LLE_end_of_list
+    | LLE_base_addressx of { index : int }
+    | LLE_startx_endx of {
+        start_index : int;
+        end_index : int;
+        expr : string;
+      }
+    | LLE_startx_length of {
+        start_index : int;
+        length : u64;
+        expr : string;
+      }
+    | LLE_offset_pair of {
+        start_offset : u64;
+        end_offset : u64;
+        expr : string;
+      }
+    | LLE_default_location of { expr : string }
+    | LLE_base_address of { address : u64 }
+    | LLE_start_end of {
+        start_addr : u64;
+        end_addr : u64;
+        expr : string;
+      }
+    | LLE_start_length of {
+        start_addr : u64;
+        length : u64;
+        expr : string;
+      }
 
-  type location_list_entry = {
-    entry_type : location_list_entry_type;
-    data : string; (* Raw data for the entry, varies by type *)
-  }
-
-  type location_list = { offset : u32; entries : location_list_entry list }
+  type location_list = { entries : location_entry list }
 
   type loclists_section = {
     header : header;
     offset_table : u64 array;
-    location_lists : location_list list;
   }
-
-  let location_list_entry_type_of_u8 byte =
-    match Unsigned.UInt8.to_int byte with
-    | 0x00 -> DW_LLE_end_of_list
-    | 0x01 -> DW_LLE_base_addressx
-    | 0x02 -> DW_LLE_startx_endx
-    | 0x03 -> DW_LLE_startx_length
-    | 0x04 -> DW_LLE_offset_pair
-    | 0x05 -> DW_LLE_default_location
-    | 0x06 -> DW_LLE_base_address
-    | 0x07 -> DW_LLE_start_end
-    | 0x08 -> DW_LLE_start_length
-    | n ->
-        failwith (Printf.sprintf "Unknown location list entry type: 0x%02x" n)
 
   let parse_header cursor =
     let format, unit_length = parse_initial_length cursor in
@@ -5872,54 +5900,268 @@ module DebugLoclists = struct
     let count = Unsigned.UInt32.to_int offset_entry_count in
     Array.init count (fun _i -> read_offset_for_format format cursor)
 
-  let parse_location_list_entry cursor =
-    let entry_type_byte = Object.Buffer.Read.u8 cursor in
-    let entry_type = location_list_entry_type_of_u8 entry_type_byte in
+  let read_addr cursor address_size =
+    let addr_sz = Unsigned.UInt8.to_int address_size in
+    if addr_sz = 4 then
+      Unsigned.UInt64.of_int
+        (Unsigned.UInt32.to_int
+           (Object.Buffer.Read.u32 cursor))
+    else Object.Buffer.Read.u64 cursor
 
-    (* For now, we'll just store empty data since our test files are empty *)
-    let data = "" in
-    { entry_type; data }
+  let read_expr cursor =
+    let len = Object.Buffer.Read.uleb128 cursor in
+    Object.Buffer.Read.fixed_string cursor len
 
-  let parse_location_list cursor offset =
-    (* Read entries until we hit DW_LLE_end_of_list *)
+  let parse_location_list cursor address_size =
     let rec read_entries acc =
-      let entry = parse_location_list_entry cursor in
-      match entry.entry_type with
-      | DW_LLE_end_of_list -> List.rev (entry :: acc)
-      | _ -> read_entries (entry :: acc)
-    in
-    let entries = read_entries [] in
-    { offset; entries }
-
-  let parse buffer section_offset =
-    let cursor =
-      Object.Buffer.cursor buffer ~at:(Unsigned.UInt32.to_int section_offset)
-    in
-
-    (* Handle empty sections gracefully *)
-    try
-      let header = parse_header cursor in
-      let offset_table =
-        parse_offset_table cursor header.format header.offset_entry_count
+      let kind =
+        Unsigned.UInt8.to_int (Object.Buffer.Read.u8 cursor)
       in
-      (* For now, return empty location lists since our test files are empty *)
-      let location_lists = [] in
-      { header; offset_table; location_lists }
-    with _ ->
-      (* Return empty structure for empty or invalid section *)
-      {
-        header =
-          {
-            format = DWARF32;
-            unit_length = Unsigned.UInt64.zero;
-            version = Unsigned.UInt16.zero;
-            address_size = Unsigned.UInt8.zero;
-            segment_size = Unsigned.UInt8.zero;
-            offset_entry_count = Unsigned.UInt32.zero;
-          };
-        offset_table = [||];
-        location_lists = [];
-      }
+      match kind with
+      | 0x00 -> List.rev (LLE_end_of_list :: acc)
+      | 0x01 ->
+          let index = Object.Buffer.Read.uleb128 cursor in
+          read_entries (LLE_base_addressx { index } :: acc)
+      | 0x02 ->
+          let start_index =
+            Object.Buffer.Read.uleb128 cursor
+          in
+          let end_index =
+            Object.Buffer.Read.uleb128 cursor
+          in
+          let expr = read_expr cursor in
+          read_entries
+            (LLE_startx_endx
+               { start_index; end_index; expr }
+            :: acc)
+      | 0x03 ->
+          let start_index =
+            Object.Buffer.Read.uleb128 cursor
+          in
+          let length =
+            Unsigned.UInt64.of_int
+              (Object.Buffer.Read.uleb128 cursor)
+          in
+          let expr = read_expr cursor in
+          read_entries
+            (LLE_startx_length
+               { start_index; length; expr }
+            :: acc)
+      | 0x04 ->
+          let start_offset =
+            Unsigned.UInt64.of_int
+              (Object.Buffer.Read.uleb128 cursor)
+          in
+          let end_offset =
+            Unsigned.UInt64.of_int
+              (Object.Buffer.Read.uleb128 cursor)
+          in
+          let expr = read_expr cursor in
+          read_entries
+            (LLE_offset_pair
+               { start_offset; end_offset; expr }
+            :: acc)
+      | 0x05 ->
+          let expr = read_expr cursor in
+          read_entries
+            (LLE_default_location { expr } :: acc)
+      | 0x06 ->
+          let address = read_addr cursor address_size in
+          read_entries
+            (LLE_base_address { address } :: acc)
+      | 0x07 ->
+          let start_addr =
+            read_addr cursor address_size
+          in
+          let end_addr =
+            read_addr cursor address_size
+          in
+          let expr = read_expr cursor in
+          read_entries
+            (LLE_start_end
+               { start_addr; end_addr; expr }
+            :: acc)
+      | 0x08 ->
+          let start_addr =
+            read_addr cursor address_size
+          in
+          let length =
+            Unsigned.UInt64.of_int
+              (Object.Buffer.Read.uleb128 cursor)
+          in
+          let expr = read_expr cursor in
+          read_entries
+            (LLE_start_length
+               { start_addr; length; expr }
+            :: acc)
+      | n ->
+          failwith
+            (Printf.sprintf
+               "Unknown DW_LLE entry kind: 0x%02x" n)
+    in
+    { entries = read_entries [] }
+
+  let parse buffer =
+    match
+      find_debug_section_by_type buffer Debug_loclists
+    with
+    | None -> None
+    | Some (section_offset, _section_size) ->
+        let cursor =
+          Object.Buffer.cursor buffer
+            ~at:(Unsigned.UInt64.to_int section_offset)
+        in
+        (try
+           let header = parse_header cursor in
+           let offset_table =
+             parse_offset_table cursor header.format
+               header.offset_entry_count
+           in
+           Some { header; offset_table }
+         with _ -> None)
+
+  let resolve_location_list buffer (offset : u64)
+      (address_size : u8) =
+    match
+      find_debug_section_by_type buffer Debug_loclists
+    with
+    | None -> None
+    | Some (section_offset, _section_size) ->
+        let section_start =
+          Unsigned.UInt64.to_int section_offset
+        in
+        let absolute_pos =
+          section_start + Unsigned.UInt64.to_int offset
+        in
+        let cursor =
+          Object.Buffer.cursor buffer ~at:absolute_pos
+        in
+        Some (parse_location_list cursor address_size)
+end
+
+module DebugRnglists = struct
+  type header = {
+    format : dwarf_format;
+    unit_length : u64;
+    version : u16;
+    address_size : u8;
+    segment_size : u8;
+    offset_entry_count : u32;
+  }
+
+  type range_entry =
+    | RLE_end_of_list
+    | RLE_base_addressx of { index : int }
+    | RLE_startx_endx of { start_index : int; end_index : int }
+    | RLE_startx_length of { start_index : int; length : u64 }
+    | RLE_offset_pair of { start_offset : u64; end_offset : u64 }
+    | RLE_base_address of { address : u64 }
+    | RLE_start_end of { start_addr : u64; end_addr : u64 }
+    | RLE_start_length of { start_addr : u64; length : u64 }
+
+  type range_list = { entries : range_entry list }
+
+  type rnglists_section = {
+    header : header;
+    offset_table : u64 array;
+  }
+
+  let parse_header cursor =
+    let format, unit_length = parse_initial_length cursor in
+    let version = Object.Buffer.Read.u16 cursor in
+    let address_size = Object.Buffer.Read.u8 cursor in
+    let segment_size = Object.Buffer.Read.u8 cursor in
+    let offset_entry_count = Object.Buffer.Read.u32 cursor in
+    { format; unit_length; version; address_size; segment_size;
+      offset_entry_count }
+
+  let parse_offset_table cursor format offset_entry_count =
+    let count = Unsigned.UInt32.to_int offset_entry_count in
+    Array.init count (fun _i -> read_offset_for_format format cursor)
+
+  let read_addr cursor address_size =
+    let addr_sz = Unsigned.UInt8.to_int address_size in
+    if addr_sz = 4 then
+      Unsigned.UInt64.of_int (Unsigned.UInt32.to_int (Object.Buffer.Read.u32 cursor))
+    else Object.Buffer.Read.u64 cursor
+
+  let parse_range_list cursor address_size =
+    let rec read_entries acc =
+      let kind = Unsigned.UInt8.to_int (Object.Buffer.Read.u8 cursor) in
+      match kind with
+      | 0x00 -> List.rev (RLE_end_of_list :: acc)
+      | 0x01 ->
+          let index = Object.Buffer.Read.uleb128 cursor in
+          read_entries (RLE_base_addressx { index } :: acc)
+      | 0x02 ->
+          let start_index = Object.Buffer.Read.uleb128 cursor in
+          let end_index = Object.Buffer.Read.uleb128 cursor in
+          read_entries
+            (RLE_startx_endx { start_index; end_index } :: acc)
+      | 0x03 ->
+          let start_index = Object.Buffer.Read.uleb128 cursor in
+          let length =
+            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+          in
+          read_entries
+            (RLE_startx_length { start_index; length } :: acc)
+      | 0x04 ->
+          let start_offset =
+            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+          in
+          let end_offset =
+            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+          in
+          read_entries
+            (RLE_offset_pair { start_offset; end_offset } :: acc)
+      | 0x05 ->
+          let address = read_addr cursor address_size in
+          read_entries (RLE_base_address { address } :: acc)
+      | 0x06 ->
+          let start_addr = read_addr cursor address_size in
+          let end_addr = read_addr cursor address_size in
+          read_entries
+            (RLE_start_end { start_addr; end_addr } :: acc)
+      | 0x07 ->
+          let start_addr = read_addr cursor address_size in
+          let length =
+            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+          in
+          read_entries
+            (RLE_start_length { start_addr; length } :: acc)
+      | n ->
+          failwith
+            (Printf.sprintf "Unknown DW_RLE entry kind: 0x%02x" n)
+    in
+    { entries = read_entries [] }
+
+  let parse buffer =
+    match find_debug_section_by_type buffer Debug_rnglists with
+    | None -> None
+    | Some (section_offset, _section_size) ->
+        let cursor =
+          Object.Buffer.cursor buffer
+            ~at:(Unsigned.UInt64.to_int section_offset)
+        in
+        (try
+           let header = parse_header cursor in
+           let offset_table =
+             parse_offset_table cursor header.format
+               header.offset_entry_count
+           in
+           Some { header; offset_table }
+         with _ -> None)
+
+  let resolve_range_list buffer (offset : u64) (address_size : u8) =
+    match find_debug_section_by_type buffer Debug_rnglists with
+    | None -> None
+    | Some (section_offset, _section_size) ->
+        let section_start = Unsigned.UInt64.to_int section_offset in
+        let absolute_pos =
+          section_start + Unsigned.UInt64.to_int offset
+        in
+        let cursor = Object.Buffer.cursor buffer ~at:absolute_pos in
+        Some (parse_range_list cursor address_size)
 end
 
 let lookup_address_in_debug_addr (buffer : Object.Buffer.t) (_addr_base : u64)
