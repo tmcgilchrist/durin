@@ -852,6 +852,16 @@ type dwarf_section =
   | Debug_pubnames
   | Debug_pubtypes
   | Debug_types
+  | Debug_info_dwo
+  | Debug_abbrev_dwo
+  | Debug_line_dwo
+  | Debug_loclists_dwo
+  | Debug_rnglists_dwo
+  | Debug_str_dwo
+  | Debug_str_offs_dwo
+  | Debug_macro_dwo
+  | Debug_cu_index
+  | Debug_tu_index
 
 (** Call frame instructions. Table 7.29: Call frame instruction encodings *)
 type call_frame_instruction =
@@ -1029,8 +1039,8 @@ module CompileUnit : sig
     version : u16;  (** DWARF version (4 or 5) *)
     unit_type : u8;
         (** Unit type byte (0x01=compile, 0x02=type, 0x03=partial,
-            0x04=skeleton, 0x05=split_compile, 0x06=split_type).
-            Synthesized as 0x01 for DWARF 4. *)
+            0x04=skeleton, 0x05=split_compile, 0x06=split_type). Synthesized as
+            0x01 for DWARF 4. *)
     debug_abbrev_offset : u64;  (** Offset into debug abbreviation table *)
     address_size : u8;  (** Size of addresses in bytes (4 or 8) *)
     header_span : span;  (** Span indicating the header's position and size *)
@@ -2661,68 +2671,43 @@ module DebugLoclists : sig
   type location_entry =
     | LLE_end_of_list
     | LLE_base_addressx of { index : int }
-    | LLE_startx_endx of {
-        start_index : int;
-        end_index : int;
-        expr : string;
-      }
-    | LLE_startx_length of {
-        start_index : int;
-        length : u64;
-        expr : string;
-      }
-    | LLE_offset_pair of {
-        start_offset : u64;
-        end_offset : u64;
-        expr : string;
-      }
+    | LLE_startx_endx of { start_index : int; end_index : int; expr : string }
+    | LLE_startx_length of { start_index : int; length : u64; expr : string }
+    | LLE_offset_pair of { start_offset : u64; end_offset : u64; expr : string }
     | LLE_default_location of { expr : string }
     | LLE_base_address of { address : u64 }
-    | LLE_start_end of {
-        start_addr : u64;
-        end_addr : u64;
-        expr : string;
-      }
-    | LLE_start_length of {
-        start_addr : u64;
-        length : u64;
-        expr : string;
-      }
-  (** Location list entry kinds (DW_LLE) as defined in
-      DWARF 5 Section 7.7.3. Entries that describe a location
-      carry a DWARF expression in [expr]. *)
+    | LLE_start_end of { start_addr : u64; end_addr : u64; expr : string }
+    | LLE_start_length of { start_addr : u64; length : u64; expr : string }
+        (** Location list entry kinds (DW_LLE) as defined in DWARF 5 Section
+            7.7.3. Entries that describe a location carry a DWARF expression in
+            [expr]. *)
 
   type location_list = { entries : location_entry list }
   (** A decoded location list. *)
 
-  type loclists_section = {
-    header : header;
-    offset_table : u64 array;
-  }
+  type loclists_section = { header : header; offset_table : u64 array }
   (** Parsed .debug_loclists section. *)
 
-  val parse_location_list :
-    Object.Buffer.cursor -> u8 -> location_list
-  (** [parse_location_list cursor address_size] reads a single
-      location list from [cursor] until a DW_LLE_end_of_list. *)
+  val parse_location_list : Object.Buffer.cursor -> u8 -> location_list
+  (** [parse_location_list cursor address_size] reads a single location list
+      from [cursor] until a DW_LLE_end_of_list. *)
 
   val parse : Object.Buffer.t -> loclists_section option
-  (** Parse the .debug_loclists section from a buffer.
-      Returns [None] if the section is absent or malformed. *)
+  (** Parse the .debug_loclists section from a buffer. Returns [None] if the
+      section is absent or malformed. *)
 
   val resolve_location_list :
     Object.Buffer.t -> u64 -> u8 -> location_list option
-  (** [resolve_location_list buffer offset address_size] parses
-      a single location list starting at [offset] bytes from the
-      start of the .debug_loclists section.
-      Returns [None] if the section is absent. *)
+  (** [resolve_location_list buffer offset address_size] parses a single
+      location list starting at [offset] bytes from the start of the
+      .debug_loclists section. Returns [None] if the section is absent. *)
 end
 
 (** Parser for the .debug_rnglists section (DWARF 5).
 
-    The range lists section contains range descriptions referenced by
-    debug information entries via DW_AT_ranges attributes. It replaces
-    .debug_ranges from DWARF 4. See DWARF 5 Section 2.17.3. *)
+    The range lists section contains range descriptions referenced by debug
+    information entries via DW_AT_ranges attributes. It replaces .debug_ranges
+    from DWARF 4. See DWARF 5 Section 2.17.3. *)
 module DebugRnglists : sig
   type header = {
     format : dwarf_format;
@@ -2737,53 +2722,92 @@ module DebugRnglists : sig
   type range_entry =
     | RLE_end_of_list
     | RLE_base_addressx of { index : int }
-    | RLE_startx_endx of {
-        start_index : int;
-        end_index : int;
-      }
-    | RLE_startx_length of {
-        start_index : int;
-        length : u64;
-      }
-    | RLE_offset_pair of {
-        start_offset : u64;
-        end_offset : u64;
-      }
+    | RLE_startx_endx of { start_index : int; end_index : int }
+    | RLE_startx_length of { start_index : int; length : u64 }
+    | RLE_offset_pair of { start_offset : u64; end_offset : u64 }
     | RLE_base_address of { address : u64 }
-    | RLE_start_end of {
-        start_addr : u64;
-        end_addr : u64;
-      }
-    | RLE_start_length of {
-        start_addr : u64;
-        length : u64;
-      }
-  (** Range list entry kinds (DW_RLE) as defined in
-      DWARF 5 Section 7.25. *)
+    | RLE_start_end of { start_addr : u64; end_addr : u64 }
+    | RLE_start_length of { start_addr : u64; length : u64 }
+        (** Range list entry kinds (DW_RLE) as defined in DWARF 5 Section 7.25.
+        *)
 
   type range_list = { entries : range_entry list }
   (** A decoded range list. *)
 
-  type rnglists_section = {
-    header : header;
-    offset_table : u64 array;
-  }
+  type rnglists_section = { header : header; offset_table : u64 array }
   (** Parsed .debug_rnglists section. *)
 
   val parse_range_list : Object.Buffer.cursor -> u8 -> range_list
-  (** [parse_range_list cursor address_size] reads a single range
-      list from [cursor] until a DW_RLE_end_of_list entry. *)
+  (** [parse_range_list cursor address_size] reads a single range list from
+      [cursor] until a DW_RLE_end_of_list entry. *)
 
   val parse : Object.Buffer.t -> rnglists_section option
-  (** Parse the .debug_rnglists section from a buffer.
-      Returns [None] if the section is absent or malformed. *)
+  (** Parse the .debug_rnglists section from a buffer. Returns [None] if the
+      section is absent or malformed. *)
 
-  val resolve_range_list :
-    Object.Buffer.t -> u64 -> u8 -> range_list option
-  (** [resolve_range_list buffer offset address_size] parses a single
-      range list starting at [offset] bytes from the start of
-      the .debug_rnglists section.
+  val resolve_range_list : Object.Buffer.t -> u64 -> u8 -> range_list option
+  (** [resolve_range_list buffer offset address_size] parses a single range list
+      starting at [offset] bytes from the start of the .debug_rnglists section.
       Returns [None] if the section is absent. *)
+end
+
+module SplitDwarf : sig
+  type dwo_context = {
+    dwo_buffer : Object.Buffer.t;
+    parent_buffer : Object.Buffer.t;
+    dwo_id : u64;
+    contributions : (dwarf_section * int * int) list;
+  }
+
+  val find_section : dwo_context -> dwarf_section -> (u64 * u64) option
+
+  val resolve_string_index_dwo :
+    Object.Buffer.t -> dwarf_format -> int -> string
+
+  val dwo_abbrev_table : dwo_context -> u64 -> (u64, abbrev) Hashtbl.t
+  val dwo_compile_units : dwo_context -> CompileUnit.t Seq.t
+
+  val load_dwo :
+    parent_buffer:Object.Buffer.t ->
+    dwo_path:string ->
+    dwo_id:u64 ->
+    dwo_context option
+
+  val fixup_dwo_die : dwo_context -> dwarf_format -> u64 -> DIE.t -> DIE.t
+  val dwo_root_die : dwo_context -> CompileUnit.t -> u64 -> DIE.t option
+
+  type dw_sect =
+    | DW_SECT_INFO
+    | DW_SECT_ABBREV
+    | DW_SECT_LINE
+    | DW_SECT_LOCLISTS
+    | DW_SECT_STR_OFFSETS
+    | DW_SECT_MACRO
+    | DW_SECT_RNGLISTS
+
+  type index_entry = {
+    dwo_id : u64;
+    contributions : (dw_sect * int * int) list;
+  }
+
+  type unit_index = {
+    version : int;
+    unit_count : int;
+    entries : index_entry array;
+  }
+
+  type dwp_context = {
+    dwp_buffer : Object.Buffer.t;
+    parent_buffer : Object.Buffer.t;
+    cu_index : unit_index;
+    tu_index : unit_index option;
+  }
+
+  val load_dwp :
+    parent_buffer:Object.Buffer.t -> dwp_path:string -> dwp_context option
+
+  val find_cu_by_dwo_id : dwp_context -> u64 -> index_entry option
+  val dwp_dwo_context : dwp_context -> index_entry -> dwo_context
 end
 
 (** CompactUnwind module for Apple's Compact Unwinding Format.

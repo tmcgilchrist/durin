@@ -980,8 +980,8 @@ let dump_debug_loclists filename =
           (* No debug_loclists section found - this is normal for simple programs.
              Show empty section output to match system dwarfdump behavior *)
           ()
-      | Some (_section_offset, _section_size) ->
-          (match Dwarf.DebugLoclists.parse buffer with
+      | Some (_section_offset, _section_size) -> (
+          match Dwarf.DebugLoclists.parse buffer with
           | None -> ()
           | Some loclists_section ->
               Printf.printf
