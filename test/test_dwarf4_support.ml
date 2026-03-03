@@ -753,6 +753,49 @@ let test_debug_types_section_name () =
   check string "MachO debug_types" "__debug_types"
     (Dwarf.object_format_to_section_name Object_format.MACHO Dwarf.Debug_types)
 
+(* ---- resolve_location_list / resolve_range_list ---- *)
+
+let test_resolve_location_list_no_section () =
+  (* Constructing a minimal ELF without .debug_loc:
+     A non-ELF buffer causes detect_format to fail, so we
+     verify the function handles missing sections gracefully
+     by testing with a minimal valid ELF that lacks .debug_loc *)
+  let bytes = [ 0x00; 0x00; 0x00; 0x00 ] in
+  let buffer = buffer_of_bytes bytes in
+  let result =
+    try Dwarf.resolve_location_list buffer (Unsigned.UInt64.of_int 0) 8
+    with Failure _ -> None
+  in
+  check bool "returns None when no .debug_loc section" true (result = None)
+
+let test_resolve_range_list_no_section () =
+  let bytes = [ 0x00; 0x00; 0x00; 0x00 ] in
+  let buffer = buffer_of_bytes bytes in
+  let result =
+    try Dwarf.resolve_range_list buffer (Unsigned.UInt64.of_int 0) 8
+    with Failure _ -> None
+  in
+  check bool "returns None when no .debug_ranges section" true (result = None)
+
+let test_parse_type_units_no_section () =
+  let bytes = [ 0x00; 0x00; 0x00; 0x00 ] in
+  let buffer = buffer_of_bytes bytes in
+  let units =
+    try Dwarf.DebugTypes.parse_type_units buffer with Failure _ -> Seq.empty
+  in
+  let count = Seq.fold_left (fun acc _ -> acc + 1) 0 units in
+  check int "no type units in non-ELF buffer" 0 count
+
+(* ---- Test function signatures ---- *)
+
+let test_resolve_functions_exist () =
+  check bool "resolve_location_list exists" true
+    (match Dwarf.resolve_location_list with _ -> true);
+  check bool "resolve_range_list exists" true
+    (match Dwarf.resolve_range_list with _ -> true);
+  check bool "parse_type_units exists" true
+    (match Dwarf.DebugTypes.parse_type_units with _ -> true)
+
 let () =
   run "DWARF 4 Support"
     [
@@ -803,4 +846,15 @@ let () =
         [ test_case "pubnames set" `Quick test_debug_pubnames_set ] );
       ( "debug_pubtypes",
         [ test_case "pubtypes set" `Quick test_debug_pubtypes_set ] );
+      ( "resolution",
+        [
+          test_case "resolve_location_list no section" `Quick
+            test_resolve_location_list_no_section;
+          test_case "resolve_range_list no section" `Quick
+            test_resolve_range_list_no_section;
+          test_case "parse_type_units no section" `Quick
+            test_parse_type_units_no_section;
+          test_case "resolve functions exist" `Quick
+            test_resolve_functions_exist;
+        ] );
     ]

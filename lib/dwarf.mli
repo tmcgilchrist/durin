@@ -1366,7 +1366,22 @@ module DebugTypes : sig
 
   val parse_type_unit_header : Object.Buffer.cursor -> span * type_unit_header
   (** Parse a type unit header from the .debug_types section. *)
+
+  val parse_type_units : Object.Buffer.t -> (span * type_unit_header) Seq.t
+  (** Iterate all type units in the .debug_types section. *)
 end
+
+val resolve_location_list :
+  Object.Buffer.t -> u64 -> int -> DebugLoc.entry list option
+(** [resolve_location_list buffer offset address_size] resolves a
+    DW_FORM_sec_offset value into a parsed DWARF 4 location list from the
+    .debug_loc section. Returns [None] if the section is absent. *)
+
+val resolve_range_list :
+  Object.Buffer.t -> u64 -> int -> DebugRanges.entry list option
+(** [resolve_range_list buffer offset address_size] resolves a
+    DW_FORM_sec_offset value into a parsed DWARF 4 range list from the
+    .debug_ranges section. Returns [None] if the section is absent. *)
 
 (** DWARF 4 .debug_pubnames section parsing. *)
 module DebugPubnames : sig

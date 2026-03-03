@@ -2990,6 +2990,28 @@ module DebugRanges = struct
     List.rev !entries
 end
 
+let resolve_location_list (buffer : Object.Buffer.t) (offset : u64)
+    (address_size : int) : DebugLoc.entry list option =
+  match find_debug_section_by_type buffer Debug_loc with
+  | None -> None
+  | Some (section_offset, _section_size) ->
+      let absolute_pos =
+        Unsigned.UInt64.to_int section_offset + Unsigned.UInt64.to_int offset
+      in
+      let cur = Object.Buffer.cursor buffer ~at:absolute_pos in
+      Some (DebugLoc.parse_list cur address_size)
+
+let resolve_range_list (buffer : Object.Buffer.t) (offset : u64)
+    (address_size : int) : DebugRanges.entry list option =
+  match find_debug_section_by_type buffer Debug_ranges with
+  | None -> None
+  | Some (section_offset, _section_size) ->
+      let absolute_pos =
+        Unsigned.UInt64.to_int section_offset + Unsigned.UInt64.to_int offset
+      in
+      let cur = Object.Buffer.cursor buffer ~at:absolute_pos in
+      Some (DebugRanges.parse_list cur address_size)
+
 module DebugTypes = struct
   type type_unit_header = {
     format : dwarf_format;
@@ -3043,6 +3065,34 @@ module DebugTypes = struct
         type_offset;
         header_span;
       } )
+
+  let parse_type_units (buffer : Object.Buffer.t) :
+      (span * type_unit_header) Seq.t =
+    match find_debug_section_by_type buffer Debug_types with
+    | None -> Seq.empty
+    | Some (section_offset, section_size) ->
+        let section_end = Unsigned.UInt64.to_int section_size in
+        let rec parse_units cursor_pos () =
+          if cursor_pos >= section_end then Seq.Nil
+          else
+            try
+              let absolute_pos =
+                Unsigned.UInt64.to_int section_offset + cursor_pos
+              in
+              let cur = Object.Buffer.cursor buffer ~at:absolute_pos in
+              let span, header = parse_type_unit_header cur in
+              let unit_length = Unsigned.UInt64.to_int header.unit_length in
+              let length_field_size =
+                match header.format with DWARF32 -> 4 | DWARF64 -> 12
+              in
+              let next_pos = cursor_pos + unit_length + length_field_size in
+              Seq.Cons ((span, header), parse_units next_pos)
+            with exn ->
+              Printf.eprintf "Error parsing type unit at offset %d: %s\n"
+                cursor_pos (Printexc.to_string exn);
+              Seq.Nil
+        in
+        parse_units 0
 end
 
 module DebugPubnames = struct
