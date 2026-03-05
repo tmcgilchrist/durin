@@ -21,7 +21,6 @@
 // Header file with macros
 #include "test_macros_header.h"
 
-/* TODO Is this program used in one of the tests? Does it cover DWARF 4 and DWARF 5? */
 int main() {
     int size = MAX_SIZE;
     int min = MIN_SIZE;

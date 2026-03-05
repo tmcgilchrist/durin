@@ -509,6 +509,8 @@ type operation_encoding =
   | DW_OP_xderef_type (* 1-byte size, ULEB128 type entry offset *)
   | DW_OP_convert (* ULEB128 type entry offset *)
   | DW_OP_reinterpret (* DW_OP_lo_user 0xe0 ULEB128 type entry offset *)
+  | DW_OP_GNU_parameter_ref (* 4-byte DIE offset *)
+  | DW_OP_GNU_variable_value (* address-sized DIE ref *)
   | DW_OP_hi_user
 
 val operation_encoding : int -> operation_encoding
@@ -521,7 +523,9 @@ type dwarf_expression_operation = {
 }
 (** DWARF Expression Parser *)
 
-val parse_dwarf_expression : string -> dwarf_expression_operation list
+val parse_dwarf_expression :
+  ?encoding:encoding -> string -> dwarf_expression_operation list
+
 val string_of_dwarf_operation : dwarf_expression_operation -> string
 val string_of_dwarf_expression : dwarf_expression_operation list -> string
 
@@ -791,13 +795,12 @@ val string_of_macro_info_entry_type : macro_info_entry_type -> string
 (** Debug Macro Section - DWARF 5 Section 6.3 *)
 
 type debug_macro_header = {
-  format : dwarf_format;  (** DWARF32 or DWARF64 format *)
-  length : u64;  (** Unit length *)
+  format : dwarf_format;  (** DWARF32 or DWARF64, from flags bit 0 *)
   version : u16;  (** Version number *)
   flags : u8;  (** Flags *)
-  debug_line_offset : u64 option;  (** Offset into debug_line (if flag set) *)
+  debug_line_offset : u64 option;  (** Offset into debug_line (flags bit 1) *)
   debug_str_offsets_offset : u64 option;
-      (** Offset into debug_str_offsets (if flag set) *)
+      (** Offset into debug_str_offsets (flags bit 2) *)
 }
 
 type debug_macro_entry = {
@@ -832,6 +835,33 @@ val parse_debug_macro_section :
   Object.Buffer.cursor -> int -> debug_macro_section
 (** Parse the entire debug_macro section from binary data *)
 
+(** DWARF 4 legacy macro information entry types *)
+type macinfo_type =
+  | DW_MACINFO_define
+  | DW_MACINFO_undef
+  | DW_MACINFO_start_file
+  | DW_MACINFO_end_file
+  | DW_MACINFO_vendor_ext
+
+val macinfo_type_of_int : int -> macinfo_type
+val string_of_macinfo_type : macinfo_type -> string
+
+type debug_macinfo_entry = {
+  macinfo_type : macinfo_type;
+  line_number : u32 option;
+  string_value : string option;
+  file_index : u32 option;
+  constant : u64 option;
+}
+
+type debug_macinfo_section = { entries : debug_macinfo_entry list }
+
+val parse_debug_macinfo_entry :
+  Object.Buffer.cursor -> debug_macinfo_entry option
+
+val parse_debug_macinfo_section :
+  Object.Buffer.cursor -> int -> debug_macinfo_section
+
 (** Sections that hold DWARF debugging information. *)
 type dwarf_section =
   | Debug_info
@@ -860,6 +890,7 @@ type dwarf_section =
   | Debug_str_dwo
   | Debug_str_offs_dwo
   | Debug_macro_dwo
+  | Debug_macinfo
   | Debug_cu_index
   | Debug_tu_index
 
@@ -1078,9 +1109,88 @@ module CompileUnit : sig
   val root_die : t -> (u64, abbrev) Hashtbl.t -> Object.Buffer.t -> DIE.t option
   (** Get the root DIE for this compilation unit. *)
 
-  (* val abbrev_table : t -> unit *)
-  (* (\** Get abbreviation table for this compilation unit. TODO: Implementation *)
-  (*     needs to return actual abbreviation table. *\) *)
+  val die_cursor :
+    t ->
+    (u64, abbrev) Hashtbl.t ->
+    Object.Buffer.t ->
+    Object.Buffer.cursor * (u64, abbrev) Hashtbl.t * encoding * Object.Buffer.t
+  (** Get cursor, abbrev table, encoding, and buffer positioned at the first DIE
+      of this compilation unit. *)
+end
+
+val skip_attribute_value :
+  Object.Buffer.cursor -> u64 -> encoding -> Object.Buffer.t -> unit
+(** Skip past a single attribute value in the buffer without allocating. *)
+
+val skip_die :
+  Object.Buffer.cursor ->
+  (u64, abbrev) Hashtbl.t ->
+  encoding ->
+  Object.Buffer.t ->
+  unit
+(** Skip an entire DIE (attributes + children if any). *)
+
+val skip_children :
+  Object.Buffer.cursor ->
+  (u64, abbrev) Hashtbl.t ->
+  encoding ->
+  Object.Buffer.t ->
+  unit
+(** Skip all remaining children at the current nesting level. *)
+
+module DieCursor : sig
+  type t
+
+  val create :
+    Object.Buffer.t -> (u64, abbrev) Hashtbl.t -> encoding -> int -> t
+  (** Create cursor starting at buffer offset. *)
+
+  val next : t -> (DIE.t * bool) option
+  (** Parse next DIE. Returns (die, has_children). Returns None at
+      end-of-children (null entry). *)
+
+  val skip_children : t -> unit
+  (** Skip remaining children at current depth. *)
+
+  val position : t -> int
+  (** Current cursor position in the buffer. *)
+end
+
+module DieZipper : sig
+  type t
+
+  val of_die_cursor : DieCursor.t -> t option
+  (** Create zipper focused on first DIE from cursor. *)
+
+  val current : t -> DIE.t
+  (** Get the DIE at the focus. *)
+
+  val tag : t -> abbreviation_tag
+  (** Shorthand for (current t).tag. *)
+
+  val down : t -> t option
+  (** Navigate to first child. None if no children. *)
+
+  val right : t -> t option
+  (** Navigate to next sibling. None if last sibling. *)
+
+  val up : t -> t option
+  (** Navigate to parent. None if at root. *)
+
+  val children : t -> t Seq.t
+  (** Lazy sequence of child zippers. *)
+
+  val siblings : t -> t Seq.t
+  (** Lazy sequence of remaining sibling zippers. *)
+
+  val fold_children : ('a -> t -> 'a) -> 'a -> t -> 'a
+  (** Fold over immediate children. *)
+
+  val find_child : (t -> bool) -> t -> t option
+  (** Find first child matching predicate. *)
+
+  val depth : t -> int
+  (** Current depth from root (root = 0). *)
 end
 
 val parse_compile_unit_header :

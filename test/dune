@@ -171,7 +171,7 @@
    (= %{system} "macosx")
    (= %{architecture} "arm64")))
  (action
-  (system "cc -gdwarf-5 test_macros.c -o test_macros")))
+  (system "cc -gdwarf-5 -g3 test_macros.c -o test_macros")))
 
 ; macOS Cram Tests
 
@@ -854,7 +854,21 @@
    (= %{system} "linux")
    (= %{architecture} "amd64")))
  (action
-  (system "gcc -gdwarf-5 test_macros.c -o test_macros_linux")))
+  (system "gcc -gdwarf-5 -g3 test_macros.c -o test_macros_linux")))
+
+(test
+ (name test_debug_macro_integration)
+ (deps test_macros_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_macro_integration.exe}
+   --binary
+   %{dep:test_macros_linux})))
 
 ; =============================================================================
 ; GNU-DWARFDUMP COMPARISON TESTS - LINUX
