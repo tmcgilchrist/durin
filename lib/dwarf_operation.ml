@@ -165,6 +165,8 @@ type operation_encoding =
   | DW_OP_xderef_type (* 1-byte size, ULEB128 type entry offset *)
   | DW_OP_convert (* ULEB128 type entry offset *)
   | DW_OP_reinterpret (* DW_OP_lo_user 0xe0 ULEB128 type entry offset *)
+  | DW_OP_GNU_parameter_ref (* 4-byte DIE offset *)
+  | DW_OP_GNU_variable_value (* address-sized DIE ref *)
   | DW_OP_hi_user
 
 let operation_encoding = function
@@ -332,6 +334,18 @@ let operation_encoding = function
   | 0xa7 -> DW_OP_xderef_type
   | 0xa8 -> DW_OP_convert
   | 0xa9 -> DW_OP_reinterpret
+  | 0xe0 -> DW_OP_form_tls_address
+  | 0xf2 -> DW_OP_implicit_pointer
+  | 0xf3 -> DW_OP_entry_value
+  | 0xf4 -> DW_OP_const_type
+  | 0xf5 -> DW_OP_regval_type
+  | 0xf6 -> DW_OP_deref_type
+  | 0xf7 -> DW_OP_convert
+  | 0xf9 -> DW_OP_reinterpret
+  | 0xfa -> DW_OP_GNU_parameter_ref
+  | 0xfb -> DW_OP_addrx
+  | 0xfc -> DW_OP_constx
+  | 0xfd -> DW_OP_GNU_variable_value
   | 0xff -> DW_OP_hi_user
   | n -> failwith (Printf.sprintf "Unknown operation_encoding: 0x%02x" n)
 
@@ -500,4 +514,6 @@ let string_of_operation_encoding = function
   | DW_OP_xderef_type -> "DW_OP_xderef_type"
   | DW_OP_convert -> "DW_OP_convert"
   | DW_OP_reinterpret -> "DW_OP_reinterpret"
+  | DW_OP_GNU_parameter_ref -> "DW_OP_GNU_parameter_ref"
+  | DW_OP_GNU_variable_value -> "DW_OP_GNU_variable_value"
   | DW_OP_hi_user -> "DW_OP_hi_user"
