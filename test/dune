@@ -38,6 +38,12 @@
   (run %{exe:test_dwarf_expression.exe})))
 
 (test
+ (name test_expression_evaluator)
+ (libraries durin alcotest)
+ (action
+  (run %{exe:test_expression_evaluator.exe})))
+
+(test
  (name test_dwarf64_parsing)
  (libraries durin object alcotest)
  (action
