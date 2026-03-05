@@ -1,87 +1,138 @@
 open Durin
 
-let test_simple_expression () =
-  (* Test simple expression: DW_OP_breg7(0) DW_OP_const1u(8) DW_OP_plus *)
-  (* Bytecode: 0x77 0x00 0x08 0x08 0x22 *)
-  let test_expr = "\x77\x00\x08\x08\x22" in
-  let parsed = Dwarf.parse_dwarf_expression test_expr in
-  Alcotest.(check int) "parsed operation count" 3 (List.length parsed);
+let check_expr ?encoding ~name ~count ~expected bytes () =
+  let parsed = Dwarf.parse_dwarf_expression ?encoding bytes in
+  Alcotest.(check int) (name ^ " count") count (List.length parsed);
   let result_str = Dwarf.string_of_dwarf_expression parsed in
-  let expected_str = "DW_OP_breg7(0) DW_OP_const1u(8) DW_OP_plus" in
+  Alcotest.(check string) (name ^ " string") expected result_str
+
+let check_single_op ?encoding ~name ~expected bytes () =
+  let parsed = Dwarf.parse_dwarf_expression ?encoding bytes in
+  Alcotest.(check int) (name ^ " count") 1 (List.length parsed);
+  let op = List.hd parsed in
   Alcotest.(check string)
-    "expression string representation" expected_str result_str
+    name expected
+    (Dwarf.string_of_operation_encoding op.opcode);
+  op
 
-let test_literal_operations () =
-  (* Test literal values: DW_OP_lit5 DW_OP_lit10 DW_OP_plus *)
-  (* Bytecode: 0x35 0x3a 0x22 *)
-  let test_expr = "\x35\x3a\x22" in
-  let parsed = Dwarf.parse_dwarf_expression test_expr in
-  Alcotest.(check int) "literal ops count" 3 (List.length parsed);
-  let result_str = Dwarf.string_of_dwarf_expression parsed in
-  let expected_str = "DW_OP_lit5 DW_OP_lit10 DW_OP_plus" in
-  Alcotest.(check string) "literal expression string" expected_str result_str
+let dwarf4_encoding : Dwarf.encoding =
+  {
+    format = DWARF32;
+    address_size = Unsigned.UInt8.of_int 8;
+    version = Unsigned.UInt16.of_int 4;
+  }
 
-let test_register_operations () =
-  (* Test register operations: DW_OP_reg6 DW_OP_reg16 *)
-  (* Bytecode: 0x56 0x60 *)
-  let test_expr = "\x56\x60" in
-  let parsed = Dwarf.parse_dwarf_expression test_expr in
-  Alcotest.(check int) "register ops count" 2 (List.length parsed);
-  let result_str = Dwarf.string_of_dwarf_expression parsed in
-  let expected_str = "DW_OP_reg6 DW_OP_reg16" in
-  Alcotest.(check string) "register expression string" expected_str result_str
+let dwarf5_64_encoding : Dwarf.encoding =
+  {
+    format = DWARF64;
+    address_size = Unsigned.UInt8.of_int 8;
+    version = Unsigned.UInt16.of_int 5;
+  }
 
-let test_stack_operations () =
-  (* Test stack operations: DW_OP_dup DW_OP_drop DW_OP_swap *)
-  (* Bytecode: 0x12 0x13 0x16 *)
-  let test_expr = "\x12\x13\x16" in
-  let parsed = Dwarf.parse_dwarf_expression test_expr in
-  Alcotest.(check int) "stack ops count" 3 (List.length parsed);
-  let result_str = Dwarf.string_of_dwarf_expression parsed in
-  let expected_str = "DW_OP_dup DW_OP_drop DW_OP_swap" in
-  Alcotest.(check string) "stack expression string" expected_str result_str
+let test_gnu_implicit_pointer () =
+  ignore
+  @@ check_single_op ~encoding:dwarf4_encoding ~name:"gnu_implicit_pointer"
+       ~expected:"DW_OP_implicit_pointer" "\xf2\x2a\x00\x00\x00\x05" ()
 
-let test_uleb128_operations () =
-  (* Test ULEB128 operations: DW_OP_constu(128) DW_OP_plus_uconst(255) *)
-  (* 128 in ULEB128 = 0x80 0x01, 255 in ULEB128 = 0xff 0x01 *)
-  (* Bytecode: 0x10 0x80 0x01 0x23 0xff 0x01 *)
-  let test_expr = "\x10\x80\x01\x23\xff\x01" in
-  let parsed = Dwarf.parse_dwarf_expression test_expr in
-  Alcotest.(check int) "uleb128 ops count" 2 (List.length parsed);
-  let result_str = Dwarf.string_of_dwarf_expression parsed in
-  let expected_str = "DW_OP_constu(128) DW_OP_plus_uconst(255)" in
-  Alcotest.(check string) "uleb128 expression string" expected_str result_str
+let test_gnu_parameter_ref () =
+  let op =
+    check_single_op ~name:"gnu_parameter_ref"
+      ~expected:"DW_OP_GNU_parameter_ref" "\xfa\x42\x00\x00\x00" ()
+  in
+  Alcotest.(check int) "operand is 0x42" 0x42 (List.hd op.operands)
 
-let test_empty_expression () =
-  (* Test empty expression *)
-  let test_expr = "" in
-  let parsed = Dwarf.parse_dwarf_expression test_expr in
-  Alcotest.(check int) "empty expression count" 0 (List.length parsed);
-  let result_str = Dwarf.string_of_dwarf_expression parsed in
-  let expected_str = "" in
-  Alcotest.(check string) "empty expression string" expected_str result_str
+let test_gnu_variable_value () =
+  ignore
+  @@ check_single_op ~name:"gnu_variable_value"
+       ~expected:"DW_OP_GNU_variable_value"
+       "\xfd\x01\x02\x03\x04\x05\x06\x07\x08" ()
 
-let test_unknown_opcode () =
-  (* Test unknown opcode handling *)
-  let test_expr = "\x01\x35" in
-  (* 0x01 is unknown, 0x35 is DW_OP_lit5 *)
-  let parsed = Dwarf.parse_dwarf_expression test_expr in
-  (* Should skip unknown opcode and parse DW_OP_lit5 *)
-  Alcotest.(check int) "unknown opcode handling" 1 (List.length parsed);
-  let result_str = Dwarf.string_of_dwarf_expression parsed in
-  let expected_str = "DW_OP_lit5" in
-  Alcotest.(check string) "unknown opcode expression" expected_str result_str
+let test_implicit_pointer_dwarf4_encoding () =
+  ignore
+  @@ check_single_op ~encoding:dwarf4_encoding ~name:"implicit_pointer_dwarf4"
+       ~expected:"DW_OP_implicit_pointer" "\xa0\x2a\x00\x00\x00\x00" ()
+
+let test_implicit_pointer_dwarf64_encoding () =
+  ignore
+  @@ check_single_op ~encoding:dwarf5_64_encoding
+       ~name:"implicit_pointer_dwarf64" ~expected:"DW_OP_implicit_pointer"
+       "\xa0\x2a\x00\x00\x00\x00\x00\x00\x00\x00" ()
 
 let () =
-  let tests =
+  Alcotest.run "DWARF_Expression"
     [
-      ("simple_expression", `Quick, test_simple_expression);
-      ("literal_operations", `Quick, test_literal_operations);
-      ("register_operations", `Quick, test_register_operations);
-      ("stack_operations", `Quick, test_stack_operations);
-      ("uleb128_operations", `Quick, test_uleb128_operations);
-      ("empty_expression", `Quick, test_empty_expression);
-      ("unknown_opcode", `Quick, test_unknown_opcode);
+      ( "expression_parsing",
+        [
+          ( "simple_expression",
+            `Quick,
+            check_expr ~name:"simple" ~count:3
+              ~expected:"DW_OP_breg7(0) DW_OP_const1u(8) DW_OP_plus"
+              "\x77\x00\x08\x08\x22" );
+          ( "literal_operations",
+            `Quick,
+            check_expr ~name:"literal" ~count:3
+              ~expected:"DW_OP_lit5 DW_OP_lit10 DW_OP_plus" "\x35\x3a\x22" );
+          ( "register_operations",
+            `Quick,
+            check_expr ~name:"register" ~count:2
+              ~expected:"DW_OP_reg6 DW_OP_reg16" "\x56\x60" );
+          ( "stack_operations",
+            `Quick,
+            check_expr ~name:"stack" ~count:3
+              ~expected:"DW_OP_dup DW_OP_drop DW_OP_swap" "\x12\x13\x16" );
+          ( "uleb128_operations",
+            `Quick,
+            check_expr ~name:"uleb128" ~count:2
+              ~expected:"DW_OP_constu(128) DW_OP_plus_uconst(255)"
+              "\x10\x80\x01\x23\xff\x01" );
+          ( "empty_expression",
+            `Quick,
+            check_expr ~name:"empty" ~count:0 ~expected:"" "" );
+          ( "unknown_opcode",
+            `Quick,
+            check_expr ~name:"unknown" ~count:1 ~expected:"DW_OP_lit5"
+              "\x01\x35" );
+        ] );
+      ( "gnu_ops",
+        [
+          ( "gnu_push_tls_address",
+            `Quick,
+            fun () ->
+              ignore
+              @@ check_single_op ~name:"gnu_push_tls_address"
+                   ~expected:"DW_OP_form_tls_address" "\xe0" () );
+          ( "gnu_entry_value",
+            `Quick,
+            fun () ->
+              ignore
+              @@ check_single_op ~name:"gnu_entry_value"
+                   ~expected:"DW_OP_entry_value" "\xf3\x01\x50" () );
+          ( "gnu_convert",
+            `Quick,
+            fun () ->
+              ignore
+              @@ check_single_op ~name:"gnu_convert" ~expected:"DW_OP_convert"
+                   "\xf7\x2a" () );
+          ( "gnu_addr_index",
+            `Quick,
+            fun () ->
+              ignore
+              @@ check_single_op ~name:"gnu_addr_index" ~expected:"DW_OP_addrx"
+                   "\xfb\x03" () );
+          ( "gnu_const_index",
+            `Quick,
+            fun () ->
+              ignore
+              @@ check_single_op ~name:"gnu_const_index"
+                   ~expected:"DW_OP_constx" "\xfc\x07" () );
+          ("gnu_implicit_pointer", `Quick, test_gnu_implicit_pointer);
+          ("gnu_parameter_ref", `Quick, test_gnu_parameter_ref);
+          ("gnu_variable_value", `Quick, test_gnu_variable_value);
+          ( "implicit_pointer_dwarf4",
+            `Quick,
+            test_implicit_pointer_dwarf4_encoding );
+          ( "implicit_pointer_dwarf64",
+            `Quick,
+            test_implicit_pointer_dwarf64_encoding );
+        ] );
     ]
-  in
-  Alcotest.run "DWARF_Expression" [ ("expression_parsing", tests) ]

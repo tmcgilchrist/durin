@@ -144,6 +144,7 @@ let binary_path =
   Cmdliner.Arg.(
     required & opt (some file) None & info [ "binary"; "b" ] ~doc ~docv:"BINARY")
 
+(* TODO Is there an equivalent DWARF 5 integration test? What specifically is this testing? *)
 let () =
   run_with_args "DWARF 4 Integration" binary_path
     [
