@@ -5034,7 +5034,7 @@ module DebugNames = struct
           let tag_code =
             Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
           in
-          let tag = abbreviation_tag_of_u64 tag_code in
+          let tag = abbreviation_tag_of_int tag_code in
 
           (* Parse attributes *)
           let attributes = ref [] in

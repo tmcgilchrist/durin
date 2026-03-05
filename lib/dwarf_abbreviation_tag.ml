@@ -295,5 +295,3 @@ type children_determination = DW_CHILDREN_no | DW_CHILDREN_yes
 let children_determination = function
   | 0x00 -> DW_CHILDREN_no
   | 0x01 -> DW_CHILDREN_yes
-
-let abbreviation_tag_of_u64 code = abbreviation_tag_of_int code
