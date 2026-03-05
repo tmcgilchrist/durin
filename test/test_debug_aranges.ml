@@ -15,11 +15,8 @@ let buffer_of_bytes bytes =
 let test_aranges_parse_no_section () =
   let bytes = [ 0x00; 0x00; 0x00; 0x00 ] in
   let buffer = buffer_of_bytes bytes in
-  let result =
-    try Dwarf.DebugAranges.parse buffer with Failure _ -> None
-  in
-  check bool "returns None when no .debug_aranges section"
-    true (result = None)
+  let result = try Dwarf.DebugAranges.parse buffer with Failure _ -> None in
+  check bool "returns None when no .debug_aranges section" true (result = None)
 
 let test_aranges_section_name () =
   check string "ELF debug_aranges" ".debug_aranges"
@@ -51,10 +48,7 @@ let test_aranges_header_record () =
       address_size = Unsigned.UInt8.of_int 8;
       segment_size = Unsigned.UInt8.of_int 0;
       header_span =
-        {
-          start = Unsigned.UInt64.of_int 0;
-          size = Unsigned.UInt64.of_int 12;
-        };
+        { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 12 };
     }
   in
   check int "version is 2" (Unsigned.UInt16.to_int header.version) 2;
@@ -72,10 +66,7 @@ let test_aranges_set_record () =
       address_size = Unsigned.UInt8.of_int 8;
       segment_size = Unsigned.UInt8.of_int 0;
       header_span =
-        {
-          start = Unsigned.UInt64.of_int 0;
-          size = Unsigned.UInt64.of_int 12;
-        };
+        { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 12 };
     }
   in
   let ranges : Dwarf.DebugAranges.address_range list =
@@ -106,10 +97,7 @@ let test_aranges_multiple_ranges () =
       address_size = Unsigned.UInt8.of_int 4;
       segment_size = Unsigned.UInt8.of_int 0;
       header_span =
-        {
-          start = Unsigned.UInt64.of_int 0;
-          size = Unsigned.UInt64.of_int 12;
-        };
+        { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 12 };
     }
   in
   let ranges : Dwarf.DebugAranges.address_range list =

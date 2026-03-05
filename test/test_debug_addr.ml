@@ -22,11 +22,7 @@ let test_debug_addr_header_dwarf32 () =
      version: 2 bytes (5)
      address_size: 1 byte (8)
      segment_selector_size: 1 byte (0) *)
-  let bytes =
-    [
-      0x0c; 0x00; 0x00; 0x00; 0x05; 0x00; 0x08; 0x00;
-    ]
-  in
+  let bytes = [ 0x0c; 0x00; 0x00; 0x00; 0x05; 0x00; 0x08; 0x00 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let header = Dwarf.DebugAddr.parse_header cursor in
@@ -39,11 +35,7 @@ let test_debug_addr_header_dwarf32 () =
 
 let test_debug_addr_header_4byte_addr () =
   (* DWARF32 with 4-byte addresses *)
-  let bytes =
-    [
-      0x0c; 0x00; 0x00; 0x00; 0x05; 0x00; 0x04; 0x00;
-    ]
-  in
+  let bytes = [ 0x0c; 0x00; 0x00; 0x00; 0x05; 0x00; 0x04; 0x00 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let header = Dwarf.DebugAddr.parse_header cursor in
@@ -56,15 +48,26 @@ let test_debug_addr_single_entry_8byte () =
   let bytes =
     [
       (* unit_length: 12 = 2+1+1+8 *)
-      0x0c; 0x00; 0x00; 0x00;
+      0x0c;
+      0x00;
+      0x00;
+      0x00;
       (* version: 5 *)
-      0x05; 0x00;
+      0x05;
+      0x00;
       (* address_size: 8 *)
       0x08;
       (* segment_selector_size: 0 *)
       0x00;
       (* address: 0x00401000 LE *)
-      0x00; 0x10; 0x40; 0x00; 0x00; 0x00; 0x00; 0x00;
+      0x00;
+      0x10;
+      0x40;
+      0x00;
+      0x00;
+      0x00;
+      0x00;
+      0x00;
     ]
   in
   let buffer = buffer_of_bytes bytes in
@@ -82,19 +85,32 @@ let test_debug_addr_multiple_entries_4byte () =
   let bytes =
     [
       (* unit_length: 16 = 2+1+1+3*4 *)
-      0x10; 0x00; 0x00; 0x00;
+      0x10;
+      0x00;
+      0x00;
+      0x00;
       (* version: 5 *)
-      0x05; 0x00;
+      0x05;
+      0x00;
       (* address_size: 4 *)
       0x04;
       (* segment_selector_size: 0 *)
       0x00;
       (* addr 0: 0x1000 *)
-      0x00; 0x10; 0x00; 0x00;
+      0x00;
+      0x10;
+      0x00;
+      0x00;
       (* addr 1: 0x2000 *)
-      0x00; 0x20; 0x00; 0x00;
+      0x00;
+      0x20;
+      0x00;
+      0x00;
       (* addr 2: 0x3000 *)
-      0x00; 0x30; 0x00; 0x00;
+      0x00;
+      0x30;
+      0x00;
+      0x00;
     ]
   in
   let buffer = buffer_of_bytes bytes in
@@ -111,9 +127,13 @@ let test_debug_addr_empty () =
   let bytes =
     [
       (* unit_length: 4 = 2+1+1 (header fields only) *)
-      0x04; 0x00; 0x00; 0x00;
+      0x04;
+      0x00;
+      0x00;
+      0x00;
       (* version: 5 *)
-      0x05; 0x00;
+      0x05;
+      0x00;
       (* address_size: 8 *)
       0x08;
       (* segment_selector_size: 0 *)
@@ -131,17 +151,35 @@ let test_debug_addr_parse_combined () =
   let bytes =
     [
       (* unit_length: 20 = 2+1+1+2*8 *)
-      0x14; 0x00; 0x00; 0x00;
+      0x14;
+      0x00;
+      0x00;
+      0x00;
       (* version: 5 *)
-      0x05; 0x00;
+      0x05;
+      0x00;
       (* address_size: 8 *)
       0x08;
       (* segment_selector_size: 0 *)
       0x00;
       (* addr 0: 0xDEADBEEF *)
-      0xEF; 0xBE; 0xAD; 0xDE; 0x00; 0x00; 0x00; 0x00;
+      0xEF;
+      0xBE;
+      0xAD;
+      0xDE;
+      0x00;
+      0x00;
+      0x00;
+      0x00;
       (* addr 1: 0xCAFEBABE *)
-      0xBE; 0xBA; 0xFE; 0xCA; 0x00; 0x00; 0x00; 0x00;
+      0xBE;
+      0xBA;
+      0xFE;
+      0xCA;
+      0x00;
+      0x00;
+      0x00;
+      0x00;
     ]
   in
   let buffer = buffer_of_bytes bytes in
@@ -159,15 +197,26 @@ let test_debug_addr_large_addresses () =
   let bytes =
     [
       (* unit_length: 12 = 2+1+1+8 *)
-      0x0c; 0x00; 0x00; 0x00;
+      0x0c;
+      0x00;
+      0x00;
+      0x00;
       (* version: 5 *)
-      0x05; 0x00;
+      0x05;
+      0x00;
       (* address_size: 8 *)
       0x08;
       (* segment_selector_size: 0 *)
       0x00;
       (* addr: 0x7FFFFFFFFFFFFFFF *)
-      0xFF; 0xFF; 0xFF; 0xFF; 0xFF; 0xFF; 0xFF; 0x7F;
+      0xFF;
+      0xFF;
+      0xFF;
+      0xFF;
+      0xFF;
+      0xFF;
+      0xFF;
+      0x7F;
     ]
   in
   let buffer = buffer_of_bytes bytes in
