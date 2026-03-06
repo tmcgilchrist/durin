@@ -122,8 +122,6 @@ let test_aranges_multiple_ranges () =
   check int64 "second start" (Unsigned.UInt64.to_int64 r2.start_address) 0x2000L;
   check int64 "second length" (Unsigned.UInt64.to_int64 r2.length) 0x200L
 
-(* TODO Add tests of real debug_aranges from some example C/C++ programs *)
-
 let () =
   run "debug_aranges"
     [
