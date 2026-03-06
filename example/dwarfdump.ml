@@ -107,9 +107,9 @@ let handle_dwarf_errors f =
 let dump_line_program_header header =
   Printf.printf "Line table prologue:\n";
   Printf.printf "    total_length: 0x%08Lx\n"
-    (Unsigned.UInt64.to_int64 header.Dwarf.LineTable.unit_length);
+    (Unsigned.UInt64.to_int64 header.Dwarf.DebugLine.unit_length);
   Printf.printf "          format: %s\n"
-    (Dwarf.string_of_dwarf_format header.Dwarf.LineTable.format);
+    (Dwarf.string_of_dwarf_format header.Dwarf.DebugLine.format);
   Printf.printf "         version: %d\n" (Unsigned.UInt16.to_int header.version);
   Printf.printf "    address_size: %d\n"
     (Unsigned.UInt8.to_int header.address_size);
@@ -193,14 +193,14 @@ let dump_debug_line filename =
 
           (* Parse the line program header using our implementation *)
           let header =
-            Dwarf.LineTable.parse_line_program_header cursor buffer
+            Dwarf.DebugLine.parse_line_program_header cursor buffer
           in
 
           (* Dump the header information *)
           dump_line_program_header header;
 
           (* Parse the line program and display entries *)
-          let entries = Dwarf.LineTable.parse_line_program cursor header in
+          let entries = Dwarf.DebugLine.parse_line_program cursor header in
           Printf.printf "\n";
 
           (* Display line table header *)
@@ -217,39 +217,39 @@ let dump_debug_line filename =
               let flags =
                 let flags_list = [] in
                 let flags_list =
-                  if entry.Dwarf.LineTable.is_stmt then "is_stmt" :: flags_list
+                  if entry.Dwarf.DebugLine.is_stmt then "is_stmt" :: flags_list
                   else flags_list
                 in
                 let flags_list =
-                  if entry.Dwarf.LineTable.basic_block then
+                  if entry.Dwarf.DebugLine.basic_block then
                     "basic_block" :: flags_list
                   else flags_list
                 in
                 let flags_list =
-                  if entry.Dwarf.LineTable.end_sequence then
+                  if entry.Dwarf.DebugLine.end_sequence then
                     "end_sequence" :: flags_list
                   else flags_list
                 in
                 let flags_list =
-                  if entry.Dwarf.LineTable.prologue_end then
+                  if entry.Dwarf.DebugLine.prologue_end then
                     "prologue_end" :: flags_list
                   else flags_list
                 in
                 let flags_list =
-                  if entry.Dwarf.LineTable.epilogue_begin then
+                  if entry.Dwarf.DebugLine.epilogue_begin then
                     "epilogue_begin" :: flags_list
                   else flags_list
                 in
                 " " ^ String.concat " " (List.rev flags_list)
               in
               Printf.printf "0x%016Lx %6ld %6ld %6ld %3ld %13ld %7ld %s\n"
-                (Unsigned.UInt64.to_int64 entry.Dwarf.LineTable.address)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.line)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.column)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.file_index)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.isa)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.discriminator)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.op_index)
+                (Unsigned.UInt64.to_int64 entry.Dwarf.DebugLine.address)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.line)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.column)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.file_index)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.isa)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.discriminator)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.op_index)
                 flags)
             entries;
           Printf.printf "\n")
@@ -289,7 +289,7 @@ let resolve_file_index buffer stmt_list_offset file_index =
           Unsigned.UInt64.(add debug_line_offset stmt_list_offset |> to_int)
         in
         let cursor = Object.Buffer.cursor buffer ~at:absolute_offset in
-        let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
+        let header = Dwarf.DebugLine.parse_line_program_header cursor buffer in
         let file_index_int = Unsigned.UInt64.to_int file_index in
         if file_index_int < Array.length header.file_names then
           let file_entry = header.file_names.(file_index_int) in

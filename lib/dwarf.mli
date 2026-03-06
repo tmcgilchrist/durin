@@ -1224,7 +1224,7 @@ val parse_compile_unit_header :
     including file names, directory names, and opcode definitions.
 
     Reference: DWARF 5 specification, section 6.2 "Line Number Information" *)
-module LineTable : sig
+module DebugLine : sig
   type t = { cu : CompileUnit.t }
 
   module File : sig

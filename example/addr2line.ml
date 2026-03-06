@@ -31,7 +31,7 @@ let find_line_entry entries target_addr =
     else
       let mid = (low + high) / 2 in
       let entry = List.nth entries mid in
-      let addr = entry.Dwarf.LineTable.address in
+      let addr = entry.Dwarf.DebugLine.address in
       if Unsigned.UInt64.equal addr target_addr then Some entry
       else if Unsigned.UInt64.compare target_addr addr < 0 then
         binary_search low (mid - 1)
@@ -40,7 +40,7 @@ let find_line_entry entries target_addr =
         mid < List.length entries - 1
       then
         let next_entry = List.nth entries (mid + 1) in
-        let next_addr = next_entry.Dwarf.LineTable.address in
+        let next_addr = next_entry.Dwarf.DebugLine.address in
         if Unsigned.UInt64.compare target_addr next_addr < 0 then Some entry
         else binary_search (mid + 1) high
       else Some entry
@@ -102,8 +102,8 @@ let parse_line_table buffer =
       let cursor =
         Object.Buffer.cursor buffer ~at:(Unsigned.UInt64.to_int offset)
       in
-      let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
-      let entries = Dwarf.LineTable.parse_line_program cursor header in
+      let header = Dwarf.DebugLine.parse_line_program_header cursor buffer in
+      let entries = Dwarf.DebugLine.parse_line_program cursor header in
       Some (header, entries)
 
 (* Resolve address to source location *)
@@ -112,15 +112,15 @@ let addr_to_location _buffer header entries addr =
   | None -> ("??", 0)
   | Some entry ->
       let file_index =
-        Unsigned.UInt32.to_int entry.Dwarf.LineTable.file_index
+        Unsigned.UInt32.to_int entry.Dwarf.DebugLine.file_index
       in
-      if file_index < Array.length header.Dwarf.LineTable.file_names then
-        let file_entry = header.Dwarf.LineTable.file_names.(file_index) in
+      if file_index < Array.length header.Dwarf.DebugLine.file_names then
+        let file_entry = header.Dwarf.DebugLine.file_names.(file_index) in
         let filename =
           if file_entry.directory = "" then file_entry.name
           else file_entry.directory ^ "/" ^ file_entry.name
         in
-        let line = Unsigned.UInt32.to_int entry.Dwarf.LineTable.line in
+        let line = Unsigned.UInt32.to_int entry.Dwarf.DebugLine.line in
         (filename, line)
       else ("??", 0)
 

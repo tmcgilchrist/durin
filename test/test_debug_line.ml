@@ -45,7 +45,7 @@ let test_parsing_function_availability binary_path =
      but we can verify the function signature is correct by testing it exists *)
   Alcotest.(check bool)
     "parse_line_program_header function exists" true
-    (match Dwarf.LineTable.parse_line_program_header with _ -> true)
+    (match Dwarf.DebugLine.parse_line_program_header with _ -> true)
 
 let test_actual_line_program_header_parsing binary_path =
   (* Parse the actual debug_line section from the dSYM file *)
@@ -143,20 +143,20 @@ let test_comprehensive_debug_line_validation binary_path =
     (* Test that our parsing implementation exists and has correct type signature *)
     Alcotest.(check bool)
       "parse_line_program_header function has correct signature" true
-      (match Dwarf.LineTable.parse_line_program_header with
+      (match Dwarf.DebugLine.parse_line_program_header with
       | f -> (
           try
             ignore
               (f
                 : Object.Buffer.cursor ->
                   Object.Buffer.t ->
-                  Dwarf.LineTable.line_program_header);
+                  Dwarf.DebugLine.line_program_header);
             true
           with _ -> false));
 
     (* Test that we can create a realistic line_program_header with expected values *)
     let realistic_header =
-      Dwarf.LineTable.
+      Dwarf.DebugLine.
         {
           format = Dwarf.DWARF32;
           unit_length = Unsigned.UInt64.of_int 89;

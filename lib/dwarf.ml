@@ -2760,7 +2760,7 @@ let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
       in
       parse_units 0
 
-module LineTable = struct
+module DebugLine = struct
   type t = { cu : CompileUnit.t }
 
   module File = struct

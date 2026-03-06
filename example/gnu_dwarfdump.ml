@@ -154,53 +154,53 @@ let dump_debug_line filename =
         in
 
         (* Parse the line program header using our implementation *)
-        let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
+        let header = Dwarf.DebugLine.parse_line_program_header cursor buffer in
 
         (* Parse the line program and display entries *)
-        let entries = Dwarf.LineTable.parse_line_program cursor header in
+        let entries = Dwarf.DebugLine.parse_line_program cursor header in
 
         (* Display each entry in system dwarfdump format *)
         List.iteri
           (fun i entry ->
             let flags = [] in
             let flags =
-              if entry.Dwarf.LineTable.is_stmt then "NS" :: flags else flags
+              if entry.Dwarf.DebugLine.is_stmt then "NS" :: flags else flags
             in
             let flags =
-              if entry.Dwarf.LineTable.basic_block then "BB" :: flags else flags
+              if entry.Dwarf.DebugLine.basic_block then "BB" :: flags else flags
             in
             let flags =
               (* Show ET flag if end_sequence is set, OR if epilogue_begin is set.
                  This matches libdwarf's dwarfdump behavior which considers the
                  epilogue as part of the "end of text sequence". *)
               if
-                entry.Dwarf.LineTable.end_sequence
-                || entry.Dwarf.LineTable.epilogue_begin
+                entry.Dwarf.DebugLine.end_sequence
+                || entry.Dwarf.DebugLine.epilogue_begin
               then "ET" :: flags
               else flags
             in
             let flags =
-              if entry.Dwarf.LineTable.prologue_end then "PE" :: flags
+              if entry.Dwarf.DebugLine.prologue_end then "PE" :: flags
               else flags
             in
             let flags =
-              if entry.Dwarf.LineTable.epilogue_begin then "EB" :: flags
+              if entry.Dwarf.DebugLine.epilogue_begin then "EB" :: flags
               else flags
             in
             let flags_str = String.concat " " (List.rev flags) in
 
             let isa_str =
-              if Unsigned.UInt32.to_int entry.Dwarf.LineTable.isa <> 0 then
+              if Unsigned.UInt32.to_int entry.Dwarf.DebugLine.isa <> 0 then
                 Printf.sprintf " IS=%ld"
-                  (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.isa)
+                  (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.isa)
               else ""
             in
 
             let discriminator_str =
-              if Unsigned.UInt32.to_int entry.Dwarf.LineTable.discriminator <> 0
+              if Unsigned.UInt32.to_int entry.Dwarf.DebugLine.discriminator <> 0
               then
                 Printf.sprintf " DI=%ld"
-                  (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.discriminator)
+                  (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.discriminator)
               else ""
             in
 
@@ -225,9 +225,9 @@ let dump_debug_line filename =
             in
 
             Printf.printf "0x%08x  [%4ld,%2ld] %s%s%s%s\n"
-              (Unsigned.UInt64.to_int entry.Dwarf.LineTable.address)
-              (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.line)
-              (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.column)
+              (Unsigned.UInt64.to_int entry.Dwarf.DebugLine.address)
+              (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.line)
+              (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.column)
               flags_str isa_str discriminator_str uri_str)
           entries;
         Printf.printf "\n"
@@ -412,7 +412,7 @@ and resolve_file_index buffer stmt_list_offset file_index =
           Unsigned.UInt64.(add debug_line_offset stmt_list_offset |> to_int)
         in
         let cursor = Object.Buffer.cursor buffer ~at:absolute_offset in
-        let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
+        let header = Dwarf.DebugLine.parse_line_program_header cursor buffer in
         let file_index_int = Unsigned.UInt64.to_int file_index in
         if file_index_int < Array.length header.file_names then
           let file_entry = header.file_names.(file_index_int) in

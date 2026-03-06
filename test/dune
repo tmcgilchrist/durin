@@ -1016,6 +1016,34 @@
    --binary
    %{dep:hello_world_debug_frame_linux})))
 
+(test
+ (name test_eh_frame_integration)
+ (deps hello_world_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_eh_frame_integration.exe}
+   --binary
+   %{dep:hello_world_linux})))
+
+(test
+ (name test_debug_line_integration)
+ (deps hello_world_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_line_integration.exe}
+   --binary
+   %{dep:hello_world_linux})))
+
 ; =============================================================================
 ; GNU-DWARFDUMP COMPARISON TESTS - LINUX
 ; =============================================================================

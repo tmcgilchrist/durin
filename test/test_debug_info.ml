@@ -285,7 +285,7 @@ let test_dwarf4_line_table_header () =
   in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
+  let header = Dwarf.DebugLine.parse_line_program_header cursor buffer in
   check int "version is 4" (Unsigned.UInt16.to_int header.version) 4;
   check int "min_inst_length is 1"
     (Unsigned.UInt8.to_int header.minimum_instruction_length)
