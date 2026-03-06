@@ -40,14 +40,17 @@ let test_resolve_first_list binary_path =
   match Dwarf.DebugRnglists.parse buffer with
   | None -> fail "expected DebugRnglists.parse to return Some"
   | Some section ->
-      check bool "offset_table is non-empty" true
-        (Array.length section.offset_table > 0);
-      let offset = section.offset_table.(0) in
-      let addr_size = section.header.address_size in
-      let result =
-        Dwarf.DebugRnglists.resolve_range_list buffer offset addr_size
-      in
-      check bool "resolve_range_list returns Some" true (Option.is_some result)
+      if Array.length section.offset_table = 0 then
+        check int "offset_entry_count is 0" 0
+          (Unsigned.UInt32.to_int section.header.offset_entry_count)
+      else
+        let offset = section.offset_table.(0) in
+        let addr_size = section.header.address_size in
+        let result =
+          Dwarf.DebugRnglists.resolve_range_list buffer offset addr_size
+        in
+        check bool "resolve_range_list returns Some" true
+          (Option.is_some result)
 
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in

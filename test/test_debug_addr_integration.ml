@@ -1,29 +1,22 @@
 open Alcotest
 open Durin
 
-let find_debug_addr_section binary_path =
-  let buffer = Object.Buffer.parse binary_path in
-  let _header, sections = Object.Elf.read_elf buffer in
-  let section_opt =
-    Array.find_opt
-      (fun (s : Object.Elf.section) -> s.sh_name_str = ".debug_addr")
-      sections
-  in
-  match section_opt with
+let find_debug_addr binary_path =
+  match Test_helpers.find_section binary_path ".debug_addr" with
   | None -> None
-  | Some section ->
+  | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       Some (buffer, offset)
 
 let test_parse_succeeds binary_path =
-  match find_debug_addr_section binary_path with
-  | None -> fail "expected .debug_addr section" (* TODO Specialise this into the helper function? *)
+  match find_debug_addr binary_path with
+  | None -> fail "expected .debug_addr section"
   | Some (buffer, offset) ->
       let t = Dwarf.DebugAddr.parse buffer (Unsigned.UInt64.of_int offset) in
       check bool "has entries" true (Array.length t.entries > 0)
 
 let test_header_valid binary_path =
-  match find_debug_addr_section binary_path with
+  match find_debug_addr binary_path with
   | None -> fail "expected .debug_addr section"
   | Some (buffer, offset) ->
       let t = Dwarf.DebugAddr.parse buffer (Unsigned.UInt64.of_int offset) in
@@ -37,7 +30,7 @@ let test_header_valid binary_path =
         (Unsigned.UInt64.to_int64 h.unit_length > 0L)
 
 let test_addresses_nonzero binary_path =
-  match find_debug_addr_section binary_path with
+  match find_debug_addr binary_path with
   | None -> fail "expected .debug_addr section"
   | Some (buffer, offset) ->
       let t = Dwarf.DebugAddr.parse buffer (Unsigned.UInt64.of_int offset) in
@@ -50,7 +43,7 @@ let test_addresses_nonzero binary_path =
         t.entries
 
 let test_no_segments binary_path =
-  match find_debug_addr_section binary_path with
+  match find_debug_addr binary_path with
   | None -> fail "expected .debug_addr section"
   | Some (buffer, offset) ->
       let t = Dwarf.DebugAddr.parse buffer (Unsigned.UInt64.of_int offset) in
@@ -61,10 +54,7 @@ let test_no_segments binary_path =
             true (Option.is_none e.segment))
         t.entries
 
-let binary_path =
-  let doc = "Path to DWARF 5 test binary" in
-  Cmdliner.Arg.(
-    required & opt (some file) None & info [ "binary"; "b" ] ~doc ~docv:"BINARY")
+let binary_path = Test_helpers.binary_path ~doc:"Path to DWARF 5 test binary"
 
 let () =
   run_with_args "debug_addr integration" binary_path

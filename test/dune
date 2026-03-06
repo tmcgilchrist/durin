@@ -916,7 +916,7 @@
 (test
  (name test_debug_macro_integration)
  (deps test_macros_linux)
- (libraries durin object alcotest cmdliner)
+ (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1000,7 +1000,7 @@
 (test
  (name test_debug_str_offsets_integration)
  (deps hello_world_clang_linux)
- (libraries durin object alcotest cmdliner)
+ (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1014,7 +1014,7 @@
 (test
  (name test_debug_addr_integration)
  (deps hello_world_clang_linux)
- (libraries durin object alcotest cmdliner)
+ (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1028,7 +1028,7 @@
 (test
  (name test_debug_frame_integration)
  (deps hello_world_debug_frame_linux)
- (libraries durin object alcotest cmdliner)
+ (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1042,7 +1042,7 @@
 (test
  (name test_eh_frame_integration)
  (deps hello_world_linux)
- (libraries durin object alcotest cmdliner)
+ (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1056,7 +1056,7 @@
 (test
  (name test_debug_line_integration)
  (deps hello_world_linux)
- (libraries durin object alcotest cmdliner)
+ (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1098,7 +1098,7 @@
 (test
  (name test_debug_pubnames_integration)
  (deps hello_world_pubnames_linux)
- (libraries durin object alcotest cmdliner)
+ (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1112,7 +1112,7 @@
 (test
  (name test_debug_names_integration)
  (deps hello_world_debug_names_linux)
- (libraries durin object alcotest cmdliner)
+ (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")

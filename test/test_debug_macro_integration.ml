@@ -1,30 +1,18 @@
 open Alcotest
 open Durin
 
-let find_debug_macro_section binary_path =
-  let buffer = Object.Buffer.parse binary_path in
-  let _header, sections = Object.Elf.read_elf buffer in
-  let section_opt =
-    Array.find_opt
-      (fun (s : Object.Elf.section) -> s.sh_name_str = ".debug_macro")
-      sections
-  in
-  match section_opt with
-  | None -> None
-  | Some section ->
-      let offset = Unsigned.UInt64.to_int section.sh_offset in
-      let size = Unsigned.UInt64.to_int section.sh_size in
-      Some (buffer, offset, size)
-
 let test_section_exists binary_path =
-  match find_debug_macro_section binary_path with
+  match Test_helpers.find_section binary_path ".debug_macro" with
   | None -> fail "expected .debug_macro section"
-  | Some (_, _, size) -> check bool "size > 0" true (size > 0)
+  | Some (_, section) ->
+      let size = Unsigned.UInt64.to_int section.sh_size in
+      check bool "size > 0" true (size > 0)
 
 let test_header binary_path =
-  match find_debug_macro_section binary_path with
+  match Test_helpers.find_section binary_path ".debug_macro" with
   | None -> fail "expected .debug_macro section"
-  | Some (buffer, offset, _size) ->
+  | Some (buffer, section) ->
+      let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cur = Object.Buffer.cursor ~at:offset buffer in
       let header = Dwarf.parse_debug_macro_header cur in
       check int "version is 5" 5 (Unsigned.UInt16.to_int header.version);
@@ -35,9 +23,10 @@ let test_header binary_path =
         (Option.is_some header.debug_line_offset)
 
 let test_entries_valid binary_path =
-  match find_debug_macro_section binary_path with
+  match Test_helpers.find_section binary_path ".debug_macro" with
   | None -> fail "expected .debug_macro section"
-  | Some (buffer, offset, _size) ->
+  | Some (buffer, section) ->
+      let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cur = Object.Buffer.cursor ~at:offset buffer in
       let unit = Dwarf.parse_debug_macro_unit cur in
       List.iter
@@ -64,9 +53,10 @@ let test_entries_valid binary_path =
         unit.entries
 
 let test_entry_types_present binary_path =
-  match find_debug_macro_section binary_path with
+  match Test_helpers.find_section binary_path ".debug_macro" with
   | None -> fail "expected .debug_macro section"
-  | Some (buffer, offset, _size) ->
+  | Some (buffer, section) ->
+      let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cur = Object.Buffer.cursor ~at:offset buffer in
       let unit = Dwarf.parse_debug_macro_unit cur in
       let has_start_file =
@@ -92,17 +82,17 @@ let test_entry_types_present binary_path =
       check bool "has DW_MACRO_define_strp" true has_define_strp
 
 let test_full_section_traversal binary_path =
-  match find_debug_macro_section binary_path with
+  match Test_helpers.find_section binary_path ".debug_macro" with
   | None -> fail "expected .debug_macro section"
-  | Some (buffer, offset, size) ->
+  | Some (buffer, section) ->
+      let offset = Unsigned.UInt64.to_int section.sh_offset in
+      let size = Unsigned.UInt64.to_int section.sh_size in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let section = Dwarf.parse_debug_macro_section cur size in
-      check bool "has units" true (List.length section.units > 0)
+      let parsed = Dwarf.parse_debug_macro_section cur size in
+      check bool "has units" true (List.length parsed.units > 0)
 
 let binary_path =
-  let doc = "Path to DWARF 5 macro test binary" in
-  Cmdliner.Arg.(
-    required & opt (some file) None & info [ "binary"; "b" ] ~doc ~docv:"BINARY")
+  Test_helpers.binary_path ~doc:"Path to DWARF 5 macro test binary"
 
 let () =
   run_with_args "debug_macro integration" binary_path

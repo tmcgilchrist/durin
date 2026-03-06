@@ -1,15 +1,10 @@
 open Alcotest
 open Durin
 
-let find_section buffer name =
-  let _header, sections = Object.Elf.read_elf buffer in
-  Array.find_opt (fun (s : Object.Elf.section) -> s.sh_name_str = name) sections
-
 let parse_names binary_path =
-  let buffer = Object.Buffer.parse binary_path in
-  match find_section buffer ".debug_names" with
+  match Test_helpers.find_section binary_path ".debug_names" with
   | None -> None
-  | Some section ->
+  | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cursor = Object.Buffer.cursor buffer ~at:offset in
       Some (Dwarf.DebugNames.parse_debug_names_section cursor buffer)
@@ -73,9 +68,7 @@ let test_has_entry_pool binary_path =
         (Array.length names.entry_pool > 0)
 
 let binary_path =
-  let doc = "Path to DWARF 5 test binary with -gpubnames" in
-  Cmdliner.Arg.(
-    required & opt (some file) None & info [ "binary"; "b" ] ~doc ~docv:"BINARY")
+  Test_helpers.binary_path ~doc:"Path to DWARF 5 test binary with -gpubnames"
 
 let () =
   run_with_args "debug_names integration" binary_path

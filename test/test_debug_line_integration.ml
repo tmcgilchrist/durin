@@ -2,16 +2,9 @@ open Alcotest
 open Durin
 
 let find_debug_line binary_path =
-  let buffer = Object.Buffer.parse binary_path in
-  let _header, sections = Object.Elf.read_elf buffer in
-  let section_opt =
-    Array.find_opt
-      (fun (s : Object.Elf.section) -> s.sh_name_str = ".debug_line")
-      sections
-  in
-  match section_opt with
+  match Test_helpers.find_section binary_path ".debug_line" with
   | None -> None
-  | Some section ->
+  | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       Some (buffer, offset)
 
@@ -94,10 +87,7 @@ let test_has_end_sequence binary_path =
       in
       check bool "has end_sequence" true has_end
 
-let binary_path =
-  let doc = "Path to DWARF 5 test binary" in
-  Cmdliner.Arg.(
-    required & opt (some file) None & info [ "binary"; "b" ] ~doc ~docv:"BINARY")
+let binary_path = Test_helpers.binary_path ~doc:"Path to DWARF 5 test binary"
 
 let () =
   run_with_args "debug_line integration" binary_path

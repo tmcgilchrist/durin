@@ -1,22 +1,15 @@
 open Alcotest
 open Durin
 
-let find_str_offsets_section binary_path =
-  let buffer = Object.Buffer.parse binary_path in
-  let _header, sections = Object.Elf.read_elf buffer in
-  let section_opt =
-    Array.find_opt
-      (fun (s : Object.Elf.section) -> s.sh_name_str = ".debug_str_offsets")
-      sections
-  in
-  match section_opt with
+let find_str_offsets binary_path =
+  match Test_helpers.find_section binary_path ".debug_str_offsets" with
   | None -> None
-  | Some section ->
+  | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       Some (buffer, offset)
 
 let test_parse_succeeds binary_path =
-  match find_str_offsets_section binary_path with
+  match find_str_offsets binary_path with
   | None -> fail "expected .debug_str_offsets section"
   | Some (buffer, offset) ->
       let t =
@@ -25,7 +18,7 @@ let test_parse_succeeds binary_path =
       check bool "has offsets" true (Array.length t.offsets > 0)
 
 let test_header_valid binary_path =
-  match find_str_offsets_section binary_path with
+  match find_str_offsets binary_path with
   | None -> fail "expected .debug_str_offsets section"
   | Some (buffer, offset) ->
       let t =
@@ -39,7 +32,7 @@ let test_header_valid binary_path =
         (Unsigned.UInt64.to_int64 h.unit_length > 0L)
 
 let test_offsets_non_negative binary_path =
-  match find_str_offsets_section binary_path with
+  match find_str_offsets binary_path with
   | None -> fail "expected .debug_str_offsets section"
   | Some (buffer, offset) ->
       let t =
@@ -54,7 +47,7 @@ let test_offsets_non_negative binary_path =
         t.offsets
 
 let test_strings_resolved binary_path =
-  match find_str_offsets_section binary_path with
+  match find_str_offsets binary_path with
   | None -> fail "expected .debug_str_offsets section"
   | Some (buffer, offset) ->
       let t =
@@ -70,7 +63,7 @@ let test_strings_resolved binary_path =
         (resolved_count = Array.length t.offsets)
 
 let test_known_string_present binary_path =
-  match find_str_offsets_section binary_path with
+  match find_str_offsets binary_path with
   | None -> fail "expected .debug_str_offsets section"
   | Some (buffer, offset) ->
       let t =
@@ -86,10 +79,7 @@ let test_known_string_present binary_path =
       in
       check bool "contains resolved \"main\"" true has_main
 
-let binary_path =
-  let doc = "Path to DWARF 5 test binary" in
-  Cmdliner.Arg.(
-    required & opt (some file) None & info [ "binary"; "b" ] ~doc ~docv:"BINARY")
+let binary_path = Test_helpers.binary_path ~doc:"Path to DWARF 5 test binary"
 
 let () =
   run_with_args "debug_str_offsets integration" binary_path
