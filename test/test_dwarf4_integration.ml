@@ -114,17 +114,21 @@ let test_parse_type_units binary_path =
   let unit_list = List.of_seq units in
   check bool "found at least one type unit" true (List.length unit_list > 0);
   List.iter
-    (fun (_span, (header : Dwarf.DebugTypes.type_unit_header)) ->
+    (fun (span, (header : Dwarf.DebugTypes.type_unit_header)) ->
       check int "version is 4" (Unsigned.UInt16.to_int header.version) 4;
       check int "address_size is 8"
         (Unsigned.UInt8.to_int header.address_size)
         8;
+      check bool "format is DWARF32" true (header.format = Dwarf.DWARF32);
+      check bool "unit_length > 0" true
+        (Unsigned.UInt64.to_int64 header.unit_length > 0L);
       check bool "type_signature nonzero" true
         (Unsigned.UInt64.compare header.type_signature
            (Unsigned.UInt64.of_int 0)
         <> 0);
       check bool "type_offset > 0" true
-        (Unsigned.UInt64.to_int header.type_offset > 0))
+        (Unsigned.UInt64.to_int header.type_offset > 0);
+      check bool "span size > 0" true (Unsigned.UInt64.to_int64 span.size > 0L))
     unit_list
 
 let test_parse_type_units_signature binary_path =
@@ -144,7 +148,6 @@ let binary_path =
   Cmdliner.Arg.(
     required & opt (some file) None & info [ "binary"; "b" ] ~doc ~docv:"BINARY")
 
-(* TODO Is there an equivalent DWARF 5 integration test? What specifically is this testing? *)
 let () =
   run_with_args "DWARF 4 Integration" binary_path
     [

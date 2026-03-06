@@ -1123,31 +1123,6 @@
    --binary
    %{dep:hello_world_debug_names_linux})))
 
-(test
- (name test_debug_types_integration)
- (deps dwarf4_linux)
- (libraries durin object alcotest cmdliner)
- (enabled_if
-  (and
-   (= %{system} "linux")
-   (= %{architecture} "amd64")))
- (action
-  (run %{exe:test_debug_types_integration.exe} --binary %{dep:dwarf4_linux})))
-
-(test
- (name test_debug_loc_ranges_integration)
- (deps dwarf4_linux)
- (libraries durin object alcotest cmdliner)
- (enabled_if
-  (and
-   (= %{system} "linux")
-   (= %{architecture} "amd64")))
- (action
-  (run
-   %{exe:test_debug_loc_ranges_integration.exe}
-   --binary
-   %{dep:dwarf4_linux})))
-
 ; =============================================================================
 ; GNU-DWARFDUMP COMPARISON TESTS - LINUX
 ; =============================================================================
