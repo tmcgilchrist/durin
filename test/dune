@@ -822,6 +822,17 @@
 
 (rule
  (alias runtest)
+ (deps loclists_rnglists_test.c)
+ (targets loclists_rnglists_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "gcc -gdwarf-5 -O2 %{deps} -o loclists_rnglists_linux")))
+
+(rule
+ (alias runtest)
  (deps hello_world.cpp)
  (targets hello_world_cpp_linux)
  (enabled_if
@@ -911,6 +922,34 @@
    %{exe:test_debug_line_str_integration.exe}
    --binary
    %{dep:hello_world_linux})))
+
+(test
+ (name test_debug_loclists_integration)
+ (deps loclists_rnglists_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_loclists_integration.exe}
+   --binary
+   %{dep:loclists_rnglists_linux})))
+
+(test
+ (name test_debug_rnglists_integration)
+ (deps loclists_rnglists_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_rnglists_integration.exe}
+   --binary
+   %{dep:loclists_rnglists_linux})))
 
 ; =============================================================================
 ; GNU-DWARFDUMP COMPARISON TESTS - LINUX
