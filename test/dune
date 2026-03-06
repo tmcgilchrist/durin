@@ -867,6 +867,18 @@
 
 (rule
  (alias runtest)
+ (deps hello_world.c)
+ (targets hello_world_debug_names_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system
+   "clang -gdwarf-5 -gpubnames %{deps} -o hello_world_debug_names_linux")))
+
+(rule
+ (alias runtest)
  (deps hello_world.cpp)
  (targets hello_world_cpp_linux)
  (enabled_if
@@ -1096,6 +1108,45 @@
    %{exe:test_debug_pubnames_integration.exe}
    --binary
    %{dep:hello_world_pubnames_linux})))
+
+(test
+ (name test_debug_names_integration)
+ (deps hello_world_debug_names_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_names_integration.exe}
+   --binary
+   %{dep:hello_world_debug_names_linux})))
+
+(test
+ (name test_debug_types_integration)
+ (deps dwarf4_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run %{exe:test_debug_types_integration.exe} --binary %{dep:dwarf4_linux})))
+
+(test
+ (name test_debug_loc_ranges_integration)
+ (deps dwarf4_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_loc_ranges_integration.exe}
+   --binary
+   %{dep:dwarf4_linux})))
 
 ; =============================================================================
 ; GNU-DWARFDUMP COMPARISON TESTS - LINUX
