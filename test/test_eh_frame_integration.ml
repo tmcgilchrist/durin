@@ -58,6 +58,25 @@ let test_eh_frame_fde_fields_valid binary_path =
           | _ -> ())
         parsed.entries
 
+let test_eh_frame_cie_fields_valid binary_path =
+  match Test_helpers.find_section binary_path ".eh_frame" with
+  | None -> fail "expected .eh_frame section"
+  | Some (buffer, section) ->
+      let offset = Unsigned.UInt64.to_int section.sh_offset in
+      let size = Unsigned.UInt64.to_int section.sh_size in
+      let cur = Object.Buffer.cursor ~at:offset buffer in
+      let parsed = Dwarf.EHFrame.parse_section cur size in
+      List.iter
+        (fun e ->
+          match e with
+          | Dwarf.EHFrame.EH_CIE cie ->
+              check bool "code_alignment_factor > 0" true
+                (Unsigned.UInt64.to_int64 cie.code_alignment_factor > 0L);
+              check bool "return_address_register reasonable" true
+                (Unsigned.UInt64.to_int cie.return_address_register < 256)
+          | _ -> ())
+        parsed.entries
+
 let test_eh_frame_hdr_parse_succeeds binary_path =
   match Test_helpers.find_section binary_path ".eh_frame_hdr" with
   | None -> fail "expected .eh_frame_hdr section"
@@ -89,6 +108,7 @@ let () =
           ("has CIE", `Quick, test_eh_frame_has_cie);
           ("has FDE", `Quick, test_eh_frame_has_fde);
           ("FDE fields valid", `Quick, test_eh_frame_fde_fields_valid);
+          ("CIE fields valid", `Quick, test_eh_frame_cie_fields_valid);
         ] );
       ( "eh_frame_hdr",
         [

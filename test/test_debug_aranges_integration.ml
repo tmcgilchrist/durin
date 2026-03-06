@@ -40,8 +40,8 @@ let test_debug_info_offset binary_path =
   match parse_aranges binary_path with
   | None -> fail "expected DebugAranges.parse to return Some"
   | Some set ->
-      check bool "debug_info_offset >= 0" true
-        (Unsigned.UInt64.to_int64 set.header.debug_info_offset >= 0L)
+      check bool "debug_info_offset < unit_length" true
+        (set.header.debug_info_offset < set.header.unit_length)
 
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in

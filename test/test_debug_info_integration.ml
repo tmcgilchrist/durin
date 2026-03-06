@@ -76,6 +76,32 @@ let test_root_die_has_attributes binary_path =
       | Some die ->
           check bool "has attributes" true (List.length die.attributes > 0))
 
+let test_root_die_attribute_values binary_path =
+  let buffer = Object.Buffer.parse binary_path in
+  let ctx = Dwarf.create buffer in
+  let cus = Dwarf.parse_compile_units ctx in
+  match Seq.uncons cus with
+  | None -> fail "expected at least one compile unit"
+  | Some (cu, _) -> (
+      let h = Dwarf.CompileUnit.header cu in
+      let _ctx, abbrev_table =
+        Dwarf.get_abbrev_table ctx h.debug_abbrev_offset
+      in
+      match Dwarf.CompileUnit.root_die cu abbrev_table buffer with
+      | None -> fail "expected root DIE"
+      | Some die -> (
+          (match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
+          | Some (String s) ->
+              check bool "DW_AT_name contains hello_world" true
+                (String.equal s "hello_world.c")
+          | Some (IndexedString (_, s)) ->
+              check bool "DW_AT_name contains hello_world" true
+                (String.equal s "hello_world.c")
+          | _ -> fail "expected DW_AT_name to be a string");
+          match Dwarf.DIE.find_attribute die Dwarf.DW_AT_language with
+          | Some (Language _) -> ()
+          | _ -> fail "expected DW_AT_language to be a Language value"))
+
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in
   Cmdliner.Arg.(
@@ -95,5 +121,6 @@ let () =
           ("root DIE exists", `Quick, test_root_die_exists);
           ("root is DW_TAG_compile_unit", `Quick, test_root_die_is_compile_unit);
           ("root has attributes", `Quick, test_root_die_has_attributes);
+          ("root attribute values", `Quick, test_root_die_attribute_values);
         ] );
     ]
