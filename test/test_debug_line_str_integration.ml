@@ -54,7 +54,7 @@ let test_entry_fields_consistent binary_path =
         (fun (e : Dwarf.DebugLineStr.string_entry) ->
           check int "length = String.length content" (String.length e.content)
             e.length;
-          check bool "offset >= 0" true (e.offset >= 0))
+          check bool "offset < total_size" true (e.offset < t.total_size))
         t.entries
 
 let binary_path =

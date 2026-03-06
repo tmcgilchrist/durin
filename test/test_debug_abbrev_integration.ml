@@ -45,7 +45,7 @@ let test_abbrevs_have_attr_specs binary_path =
   | Some table ->
       Hashtbl.iter
         (fun _code (abbrev : Dwarf.abbrev) ->
-          check bool "has attr_specs" true (List.length abbrev.attr_specs >= 0))
+          check bool "has attr_specs" true (List.length abbrev.attr_specs > 0))
         table
 
 let test_parse_all binary_path =

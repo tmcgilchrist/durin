@@ -77,8 +77,7 @@ let test_line_entries_valid binary_path =
       let entries = Dwarf.DebugLine.parse_line_program cur header in
       List.iter
         (fun (e : Dwarf.DebugLine.line_table_entry) ->
-          check bool "address > 0" true (Unsigned.UInt64.to_int64 e.address > 0L);
-          check bool "line >= 0" true (Unsigned.UInt32.to_int e.line >= 0))
+          check bool "address > 0" true (Unsigned.UInt64.to_int64 e.address > 0L))
         entries
 
 let test_has_end_sequence binary_path =

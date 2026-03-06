@@ -40,14 +40,15 @@ let test_resolve_first_list binary_path =
   match Dwarf.DebugLoclists.parse buffer with
   | None -> fail "expected DebugLoclists.parse to return Some"
   | Some section ->
-      if Array.length section.offset_table > 0 then
-        let offset = section.offset_table.(0) in
-        let addr_size = section.header.address_size in
-        let result =
-          Dwarf.DebugLoclists.resolve_location_list buffer offset addr_size
-        in
-        check bool "resolve_location_list returns Some" true
-          (Option.is_some result)
+      check bool "offset_table is non-empty" true
+        (Array.length section.offset_table > 0);
+      let offset = section.offset_table.(0) in
+      let addr_size = section.header.address_size in
+      let result =
+        Dwarf.DebugLoclists.resolve_location_list buffer offset addr_size
+      in
+      check bool "resolve_location_list returns Some" true
+        (Option.is_some result)
 
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in
