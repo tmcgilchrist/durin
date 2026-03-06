@@ -976,6 +976,20 @@
    --binary
    %{dep:hello_world_clang_linux})))
 
+(test
+ (name test_debug_addr_integration)
+ (deps hello_world_clang_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_addr_integration.exe}
+   --binary
+   %{dep:hello_world_clang_linux})))
+
 ; =============================================================================
 ; GNU-DWARFDUMP COMPARISON TESTS - LINUX
 ; =============================================================================
