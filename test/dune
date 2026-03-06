@@ -113,7 +113,7 @@
 
 (rule
  (alias runtest)
- (deps dwarf4_test_input.c)
+ (deps dwarf4_linux.c)
  (targets dwarf4_linux)
  (enabled_if
   (and
