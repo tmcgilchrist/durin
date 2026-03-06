@@ -833,6 +833,17 @@
 
 (rule
  (alias runtest)
+ (deps hello_world.c)
+ (targets hello_world_clang_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "clang -gdwarf-5 %{deps} -o hello_world_clang_linux")))
+
+(rule
+ (alias runtest)
  (deps hello_world.cpp)
  (targets hello_world_cpp_linux)
  (enabled_if
@@ -950,6 +961,20 @@
    %{exe:test_debug_rnglists_integration.exe}
    --binary
    %{dep:loclists_rnglists_linux})))
+
+(test
+ (name test_debug_str_offsets_integration)
+ (deps hello_world_clang_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_str_offsets_integration.exe}
+   --binary
+   %{dep:hello_world_clang_linux})))
 
 ; =============================================================================
 ; GNU-DWARFDUMP COMPARISON TESTS - LINUX
