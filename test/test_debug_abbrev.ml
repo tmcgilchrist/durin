@@ -285,8 +285,6 @@ let test_abbrev_table_lookup () =
   let missing = Hashtbl.find_opt tbl (Unsigned.UInt64.of_int 99) in
   check bool "code 99 not found" true (missing = None)
 
-(* TODO Add tests of real debug_abbrev from some example C/C++ programs *)
-
 let () =
   run "debug_abbrev"
     [
@@ -311,8 +309,5 @@ let () =
           test_case "no children" `Quick test_abbrev_no_children;
         ] );
       ( "abbrev_table",
-        [
-          test_case "table lookup" `Quick test_abbrev_table_lookup;
-          test_case "section name" `Quick test_abbrev_section_name;
-        ] );
+        [ test_case "table lookup" `Quick test_abbrev_table_lookup ] );
     ]

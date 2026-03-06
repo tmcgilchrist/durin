@@ -278,6 +278,9 @@ type attribute_encoding =
   | DW_AT_deleted
   | DW_AT_defaulted
   | DW_AT_loclists_base
+  (* DWARF 6 *)
+  | DW_AT_language_name
+  | DW_AT_language_version
   | DW_AT_lo_user
   | DW_AT_hi_user
   (* LLVM and Apple extensions *)
@@ -2455,6 +2458,21 @@ val parse_compile_units : t -> CompileUnit.t Seq.t
 
 val get_abbrev_table : t -> size_t -> t * (u64, abbrev) Hashtbl.t
 (** Retrieve the abbreviation table at offset [size_t]. *)
+
+(** Abbreviation table parsing for .debug_abbrev section.
+
+    The .debug_abbrev section contains abbreviation declarations used by
+    .debug_info to encode DIEs compactly. Each compilation unit references an
+    abbreviation table at a specific offset within this section. *)
+module DebugAbbrev : sig
+  val parse :
+    Object.Buffer.t -> Unsigned.UInt32.t -> (u64, abbrev) Hashtbl.t option
+  (** Parse the abbreviation table at the given offset within the .debug_abbrev
+      section. Returns [None] if the section is not found. *)
+
+  val parse_all : Object.Buffer.t -> (u64, abbrev) Hashtbl.t list
+  (** Parse all abbreviation tables from the .debug_abbrev section. *)
+end
 
 (** String Offset Tables parsing for .debug_str_offsets section.
 

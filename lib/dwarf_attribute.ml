@@ -119,6 +119,9 @@ type attribute_encoding =
   | DW_AT_deleted
   | DW_AT_defaulted
   | DW_AT_loclists_base
+  (* DWARF 6 *)
+  | DW_AT_language_name
+  | DW_AT_language_version
   | DW_AT_lo_user
   | DW_AT_hi_user
   (* LLVM and Apple extensions *)
@@ -268,6 +271,8 @@ let string_of_attribute_code attr_code =
   | 0x8a -> "DW_AT_deleted"
   | 0x8b -> "DW_AT_defaulted"
   | 0x8c -> "DW_AT_loclists_base"
+  | 0x90 -> "DW_AT_language_name"
+  | 0x91 -> "DW_AT_language_version"
   | 0x3e02 -> "DW_AT_LLVM_sysroot"
   | 0x3fe7 -> "DW_AT_APPLE_omit_frame_ptr"
   | 0x3fef -> "DW_AT_APPLE_sdk"
@@ -394,6 +399,8 @@ let attribute_encoding x =
   | 0x8a -> DW_AT_deleted
   | 0x8b -> DW_AT_defaulted
   | 0x8c -> DW_AT_loclists_base
+  | 0x90 -> DW_AT_language_name
+  | 0x91 -> DW_AT_language_version
   | 0x2000 -> DW_AT_lo_user
   | 0x3fff -> DW_AT_hi_user
   (* LLVM and Apple extensions *)
@@ -522,6 +529,8 @@ let string_of_attribute_encoding = function
   | DW_AT_deleted -> "DW_AT_deleted"
   | DW_AT_defaulted -> "DW_AT_defaulted"
   | DW_AT_loclists_base -> "DW_AT_loclists_base"
+  | DW_AT_language_name -> "DW_AT_language_name"
+  | DW_AT_language_version -> "DW_AT_language_version"
   | DW_AT_lo_user -> "DW_AT_lo_user"
   | DW_AT_hi_user -> "DW_AT_hi_user"
   (* LLVM and Apple extensions *)

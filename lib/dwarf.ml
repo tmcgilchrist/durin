@@ -5923,6 +5923,58 @@ let get_compile_units t =
   let compile_units = parse_compile_units t |> List.of_seq |> Array.of_list in
   { t with compile_units_ = compile_units }
 
+module DebugAbbrev = struct
+  let parse buffer offset =
+    let format = Object_format.detect_format buffer in
+    let object_ = Object_file.{ buffer; format } in
+    match find_debug_section_by_type buffer Debug_abbrev with
+    | None -> None
+    | Some _ -> Some (parse_abbrev_table object_ offset)
+
+  let parse_all buffer =
+    match find_debug_section_by_type buffer Debug_abbrev with
+    | None -> []
+    | Some (section_offset, section_size) ->
+        let format = Object_format.detect_format buffer in
+        let object_ = Object_file.{ buffer; format } in
+        let section_start = Unsigned.UInt64.to_int section_offset in
+        let section_end = section_start + Unsigned.UInt64.to_int section_size in
+        let tables = ref [] in
+        let pos = ref section_start in
+        while !pos < section_end do
+          let cur = Object.Buffer.cursor buffer ~at:!pos in
+          let first_byte = Object.Buffer.Read.uleb128 cur in
+          if first_byte = 0 then pos := section_end
+          else
+            let offset = Unsigned.UInt32.of_int (!pos - section_start) in
+            let table = parse_abbrev_table object_ offset in
+            tables := table :: !tables;
+            (* Scan forward to find the end of this table
+               (double zero terminator) *)
+            let inner_cur = Object.Buffer.cursor buffer ~at:!pos in
+            let rec skip_table () =
+              let code = Object.Buffer.Read.uleb128 inner_cur in
+              if code = 0 then inner_cur.position
+              else
+                let _tag = Object.Buffer.Read.uleb128 inner_cur in
+                ignore (Object.Buffer.Read.u8 inner_cur);
+                let rec skip_attrs () =
+                  let attr = Object.Buffer.Read.uleb128 inner_cur in
+                  let form = Object.Buffer.Read.uleb128 inner_cur in
+                  if attr = 0 && form = 0 then ()
+                  else (
+                    if form = 0x21 then
+                      ignore (Object.Buffer.Read.sleb128 inner_cur);
+                    skip_attrs ())
+                in
+                skip_attrs ();
+                skip_table ()
+            in
+            pos := skip_table ()
+        done;
+        List.rev !tables
+end
+
 (** String Offset Tables (.debug_str_offsets section) - DWARF 5 Section 7.26 *)
 module DebugStrOffsets = struct
   type header = {
