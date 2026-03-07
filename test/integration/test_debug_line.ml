@@ -1,5 +1,6 @@
 open Durin
 
+(* TODO This seems unnecessary *)
 let test_section_name_mappings _binary_path =
   (* Test MachO section name *)
   let macho_debug_line =
@@ -39,11 +40,12 @@ let test_parsing_function_availability binary_path =
   let buffer = Object.Buffer.parse binary_path in
   let _cursor = Object.Buffer.cursor buffer ~at:0 in
 
+  (* TODO This is non-sense test, we should test functionality not whether a function exists *)
   (* We can't parse real debug_line data without proper section parsing,
      but we can verify the function signature is correct by testing it exists *)
   Alcotest.(check bool)
     "parse_line_program_header function exists" true
-    (match Dwarf.LineTable.parse_line_program_header with _ -> true)
+    (match Dwarf.DebugLine.parse_line_program_header with _ -> true)
 
 let test_actual_line_program_header_parsing binary_path =
   (* Parse the actual debug_line section from the dSYM file *)
@@ -76,6 +78,9 @@ let test_actual_line_program_header_parsing binary_path =
     let cursor = Object.Buffer.cursor buffer ~at:0 in
     Alcotest.(check int) "cursor created successfully" 0 cursor.position
 
+(* TODO This should be split between parsing generated data from real binaries and
+   integration tests that show we can parse DWARF information generated on macOS and
+   Linux gcc/clang for some representative programs. *)
 let test_find_debug_line_section binary_path =
   (* Test finding the __debug_line section in the dSYM file *)
   let dsym_path =
@@ -138,20 +143,20 @@ let test_comprehensive_debug_line_validation binary_path =
     (* Test that our parsing implementation exists and has correct type signature *)
     Alcotest.(check bool)
       "parse_line_program_header function has correct signature" true
-      (match Dwarf.LineTable.parse_line_program_header with
+      (match Dwarf.DebugLine.parse_line_program_header with
       | f -> (
           try
             ignore
               (f
                 : Object.Buffer.cursor ->
                   Object.Buffer.t ->
-                  Dwarf.LineTable.line_program_header);
+                  Dwarf.DebugLine.line_program_header);
             true
           with _ -> false));
 
     (* Test that we can create a realistic line_program_header with expected values *)
     let realistic_header =
-      Dwarf.LineTable.
+      Dwarf.DebugLine.
         {
           format = Dwarf.DWARF32;
           unit_length = Unsigned.UInt64.of_int 89;
@@ -281,6 +286,7 @@ let binary_path =
   Cmdliner.Arg.(
     required & opt (some file) None & info [ "binary"; "b" ] ~doc ~docv:"BINARY")
 
+(* TODO Do we have test code coverage for intepreting line number data? *)
 let () =
   Alcotest.run_with_args "Line Program Header Tests" binary_path
     [

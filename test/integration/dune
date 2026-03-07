@@ -1,0 +1,234 @@
+(test
+ (name test_debug_line)
+ (deps ../fixtures/hello_world)
+ (libraries durin object alcotest cmdliner)
+ (build_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (run %{exe:test_debug_line.exe} --binary %{dep:../fixtures/hello_world})))
+
+(test
+ (name test_dwarf4_integration)
+ (deps ../fixtures/dwarf4_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_dwarf4_integration.exe}
+   --binary
+   %{dep:../fixtures/dwarf4_linux})))
+
+(test
+ (name test_debug_macro_integration)
+ (deps ../fixtures/test_macros_linux)
+ (libraries durin object alcotest cmdliner test_helpers)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_macro_integration.exe}
+   --binary
+   %{dep:../fixtures/test_macros_linux})))
+
+(test
+ (name test_debug_aranges_integration)
+ (deps ../fixtures/hello_world_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_aranges_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_linux})))
+
+(test
+ (name test_debug_str_integration)
+ (deps ../fixtures/hello_world_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_str_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_linux})))
+
+(test
+ (name test_debug_line_str_integration)
+ (deps ../fixtures/hello_world_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_line_str_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_linux})))
+
+(test
+ (name test_debug_loclists_integration)
+ (deps ../fixtures/loclists_rnglists_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_loclists_integration.exe}
+   --binary
+   %{dep:../fixtures/loclists_rnglists_linux})))
+
+(test
+ (name test_debug_rnglists_integration)
+ (deps ../fixtures/loclists_rnglists_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_rnglists_integration.exe}
+   --binary
+   %{dep:../fixtures/loclists_rnglists_linux})))
+
+(test
+ (name test_debug_str_offsets_integration)
+ (deps ../fixtures/hello_world_clang_linux)
+ (libraries durin object alcotest cmdliner test_helpers)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_str_offsets_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_clang_linux})))
+
+(test
+ (name test_debug_addr_integration)
+ (deps ../fixtures/hello_world_clang_linux)
+ (libraries durin object alcotest cmdliner test_helpers)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_addr_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_clang_linux})))
+
+(test
+ (name test_debug_frame_integration)
+ (deps ../fixtures/hello_world_debug_frame_linux)
+ (libraries durin object alcotest cmdliner test_helpers)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_frame_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_debug_frame_linux})))
+
+(test
+ (name test_eh_frame_integration)
+ (deps ../fixtures/hello_world_linux)
+ (libraries durin object alcotest cmdliner test_helpers)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_eh_frame_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_linux})))
+
+(test
+ (name test_debug_line_integration)
+ (deps ../fixtures/hello_world_linux)
+ (libraries durin object alcotest cmdliner test_helpers)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_line_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_linux})))
+
+(test
+ (name test_debug_info_integration)
+ (deps ../fixtures/hello_world_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_info_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_linux})))
+
+(test
+ (name test_debug_abbrev_integration)
+ (deps ../fixtures/hello_world_linux)
+ (libraries durin object alcotest cmdliner)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_abbrev_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_linux})))
+
+(test
+ (name test_debug_pubnames_integration)
+ (deps ../fixtures/hello_world_pubnames_linux)
+ (libraries durin object alcotest cmdliner test_helpers)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_pubnames_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_pubnames_linux})))
+
+(test
+ (name test_debug_names_integration)
+ (deps ../fixtures/hello_world_debug_names_linux)
+ (libraries durin object alcotest cmdliner test_helpers)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_debug_names_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_debug_names_linux})))

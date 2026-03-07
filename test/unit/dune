@@ -1,0 +1,95 @@
+(test
+ (name test_debug_str_offsets)
+ (libraries durin object alcotest cmdliner)
+ (action
+  (run %{exe:test_debug_str_offsets.exe})))
+
+(test
+ (name test_debug_names)
+ (libraries durin alcotest)
+ (action
+  (run %{exe:test_debug_names.exe})))
+
+(test
+ (name test_dwarf_expression)
+ (libraries durin alcotest)
+ (action
+  (run %{exe:test_dwarf_expression.exe})))
+
+(test
+ (name test_expression_evaluator)
+ (libraries durin alcotest)
+ (action
+  (run %{exe:test_expression_evaluator.exe})))
+
+(test
+ (name test_dwarf_format)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_dwarf_format.exe})))
+
+(test
+ (name test_debug_info)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_debug_info.exe})))
+
+(test
+ (name test_debug_loc)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_debug_loc.exe})))
+
+(test
+ (name test_debug_ranges)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_debug_ranges.exe})))
+
+(test
+ (name test_debug_types)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_debug_types.exe})))
+
+(test
+ (name test_debug_pubnames)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_debug_pubnames.exe})))
+
+(test
+ (name test_debug_macinfo)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_debug_macinfo.exe})))
+
+(test
+ (name test_die_cursor)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_die_cursor.exe})))
+
+(test
+ (name test_debug_aranges)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_debug_aranges.exe})))
+
+(test
+ (name test_debug_addr)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_debug_addr.exe})))
+
+(test
+ (name test_debug_macro)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_debug_macro.exe})))
+
+(test
+ (name test_debug_abbrev)
+ (libraries durin alcotest)
+ (action
+  (run %{exe:test_debug_abbrev.exe})))

@@ -107,9 +107,9 @@ let handle_dwarf_errors f =
 let dump_line_program_header header =
   Printf.printf "Line table prologue:\n";
   Printf.printf "    total_length: 0x%08Lx\n"
-    (Unsigned.UInt64.to_int64 header.Dwarf.LineTable.unit_length);
+    (Unsigned.UInt64.to_int64 header.Dwarf.DebugLine.unit_length);
   Printf.printf "          format: %s\n"
-    (Dwarf.string_of_dwarf_format header.Dwarf.LineTable.format);
+    (Dwarf.string_of_dwarf_format header.Dwarf.DebugLine.format);
   Printf.printf "         version: %d\n" (Unsigned.UInt16.to_int header.version);
   Printf.printf "    address_size: %d\n"
     (Unsigned.UInt8.to_int header.address_size);
@@ -193,14 +193,14 @@ let dump_debug_line filename =
 
           (* Parse the line program header using our implementation *)
           let header =
-            Dwarf.LineTable.parse_line_program_header cursor buffer
+            Dwarf.DebugLine.parse_line_program_header cursor buffer
           in
 
           (* Dump the header information *)
           dump_line_program_header header;
 
           (* Parse the line program and display entries *)
-          let entries = Dwarf.LineTable.parse_line_program cursor header in
+          let entries = Dwarf.DebugLine.parse_line_program cursor header in
           Printf.printf "\n";
 
           (* Display line table header *)
@@ -217,39 +217,39 @@ let dump_debug_line filename =
               let flags =
                 let flags_list = [] in
                 let flags_list =
-                  if entry.Dwarf.LineTable.is_stmt then "is_stmt" :: flags_list
+                  if entry.Dwarf.DebugLine.is_stmt then "is_stmt" :: flags_list
                   else flags_list
                 in
                 let flags_list =
-                  if entry.Dwarf.LineTable.basic_block then
+                  if entry.Dwarf.DebugLine.basic_block then
                     "basic_block" :: flags_list
                   else flags_list
                 in
                 let flags_list =
-                  if entry.Dwarf.LineTable.end_sequence then
+                  if entry.Dwarf.DebugLine.end_sequence then
                     "end_sequence" :: flags_list
                   else flags_list
                 in
                 let flags_list =
-                  if entry.Dwarf.LineTable.prologue_end then
+                  if entry.Dwarf.DebugLine.prologue_end then
                     "prologue_end" :: flags_list
                   else flags_list
                 in
                 let flags_list =
-                  if entry.Dwarf.LineTable.epilogue_begin then
+                  if entry.Dwarf.DebugLine.epilogue_begin then
                     "epilogue_begin" :: flags_list
                   else flags_list
                 in
                 " " ^ String.concat " " (List.rev flags_list)
               in
               Printf.printf "0x%016Lx %6ld %6ld %6ld %3ld %13ld %7ld %s\n"
-                (Unsigned.UInt64.to_int64 entry.Dwarf.LineTable.address)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.line)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.column)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.file_index)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.isa)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.discriminator)
-                (Unsigned.UInt32.to_int32 entry.Dwarf.LineTable.op_index)
+                (Unsigned.UInt64.to_int64 entry.Dwarf.DebugLine.address)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.line)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.column)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.file_index)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.isa)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.discriminator)
+                (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.op_index)
                 flags)
             entries;
           Printf.printf "\n")
@@ -289,7 +289,7 @@ let resolve_file_index buffer stmt_list_offset file_index =
           Unsigned.UInt64.(add debug_line_offset stmt_list_offset |> to_int)
         in
         let cursor = Object.Buffer.cursor buffer ~at:absolute_offset in
-        let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
+        let header = Dwarf.DebugLine.parse_line_program_header cursor buffer in
         let file_index_int = Unsigned.UInt64.to_int file_index in
         if file_index_int < Array.length header.file_names then
           let file_entry = header.file_names.(file_index_int) in
@@ -312,28 +312,23 @@ let resolve_address_attribute buffer die attr_name addr_value cu_addr_base =
           Dwarf.resolve_address_index buffer index addr_base
       | None -> addr_value)
   | Dwarf.DW_AT_high_pc -> (
-      (* DW_AT_high_pc can be either absolute address or offset from DW_AT_low_pc *)
-      (* If it came from DW_FORM_addrx, resolve it using addr_base *)
-      (* If it came from DW_FORM_data*, it's an offset from low_pc *)
+      (* DW_AT_high_pc with constant form is an offset from DW_AT_low_pc *)
       match Dwarf.DIE.find_attribute die Dwarf.DW_AT_low_pc with
       | Some (Dwarf.DIE.Address low_pc) ->
-          (* For data forms, addr_value is an offset from low_pc *)
-          (* Resolve low_pc first, then add the offset *)
-          let resolved_low_pc =
-            match cu_addr_base with
-            | Some addr_base ->
-                let index = Unsigned.UInt64.to_int low_pc in
-                Dwarf.resolve_address_index buffer index addr_base
-            | None -> low_pc
-          in
-          Unsigned.UInt64.add resolved_low_pc addr_value
-      | _ -> (
-          (* If no DW_AT_low_pc found, try to resolve as direct address *)
+          (* DW_FORM_addr: low_pc is already the direct address *)
+          Unsigned.UInt64.add low_pc addr_value
+      | Some (Dwarf.DIE.IndexedAddress (_, low_pc_idx)) -> (
+          (* DW_FORM_addrx*: resolve index to get actual low_pc *)
           match cu_addr_base with
           | Some addr_base ->
-              let index = Unsigned.UInt64.to_int addr_value in
-              Dwarf.resolve_address_index buffer index addr_base
-          | None -> addr_value))
+              let resolved_low_pc =
+                Dwarf.resolve_address_index buffer
+                  (Unsigned.UInt64.to_int low_pc_idx)
+                  addr_base
+              in
+              Unsigned.UInt64.add resolved_low_pc addr_value
+          | None -> addr_value)
+      | _ -> addr_value)
   | _ -> addr_value
 
 let resolve_type_reference buffer abbrev_table encoding debug_info_offset
@@ -350,6 +345,7 @@ let resolve_type_reference buffer abbrev_table encoding debug_info_offset
         (* Look for DW_AT_name attribute in the referenced DIE *)
         match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
         | Some (Dwarf.DIE.String name) -> Some name
+        | Some (Dwarf.DIE.IndexedString (_, name)) -> Some name
         | Some _ | None -> None)
     | None -> None
   with _ -> None
@@ -980,32 +976,20 @@ let dump_debug_loclists filename =
           (* No debug_loclists section found - this is normal for simple programs.
              Show empty section output to match system dwarfdump behavior *)
           ()
-      | Some (section_offset, _section_size) ->
-          (* Parse the debug_loclists section *)
-          let loclists_section =
-            Dwarf.DebugLoclists.parse buffer
-              (Unsigned.UInt64.to_uint32 section_offset)
-          in
-
-          (* Check if section is empty (indicated by zero unit_length) *)
-          if
-            Unsigned.UInt64.equal loclists_section.header.unit_length
-              Unsigned.UInt64.zero
-          then
-            (* Empty section - no output needed, this matches system dwarfdump *)
-            ()
-          else
-            (* Format output similar to other debug sections *)
-            Printf.printf
-              "Location lists header: length = 0x%08Lx, format = DWARF32, \
-               version = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x, \
-               offset_entry_count = 0x%08lx\n"
-              (Unsigned.UInt64.to_int64 loclists_section.header.unit_length)
-              (Unsigned.UInt16.to_int loclists_section.header.version)
-              (Unsigned.UInt8.to_int loclists_section.header.address_size)
-              (Unsigned.UInt8.to_int loclists_section.header.segment_size)
-              (Unsigned.UInt32.to_int32
-                 loclists_section.header.offset_entry_count))
+      | Some (_section_offset, _section_size) -> (
+          match Dwarf.DebugLoclists.parse buffer with
+          | None -> ()
+          | Some loclists_section ->
+              Printf.printf
+                "Location lists header: length = 0x%08Lx, format = DWARF32, \
+                 version = 0x%04x, addr_size = 0x%02x, seg_size = 0x%02x, \
+                 offset_entry_count = 0x%08lx\n"
+                (Unsigned.UInt64.to_int64 loclists_section.header.unit_length)
+                (Unsigned.UInt16.to_int loclists_section.header.version)
+                (Unsigned.UInt8.to_int loclists_section.header.address_size)
+                (Unsigned.UInt8.to_int loclists_section.header.segment_size)
+                (Unsigned.UInt32.to_int32
+                   loclists_section.header.offset_entry_count)))
 
 (* Command line interface *)
 let filename =
