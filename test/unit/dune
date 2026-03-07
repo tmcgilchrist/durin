@@ -93,3 +93,9 @@
  (libraries durin alcotest)
  (action
   (run %{exe:test_debug_abbrev.exe})))
+
+(test
+ (name test_dwarf_write)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_dwarf_write.exe})))
