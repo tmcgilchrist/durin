@@ -1,7 +1,7 @@
 Test dwarfdump.ml basic functionality
 
 Set up the test environment:
-  $ cd $TESTCASE_ROOT/..
+  $ cd $TESTCASE_ROOT/../..
 
 Test error handling with non-existent file:
   $ dwarfdump --debug-line nonexistent_file.txt

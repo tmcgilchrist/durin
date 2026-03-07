@@ -128,7 +128,8 @@ let test_parse_type_units binary_path =
         <> 0);
       check bool "type_offset > 0" true
         (Unsigned.UInt64.to_int header.type_offset > 0);
-      check bool "span size > 0" true (Unsigned.UInt64.to_int64 span.Dwarf.size > 0L))
+      check bool "span size > 0" true
+        (Unsigned.UInt64.to_int64 span.Dwarf.size > 0L))
     unit_list
 
 let test_parse_type_units_signature binary_path =

@@ -1,0 +1,158 @@
+(library
+ (name test_helpers)
+ (libraries durin object cmdliner))
+
+; DWARF 4 integration test binary (Linux)
+
+(rule
+ (alias runtest)
+ (deps dwarf4_linux.c)
+ (targets dwarf4_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system
+   "gcc -gdwarf-4 -O2 -fdebug-types-section -gno-variable-location-views %{deps} -o dwarf4_linux")))
+
+; macOS Binary Compilation Rules
+
+(rule
+ (alias runtest)
+ (deps hello_world.c)
+ (targets hello_world hello_world.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (system "cc -gdwarf-5 %{deps} -o hello_world")))
+
+(rule
+ (alias runtest)
+ (deps hello_world.cpp)
+ (targets hello_world_cpp hello_world_cpp.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp")))
+
+(rule
+ (alias runtest)
+ (deps test_macros.c test_macros_header.h)
+ (targets test_macros test_macros.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (system "cc -gdwarf-5 -g3 test_macros.c -o test_macros")))
+
+; Linux Binary Compilation Rules
+
+(rule
+ (alias runtest)
+ (deps hello_world.c)
+ (targets hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "gcc -gdwarf-5 %{deps} -o hello_world_linux")))
+
+(rule
+ (alias runtest)
+ (deps loclists_rnglists_test.c)
+ (targets loclists_rnglists_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "gcc -gdwarf-5 -O2 %{deps} -o loclists_rnglists_linux")))
+
+(rule
+ (alias runtest)
+ (deps hello_world.c)
+ (targets hello_world_clang_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "clang -gdwarf-5 %{deps} -o hello_world_clang_linux")))
+
+(rule
+ (alias runtest)
+ (deps hello_world.c)
+ (targets hello_world_debug_frame_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system
+   "clang -gdwarf-5 -fno-asynchronous-unwind-tables %{deps} -o hello_world_debug_frame_linux")))
+
+(rule
+ (alias runtest)
+ (deps hello_world.c)
+ (targets hello_world_pubnames_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "gcc -gdwarf-4 -gpubnames %{deps} -o hello_world_pubnames_linux")))
+
+(rule
+ (alias runtest)
+ (deps hello_world.c)
+ (targets hello_world_debug_names_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system
+   "clang -gdwarf-5 -gpubnames %{deps} -o hello_world_debug_names_linux")))
+
+(rule
+ (alias runtest)
+ (deps hello_world.cpp)
+ (targets hello_world_cpp_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp_linux")))
+
+; DWARF64 binary compilation for testing
+
+(rule
+ (alias runtest)
+ (deps hello_world.cpp)
+ (targets hello_world_dwarf64_cpp)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system
+   "clang++ -std=c++17 -gdwarf64 -gdwarf-5 %{deps} -o hello_world_dwarf64_cpp")))
+
+(rule
+ (alias runtest)
+ (deps test_macros.c test_macros_header.h)
+ (targets test_macros_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "gcc -gdwarf-5 -g3 test_macros.c -o test_macros_linux")))

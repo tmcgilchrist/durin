@@ -1,7 +1,7 @@
 Test objdump.ml basic functionality
 
 Set up the test environment:
-  $ cd $TESTCASE_ROOT/..
+  $ cd $TESTCASE_ROOT/../..
 
 Test error handling with non-existent file:
   $ objdump --unwind-info nonexistent_file.txt
