@@ -155,53 +155,43 @@ let find_function_name buffer addr =
                 | Some (Dwarf.DIE.UData base) -> Some base
                 | _ -> None
               in
+              let resolve_attr_address = function
+                | Dwarf.DIE.Address a -> Some a
+                | Dwarf.DIE.IndexedAddress (_, idx) ->
+                    Some (resolve_die_address buffer addr_base idx)
+                | _ -> None
+              in
+              let get_die_name die =
+                match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
+                | Some (Dwarf.DIE.String name) -> Some name
+                | Some (Dwarf.DIE.IndexedString (_, name)) -> Some name
+                | _ -> None
+              in
               let rec search_die die =
                 (* Check if this DIE is a subprogram containing the address *)
                 (match die.Dwarf.DIE.tag with
                 | Dwarf.DW_TAG_subprogram | Dwarf.DW_TAG_inlined_subroutine -> (
-                    (* Get low_pc and high_pc *)
                     let low_pc_opt =
                       Dwarf.DIE.find_attribute die Dwarf.DW_AT_low_pc
+                      |> Option.map (fun v -> resolve_attr_address v)
+                      |> Option.join
                     in
                     let high_pc_opt =
-                      Dwarf.DIE.find_attribute die Dwarf.DW_AT_high_pc
+                      match
+                        ( low_pc_opt,
+                          Dwarf.DIE.find_attribute die Dwarf.DW_AT_high_pc )
+                      with
+                      | Some lpc, Some (Dwarf.DIE.UData offset) ->
+                          Some (Unsigned.UInt64.add lpc offset)
+                      | _, Some v -> resolve_attr_address v
+                      | _ -> None
                     in
                     match (low_pc_opt, high_pc_opt) with
-                    | ( Some (Dwarf.DIE.Address low_pc_raw),
-                        Some (Dwarf.DIE.Address high_pc_raw) ) ->
-                        (* Both are addresses - resolve them *)
-                        let low_pc =
-                          resolve_die_address buffer addr_base low_pc_raw
-                        in
-                        let high_pc =
-                          resolve_die_address buffer addr_base high_pc_raw
-                        in
+                    | Some low_pc, Some high_pc ->
                         if
                           Unsigned.UInt64.compare addr low_pc >= 0
                           && Unsigned.UInt64.compare addr high_pc < 0
-                        then
-                          match
-                            Dwarf.DIE.find_attribute die Dwarf.DW_AT_name
-                          with
-                          | Some (Dwarf.DIE.String name) -> Some name
-                          | _ -> None
-                        else None
-                    | ( Some (Dwarf.DIE.Address low_pc_raw),
-                        Some (Dwarf.DIE.UData offset) ) ->
-                        (* high_pc is offset from low_pc *)
-                        let low_pc =
-                          resolve_die_address buffer addr_base low_pc_raw
-                        in
-                        let high_pc = Unsigned.UInt64.add low_pc offset in
-                        if
-                          Unsigned.UInt64.compare addr low_pc >= 0
-                          && Unsigned.UInt64.compare addr high_pc < 0
-                        then
-                          match
-                            Dwarf.DIE.find_attribute die Dwarf.DW_AT_name
-                          with
-                          | Some (Dwarf.DIE.String name) -> Some name
-                          | _ -> None
+                        then get_die_name die
                         else None
                     | _ -> None)
                 | _ -> None)

@@ -312,28 +312,23 @@ let resolve_address_attribute buffer die attr_name addr_value cu_addr_base =
           Dwarf.resolve_address_index buffer index addr_base
       | None -> addr_value)
   | Dwarf.DW_AT_high_pc -> (
-      (* DW_AT_high_pc can be either absolute address or offset from DW_AT_low_pc *)
-      (* If it came from DW_FORM_addrx, resolve it using addr_base *)
-      (* If it came from DW_FORM_data*, it's an offset from low_pc *)
+      (* DW_AT_high_pc with constant form is an offset from DW_AT_low_pc *)
       match Dwarf.DIE.find_attribute die Dwarf.DW_AT_low_pc with
       | Some (Dwarf.DIE.Address low_pc) ->
-          (* For data forms, addr_value is an offset from low_pc *)
-          (* Resolve low_pc first, then add the offset *)
-          let resolved_low_pc =
-            match cu_addr_base with
-            | Some addr_base ->
-                let index = Unsigned.UInt64.to_int low_pc in
-                Dwarf.resolve_address_index buffer index addr_base
-            | None -> low_pc
-          in
-          Unsigned.UInt64.add resolved_low_pc addr_value
-      | _ -> (
-          (* If no DW_AT_low_pc found, try to resolve as direct address *)
+          (* DW_FORM_addr: low_pc is already the direct address *)
+          Unsigned.UInt64.add low_pc addr_value
+      | Some (Dwarf.DIE.IndexedAddress (_, low_pc_idx)) -> (
+          (* DW_FORM_addrx*: resolve index to get actual low_pc *)
           match cu_addr_base with
           | Some addr_base ->
-              let index = Unsigned.UInt64.to_int addr_value in
-              Dwarf.resolve_address_index buffer index addr_base
-          | None -> addr_value))
+              let resolved_low_pc =
+                Dwarf.resolve_address_index buffer
+                  (Unsigned.UInt64.to_int low_pc_idx)
+                  addr_base
+              in
+              Unsigned.UInt64.add resolved_low_pc addr_value
+          | None -> addr_value)
+      | _ -> addr_value)
   | _ -> addr_value
 
 let resolve_type_reference buffer abbrev_table encoding debug_info_offset
@@ -350,6 +345,7 @@ let resolve_type_reference buffer abbrev_table encoding debug_info_offset
         (* Look for DW_AT_name attribute in the referenced DIE *)
         match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
         | Some (Dwarf.DIE.String name) -> Some name
+        | Some (Dwarf.DIE.IndexedString (_, name)) -> Some name
         | Some _ | None -> None)
     | None -> None
   with _ -> None

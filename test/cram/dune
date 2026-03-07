@@ -1,6 +1,7 @@
 ; macOS Cram Tests
 
 (cram
+ (applies_to test_dwarfdump_cram)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -8,22 +9,20 @@
  (deps %{bin:dwarfdump}))
 
 (cram
+ (applies_to test_objdump_cram)
  (deps %{bin:objdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
    (= %{architecture} "arm64"))))
 
-; TODO Replace these with better scripted version, our addresses change
-; (cram
-;  (deps
-;   %{bin:addr2line}
-;   ../fixtures/hello_world
-;   ../fixtures/hello_world.dSYM)
-;  (enabled_if
-;   (and
-;    (= %{system} "macosx")
-;    (= %{architecture} "arm64"))))
+(cram
+ (applies_to test_addr2line)
+ (deps %{bin:addr2line} ../fixtures/hello_world ../fixtures/hello_world.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64"))))
 
 ; =============================================================================
 ; DWARFDUMP COMPARISON TESTS - MACOS
