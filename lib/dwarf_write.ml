@@ -328,3 +328,29 @@ let rec die_size (die : Dwarf.DIE.t) (enc : Dwarf.encoding)
 let write_die_forest buf (dies : Dwarf.DIE.t list) (enc : Dwarf.encoding)
     (lookup : int -> u64) =
   List.iter (fun die -> write_die buf die enc lookup) dies
+
+(* Stage 5: Compilation Unit & Top-Level *)
+
+let write_compile_unit buf (enc : Dwarf.encoding) (die : Dwarf.DIE.t)
+    (lookup : int -> u64) (debug_abbrev_offset : u64) =
+  let die_bytes = die_size die enc lookup in
+  let header_content_size =
+    2 + 1 + 1 + Dwarf.offset_size_for_format enc.format
+  in
+  let unit_length = header_content_size + die_bytes in
+  write_initial_length buf enc.format unit_length;
+  write_u16_le buf enc.version;
+  write_u8 buf (Unsigned.UInt8.of_int 0x01);
+  write_u8 buf enc.address_size;
+  write_offset buf enc.format debug_abbrev_offset;
+  write_die buf die enc lookup
+
+let write_debug_info (enc : Dwarf.encoding) (dies : Dwarf.DIE.t list) =
+  let abbrevs, lookup = assign_abbreviations dies in
+  let abbrev_buf = Buffer.create 256 in
+  write_abbrev_table abbrev_buf abbrevs;
+  let info_buf = Buffer.create 1024 in
+  List.iter
+    (fun die -> write_compile_unit info_buf enc die lookup Unsigned.UInt64.zero)
+    dies;
+  (Buffer.contents info_buf, Buffer.contents abbrev_buf)

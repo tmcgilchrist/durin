@@ -786,6 +786,158 @@ let test_write_die_forest () =
       | String s -> check string "second die name" "b.c" s
       | _ -> fail "expected String")
 
+(* Stage 5: Compilation unit & top-level tests *)
+
+let object_buffer_of_string s =
+  let filename = Filename.temp_file "dwarf_write_test_" ".bin" in
+  let oc = open_out_bin filename in
+  output_string oc s;
+  close_out oc;
+  let obj_buf = Object.Buffer.parse filename in
+  Sys.remove filename;
+  obj_buf
+
+let test_write_compile_unit () =
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes =
+        [
+          { attr = DW_AT_name; value = String "test.c" };
+          { attr = DW_AT_producer; value = String "durin" };
+        ];
+      children = Seq.empty;
+      offset = 0;
+    }
+  in
+  let enc = default_encoding in
+  let abbrevs, lookup = Dwarf_write.assign_abbreviations [ die ] in
+  let table = abbrev_hashtable_of_array abbrevs in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_compile_unit buf enc die lookup Unsigned.UInt64.zero;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let _span, header = Dwarf.parse_compile_unit_header cur in
+  check int "version" 5 (Unsigned.UInt16.to_int header.version);
+  check int "unit_type" 0x01 (Unsigned.UInt8.to_int header.unit_type);
+  check int "address_size" 8 (Unsigned.UInt8.to_int header.address_size);
+  check int64 "debug_abbrev_offset" 0L
+    (Unsigned.UInt64.to_int64 header.debug_abbrev_offset);
+  match Dwarf.DIE.parse_die cur table enc obj_buf with
+  | None -> fail "expected die"
+  | Some parsed ->
+      check int "tag" 0x11
+        (Unsigned.UInt64.to_int (Dwarf.uint64_of_abbreviation_tag parsed.tag));
+      check int "attr count" 2 (List.length parsed.attributes)
+
+let test_write_debug_info_simple () =
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes =
+        [
+          { attr = DW_AT_name; value = String "hello.c" };
+          { attr = DW_AT_language; value = Language Dwarf.DW_LANG_C99 };
+        ];
+      children = Seq.empty;
+      offset = 0;
+    }
+  in
+  let enc = default_encoding in
+  let info_str, abbrev_str = Dwarf_write.write_debug_info enc [ die ] in
+  let abbrev_buf = object_buffer_of_string abbrev_str in
+  let abbrev_cur = Object.Buffer.cursor abbrev_buf ~at:0 in
+  let abbrev_table = parse_abbrev_from_cursor abbrev_cur in
+  let info_buf = object_buffer_of_string info_str in
+  let info_cur = Object.Buffer.cursor info_buf ~at:0 in
+  let _span, header = Dwarf.parse_compile_unit_header info_cur in
+  check int "version" 5 (Unsigned.UInt16.to_int header.version);
+  check int "address_size" 8 (Unsigned.UInt8.to_int header.address_size);
+  match Dwarf.DIE.parse_die info_cur abbrev_table enc info_buf with
+  | None -> fail "expected die"
+  | Some parsed -> (
+      check int "tag" 0x11
+        (Unsigned.UInt64.to_int (Dwarf.uint64_of_abbreviation_tag parsed.tag));
+      let name = List.hd parsed.attributes in
+      (match name.value with
+      | String s -> check string "name" "hello.c" s
+      | _ -> fail "expected String for name");
+      let lang = List.nth parsed.attributes 1 in
+      match lang.value with
+      | Language l ->
+          check string "language" "DW_LANG_C99"
+            (Dwarf.string_of_dwarf_language l)
+      | _ -> fail "expected Language")
+
+let test_write_debug_info_with_children () =
+  let child : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_base_type;
+      attributes =
+        [
+          { attr = DW_AT_name; value = String "int" };
+          { attr = DW_AT_byte_size; value = UData (u64 4) };
+          { attr = DW_AT_encoding; value = Encoding Dwarf.DW_ATE_signed };
+        ];
+      children = Seq.empty;
+      offset = 20;
+    }
+  in
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes =
+        [
+          { attr = DW_AT_name; value = String "types.c" };
+          { attr = DW_AT_language; value = Language Dwarf.DW_LANG_C11 };
+        ];
+      children = List.to_seq [ child ];
+      offset = 0;
+    }
+  in
+  let enc = default_encoding in
+  let info_str, abbrev_str = Dwarf_write.write_debug_info enc [ die ] in
+  let abbrev_buf = object_buffer_of_string abbrev_str in
+  let abbrev_cur = Object.Buffer.cursor abbrev_buf ~at:0 in
+  let abbrev_table = parse_abbrev_from_cursor abbrev_cur in
+  let info_buf = object_buffer_of_string info_str in
+  let info_cur = Object.Buffer.cursor info_buf ~at:0 in
+  let _span, _header = Dwarf.parse_compile_unit_header info_cur in
+  match Dwarf.DIE.parse_die info_cur abbrev_table enc info_buf with
+  | None -> fail "expected die"
+  | Some parsed -> (
+      match parsed.children () with
+      | Seq.Nil -> fail "expected children"
+      | Seq.Cons (child_parsed, _) -> (
+          check int "child tag" 0x24
+            (Unsigned.UInt64.to_int
+               (Dwarf.uint64_of_abbreviation_tag child_parsed.tag));
+          check int "child attrs" 3 (List.length child_parsed.attributes);
+          let enc_attr = List.nth child_parsed.attributes 2 in
+          match enc_attr.value with
+          | Encoding e ->
+              check string "encoding" "DW_ATE_signed"
+                (Dwarf.string_of_base_type e)
+          | _ -> fail "expected Encoding"))
+
+let test_write_debug_info_unit_length () =
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes = [ { attr = DW_AT_name; value = String "test.c" } ];
+      children = Seq.empty;
+      offset = 0;
+    }
+  in
+  let enc = default_encoding in
+  let info_str, _ = Dwarf_write.write_debug_info enc [ die ] in
+  let info_buf = object_buffer_of_string info_str in
+  let info_cur = Object.Buffer.cursor info_buf ~at:0 in
+  let _span, header = Dwarf.parse_compile_unit_header info_cur in
+  let expected_total = String.length info_str in
+  let unit_length = Unsigned.UInt64.to_int header.unit_length in
+  check int "unit_length + 4 = total size" expected_total (unit_length + 4)
+
 let () =
   run "Dwarf_write"
     [
@@ -859,5 +1011,14 @@ let () =
           test_case "die_size" `Quick test_die_size;
           test_case "die_size with children" `Quick test_die_size_with_children;
           test_case "die forest" `Quick test_write_die_forest;
+        ] );
+      ( "compile-unit",
+        [
+          test_case "write compile unit" `Quick test_write_compile_unit;
+          test_case "debug_info simple" `Quick test_write_debug_info_simple;
+          test_case "debug_info with children" `Quick
+            test_write_debug_info_with_children;
+          test_case "unit_length correct" `Quick
+            test_write_debug_info_unit_length;
         ] );
     ]

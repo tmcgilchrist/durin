@@ -55,3 +55,10 @@ val die_size : Dwarf.DIE.t -> Dwarf.encoding -> (int -> u64) -> int
 
 val write_die_forest :
   Buffer.t -> Dwarf.DIE.t list -> Dwarf.encoding -> (int -> u64) -> unit
+
+(** {2 Stage 5: Compilation Unit & Top-Level} *)
+
+val write_compile_unit :
+  Buffer.t -> Dwarf.encoding -> Dwarf.DIE.t -> (int -> u64) -> u64 -> unit
+
+val write_debug_info : Dwarf.encoding -> Dwarf.DIE.t list -> string * string
