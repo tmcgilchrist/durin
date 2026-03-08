@@ -354,3 +354,25 @@ let write_debug_info (enc : Dwarf.encoding) (dies : Dwarf.DIE.t list) =
     (fun die -> write_compile_unit info_buf enc die lookup Unsigned.UInt64.zero)
     dies;
   (Buffer.contents info_buf, Buffer.contents abbrev_buf)
+
+(* Stage 6: String Table *)
+
+type string_table = { offsets : (string, int) Hashtbl.t; buf : Buffer.t }
+
+let create_string_table () =
+  { offsets = Hashtbl.create 64; buf = Buffer.create 256 }
+
+let add_string table s =
+  match Hashtbl.find_opt table.offsets s with
+  | Some offset -> offset
+  | None ->
+      let offset = Buffer.length table.buf in
+      Buffer.add_string table.buf s;
+      Buffer.add_char table.buf '\x00';
+      Hashtbl.replace table.offsets s offset;
+      offset
+
+let write_string_table buf table =
+  Buffer.add_string buf (Buffer.contents table.buf)
+
+let string_table_size table = Buffer.length table.buf

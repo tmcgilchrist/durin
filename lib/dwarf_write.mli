@@ -62,3 +62,12 @@ val write_compile_unit :
   Buffer.t -> Dwarf.encoding -> Dwarf.DIE.t -> (int -> u64) -> u64 -> unit
 
 val write_debug_info : Dwarf.encoding -> Dwarf.DIE.t list -> string * string
+
+(** {2 Stage 6: String Table} *)
+
+type string_table
+
+val create_string_table : unit -> string_table
+val add_string : string_table -> string -> int
+val write_string_table : Buffer.t -> string_table -> unit
+val string_table_size : string_table -> int

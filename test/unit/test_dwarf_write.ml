@@ -938,6 +938,45 @@ let test_write_debug_info_unit_length () =
   let unit_length = Unsigned.UInt64.to_int header.unit_length in
   check int "unit_length + 4 = total size" expected_total (unit_length + 4)
 
+(* Stage 6: String table tests *)
+
+let test_string_table_offsets () =
+  let table = Dwarf_write.create_string_table () in
+  let off1 = Dwarf_write.add_string table "hello" in
+  let off2 = Dwarf_write.add_string table "world" in
+  check int "first string offset" 0 off1;
+  check int "second string offset" 6 off2
+
+let test_string_table_dedup () =
+  let table = Dwarf_write.create_string_table () in
+  let off1 = Dwarf_write.add_string table "hello" in
+  let off2 = Dwarf_write.add_string table "hello" in
+  check int "same offset" off1 off2
+
+let test_string_table_roundtrip () =
+  let table = Dwarf_write.create_string_table () in
+  let _off1 = Dwarf_write.add_string table "hello" in
+  let _off2 = Dwarf_write.add_string table "world" in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_string_table buf table;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur0 = Object.Buffer.cursor obj_buf ~at:0 in
+  let s1 = Object.Buffer.Read.zero_string cur0 () in
+  check (option string) "first string" (Some "hello") s1;
+  let cur6 = Object.Buffer.cursor obj_buf ~at:6 in
+  let s2 = Object.Buffer.Read.zero_string cur6 () in
+  check (option string) "second string" (Some "world") s2
+
+let test_string_table_size () =
+  let table = Dwarf_write.create_string_table () in
+  let _ = Dwarf_write.add_string table "abc" in
+  let _ = Dwarf_write.add_string table "de" in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_string_table buf table;
+  check int "size matches written" (Buffer.length buf)
+    (Dwarf_write.string_table_size table);
+  check int "expected size" 7 (Dwarf_write.string_table_size table)
+
 let () =
   run "Dwarf_write"
     [
@@ -1020,5 +1059,12 @@ let () =
             test_write_debug_info_with_children;
           test_case "unit_length correct" `Quick
             test_write_debug_info_unit_length;
+        ] );
+      ( "string-table",
+        [
+          test_case "offsets" `Quick test_string_table_offsets;
+          test_case "dedup" `Quick test_string_table_dedup;
+          test_case "roundtrip" `Quick test_string_table_roundtrip;
+          test_case "size" `Quick test_string_table_size;
         ] );
     ]
