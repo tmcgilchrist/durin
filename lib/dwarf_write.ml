@@ -990,3 +990,69 @@ let write_debug_frame buf entries =
       | Dwarf.CallFrame.Zero_terminator _ ->
           write_u32_le buf (Unsigned.UInt32.of_int 0))
     entries
+
+(* Stage 12: .eh_frame Writer *)
+
+let write_eh_cie buf (cie : Dwarf.CallFrame.common_information_entry) =
+  let ver = Unsigned.UInt8.to_int cie.version in
+  let aug_str_len = String.length cie.augmentation + 1 in
+  let addr_seg_sz = if ver >= 4 then 2 else 0 in
+  let caf_sz = uleb128_size cie.code_alignment_factor in
+  let daf_sz = sleb128_size cie.data_alignment_factor in
+  let rar_sz = uleb128_size cie.return_address_register in
+  let aug_data_sz =
+    match (cie.augmentation_length, cie.augmentation_data) with
+    | Some len, Some data -> uleb128_size len + String.length data
+    | _ -> 0
+  in
+  let body_len =
+    4 + 1 + aug_str_len + addr_seg_sz + caf_sz + daf_sz + rar_sz + aug_data_sz
+    + String.length cie.initial_instructions
+  in
+  write_u32_le buf (Unsigned.UInt32.of_int body_len);
+  write_u32_le buf (Unsigned.UInt32.of_int 0);
+  write_u8 buf cie.version;
+  write_null_terminated_string buf cie.augmentation;
+  if ver >= 4 then (
+    write_u8 buf cie.address_size;
+    write_u8 buf cie.segment_selector_size);
+  write_uleb128 buf cie.code_alignment_factor;
+  write_sleb128 buf cie.data_alignment_factor;
+  write_uleb128 buf cie.return_address_register;
+  (match (cie.augmentation_length, cie.augmentation_data) with
+  | Some len, Some data ->
+      write_uleb128 buf len;
+      Buffer.add_string buf data
+  | _ -> ());
+  Buffer.add_string buf cie.initial_instructions
+
+let write_eh_fde buf (fde : Dwarf.CallFrame.frame_description_entry)
+    (cie_offset : int) =
+  let fde_start = Buffer.length buf in
+  let aug_data_sz =
+    match (fde.augmentation_length, fde.augmentation_data) with
+    | Some len, Some data -> uleb128_size len + String.length data
+    | _ -> 0
+  in
+  let body_len = 4 + 4 + 4 + aug_data_sz + String.length fde.instructions in
+  write_u32_le buf (Unsigned.UInt32.of_int body_len);
+  let cie_ptr = fde_start + 4 + 4 - cie_offset in
+  write_u32_le buf (Unsigned.UInt32.of_int cie_ptr);
+  let il_field_pos = fde_start + 4 + 4 in
+  let il_raw = Unsigned.UInt64.to_int fde.initial_location - il_field_pos in
+  write_u32_le buf (Unsigned.UInt32.of_int il_raw);
+  write_u32_le buf
+    (Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 fde.address_range));
+  (match (fde.augmentation_length, fde.augmentation_data) with
+  | Some len, Some data ->
+      write_uleb128 buf len;
+      Buffer.add_string buf data
+  | _ -> ());
+  Buffer.add_string buf fde.instructions
+
+let write_eh_frame buf entries =
+  List.iter
+    (function
+      | Dwarf.EHFrame.EH_CIE cie -> write_eh_cie buf cie
+      | Dwarf.EHFrame.EH_FDE fde -> write_eh_fde buf fde 0)
+    entries

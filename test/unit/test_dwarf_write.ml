@@ -1591,6 +1591,148 @@ let test_write_loclists_header_roundtrip () =
     (2 + 1 + 1 + 4 + 10)
     (Unsigned.UInt64.to_int unit_length)
 
+(* Stage 12: .eh_frame tests *)
+
+let test_write_eh_cie_roundtrip () =
+  let cie : Dwarf.CallFrame.common_information_entry =
+    {
+      format = Dwarf.DWARF32;
+      length = Unsigned.UInt64.of_int 0;
+      cie_id = Unsigned.UInt64.of_int 0;
+      version = Unsigned.UInt8.of_int 1;
+      augmentation = "";
+      address_size = Unsigned.UInt8.of_int 8;
+      segment_selector_size = Unsigned.UInt8.of_int 0;
+      code_alignment_factor = Unsigned.UInt64.of_int 1;
+      data_alignment_factor = Signed.Int64.of_int (-8);
+      return_address_register = Unsigned.UInt64.of_int 16;
+      augmentation_length = None;
+      augmentation_data = None;
+      initial_instructions = "";
+      header_span =
+        { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 0 };
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_eh_cie buf cie;
+  (* Padding: the parser always attempts an FDE parse
+     after each CIE in the same iteration *)
+  for _ = 1 to 16 do
+    Buffer.add_char buf '\x00'
+  done;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let section = Dwarf.EHFrame.parse_section cur (Buffer.length buf) in
+  let cie_entry =
+    List.find
+      (function Dwarf.EHFrame.EH_CIE _ -> true | _ -> false)
+      section.entries
+  in
+  match cie_entry with
+  | Dwarf.EHFrame.EH_CIE p ->
+      check int "version" 1 (Unsigned.UInt8.to_int p.version);
+      check string "augmentation" "" p.augmentation;
+      check int "code_align" 1 (Unsigned.UInt64.to_int p.code_alignment_factor);
+      check int "data_align" (-8) (Signed.Int64.to_int p.data_alignment_factor);
+      check int "ret_addr_reg" 16
+        (Unsigned.UInt64.to_int p.return_address_register)
+  | _ -> fail "expected EH_CIE"
+
+let test_write_eh_frame_cie_fde () =
+  let cie : Dwarf.CallFrame.common_information_entry =
+    {
+      format = Dwarf.DWARF32;
+      length = Unsigned.UInt64.of_int 0;
+      cie_id = Unsigned.UInt64.of_int 0;
+      version = Unsigned.UInt8.of_int 1;
+      augmentation = "";
+      address_size = Unsigned.UInt8.of_int 8;
+      segment_selector_size = Unsigned.UInt8.of_int 0;
+      code_alignment_factor = Unsigned.UInt64.of_int 1;
+      data_alignment_factor = Signed.Int64.of_int (-8);
+      return_address_register = Unsigned.UInt64.of_int 16;
+      augmentation_length = None;
+      augmentation_data = None;
+      initial_instructions = "";
+      header_span =
+        { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 0 };
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let fde : Dwarf.CallFrame.frame_description_entry =
+    {
+      format = Dwarf.DWARF32;
+      length = Unsigned.UInt64.of_int 0;
+      cie_pointer = Unsigned.UInt64.of_int 0;
+      initial_location = Unsigned.UInt64.of_int 0x401000;
+      address_range = Unsigned.UInt64.of_int 0x80;
+      augmentation_length = None;
+      augmentation_data = None;
+      instructions = "";
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_eh_frame buf
+    [ Dwarf.EHFrame.EH_CIE cie; Dwarf.EHFrame.EH_FDE fde ];
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let section = Dwarf.EHFrame.parse_section cur (Buffer.length buf) in
+  check int "2 entries" 2 (List.length section.entries);
+  (match List.nth section.entries 0 with
+  | Dwarf.EHFrame.EH_CIE p ->
+      check int "cie version" 1 (Unsigned.UInt8.to_int p.version)
+  | _ -> fail "first should be CIE");
+  match List.nth section.entries 1 with
+  | Dwarf.EHFrame.EH_FDE p ->
+      check int "fde addr_range" 0x80 (Unsigned.UInt64.to_int p.address_range)
+  | _ -> fail "second should be FDE"
+
+let test_write_eh_cie_augmented () =
+  let aug_data = "\x1b" in
+  let cie : Dwarf.CallFrame.common_information_entry =
+    {
+      format = Dwarf.DWARF32;
+      length = Unsigned.UInt64.of_int 0;
+      cie_id = Unsigned.UInt64.of_int 0;
+      version = Unsigned.UInt8.of_int 1;
+      augmentation = "zR";
+      address_size = Unsigned.UInt8.of_int 8;
+      segment_selector_size = Unsigned.UInt8.of_int 0;
+      code_alignment_factor = Unsigned.UInt64.of_int 1;
+      data_alignment_factor = Signed.Int64.of_int (-8);
+      return_address_register = Unsigned.UInt64.of_int 16;
+      augmentation_length =
+        Some (Unsigned.UInt64.of_int (String.length aug_data));
+      augmentation_data = Some aug_data;
+      initial_instructions = "";
+      header_span =
+        { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 0 };
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_eh_cie buf cie;
+  for _ = 1 to 16 do
+    Buffer.add_char buf '\x00'
+  done;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let section = Dwarf.EHFrame.parse_section cur (Buffer.length buf) in
+  let cie_entry =
+    List.find
+      (function Dwarf.EHFrame.EH_CIE _ -> true | _ -> false)
+      section.entries
+  in
+  match cie_entry with
+  | Dwarf.EHFrame.EH_CIE p -> (
+      check string "augmentation" "zR" p.augmentation;
+      match p.augmentation_data with
+      | Some d -> check int "aug data len" 1 (String.length d)
+      | None -> fail "expected augmentation data")
+  | _ -> fail "expected EH_CIE"
+
 let () =
   run "Dwarf_write"
     [
@@ -1735,5 +1877,11 @@ let () =
           test_case "cfi initial state" `Quick test_write_cfi_initial_state;
           test_case "debug_frame section" `Quick test_write_debug_frame_section;
           test_case "advance_loc" `Quick test_write_cfi_advance_loc;
+        ] );
+      ( "eh-frame",
+        [
+          test_case "eh cie roundtrip" `Quick test_write_eh_cie_roundtrip;
+          test_case "eh frame cie+fde" `Quick test_write_eh_frame_cie_fde;
+          test_case "eh cie augmented" `Quick test_write_eh_cie_augmented;
         ] );
     ]

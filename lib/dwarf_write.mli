@@ -139,3 +139,12 @@ val write_fde : Buffer.t -> Dwarf.CallFrame.frame_description_entry -> unit
 
 val write_debug_frame :
   Buffer.t -> Dwarf.CallFrame.debug_frame_entry list -> unit
+
+(** {2 Stage 12: .eh_frame Writer} *)
+
+val write_eh_cie : Buffer.t -> Dwarf.CallFrame.common_information_entry -> unit
+
+val write_eh_fde :
+  Buffer.t -> Dwarf.CallFrame.frame_description_entry -> int -> unit
+
+val write_eh_frame : Buffer.t -> Dwarf.EHFrame.eh_frame_entry list -> unit
