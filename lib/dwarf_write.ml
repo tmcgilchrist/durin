@@ -450,3 +450,154 @@ let write_expression buf (ops : Dwarf.dwarf_expression_operation list)
           write_uleb128 buf (Unsigned.UInt64.of_int (List.nth op.operands 1))
       | _ -> failwith "Unsupported operation for write")
     ops
+
+(* Stage 9: Location/Range Lists *)
+
+let write_lle_byte buf kind =
+  write_u8 buf (Unsigned.UInt8.of_int (Dwarf.int_of_location_list_entry kind))
+
+let write_expr_block buf (expr : string) =
+  write_uleb128 buf (Unsigned.UInt64.of_int (String.length expr));
+  Buffer.add_string buf expr
+
+let write_location_entry buf (entry : Dwarf.DebugLoclists.location_entry)
+    (address_size : int) =
+  match entry with
+  | LLE_end_of_list -> write_lle_byte buf Dwarf.DW_LLE_end_of_list
+  | LLE_base_addressx { index } ->
+      write_lle_byte buf Dwarf.DW_LLE_base_addressx;
+      write_uleb128 buf (Unsigned.UInt64.of_int index)
+  | LLE_startx_endx { start_index; end_index; expr } ->
+      write_lle_byte buf Dwarf.DW_LLE_startx_endx;
+      write_uleb128 buf (Unsigned.UInt64.of_int start_index);
+      write_uleb128 buf (Unsigned.UInt64.of_int end_index);
+      write_expr_block buf expr
+  | LLE_startx_length { start_index; length; expr } ->
+      write_lle_byte buf Dwarf.DW_LLE_startx_length;
+      write_uleb128 buf (Unsigned.UInt64.of_int start_index);
+      write_uleb128 buf length;
+      write_expr_block buf expr
+  | LLE_offset_pair { start_offset; end_offset; expr } ->
+      write_lle_byte buf Dwarf.DW_LLE_offset_pair;
+      write_uleb128 buf start_offset;
+      write_uleb128 buf end_offset;
+      write_expr_block buf expr
+  | LLE_default_location { expr } ->
+      write_lle_byte buf Dwarf.DW_LLE_default_location;
+      write_expr_block buf expr
+  | LLE_base_address { address } ->
+      write_lle_byte buf Dwarf.DW_LLE_base_address;
+      write_address buf address_size address
+  | LLE_start_end { start_addr; end_addr; expr } ->
+      write_lle_byte buf Dwarf.DW_LLE_start_end;
+      write_address buf address_size start_addr;
+      write_address buf address_size end_addr;
+      write_expr_block buf expr
+  | LLE_start_length { start_addr; length; expr } ->
+      write_lle_byte buf Dwarf.DW_LLE_start_length;
+      write_address buf address_size start_addr;
+      write_uleb128 buf length;
+      write_expr_block buf expr
+
+let write_location_list buf (list : Dwarf.DebugLoclists.location_list)
+    (address_size : int) =
+  List.iter (fun e -> write_location_entry buf e address_size) list.entries
+
+let write_rle_byte buf kind =
+  write_u8 buf (Unsigned.UInt8.of_int (Dwarf.int_of_range_list_entry kind))
+
+let write_range_entry buf (entry : Dwarf.DebugRnglists.range_entry)
+    (address_size : int) =
+  match entry with
+  | RLE_end_of_list -> write_rle_byte buf Dwarf.DW_RLE_end_of_list
+  | RLE_base_addressx { index } ->
+      write_rle_byte buf Dwarf.DW_RLE_base_addressx;
+      write_uleb128 buf (Unsigned.UInt64.of_int index)
+  | RLE_startx_endx { start_index; end_index } ->
+      write_rle_byte buf Dwarf.DW_RLE_startx_endx;
+      write_uleb128 buf (Unsigned.UInt64.of_int start_index);
+      write_uleb128 buf (Unsigned.UInt64.of_int end_index)
+  | RLE_startx_length { start_index; length } ->
+      write_rle_byte buf Dwarf.DW_RLE_startx_length;
+      write_uleb128 buf (Unsigned.UInt64.of_int start_index);
+      write_uleb128 buf length
+  | RLE_offset_pair { start_offset; end_offset } ->
+      write_rle_byte buf Dwarf.DW_RLE_offset_pair;
+      write_uleb128 buf start_offset;
+      write_uleb128 buf end_offset
+  | RLE_base_address { address } ->
+      write_rle_byte buf Dwarf.DW_RLE_base_address;
+      write_address buf address_size address
+  | RLE_start_end { start_addr; end_addr } ->
+      write_rle_byte buf Dwarf.DW_RLE_start_end;
+      write_address buf address_size start_addr;
+      write_address buf address_size end_addr
+  | RLE_start_length { start_addr; length } ->
+      write_rle_byte buf Dwarf.DW_RLE_start_length;
+      write_address buf address_size start_addr;
+      write_uleb128 buf length
+
+let write_range_list buf (list : Dwarf.DebugRnglists.range_list)
+    (address_size : int) =
+  List.iter (fun e -> write_range_entry buf e address_size) list.entries
+
+let write_loclists_header buf (enc : Dwarf.encoding) (offset_entry_count : int)
+    (body_size : int) =
+  let header_content_size = 2 + 1 + 1 + 4 in
+  let offset_table_size =
+    offset_entry_count * Dwarf.offset_size_for_format enc.format
+  in
+  let unit_length = header_content_size + offset_table_size + body_size in
+  write_initial_length buf enc.format unit_length;
+  write_u16_le buf (Unsigned.UInt16.of_int 5);
+  write_u8 buf enc.address_size;
+  write_u8 buf (Unsigned.UInt8.of_int 0);
+  write_u32_le buf (Unsigned.UInt32.of_int offset_entry_count)
+
+let write_rnglists_header buf (enc : Dwarf.encoding) (offset_entry_count : int)
+    (body_size : int) =
+  write_loclists_header buf enc offset_entry_count body_size
+
+let write_debug_loc_entry buf (entry : Dwarf.DebugLoc.entry)
+    (address_size : int) =
+  match entry with
+  | EndOfList ->
+      write_address buf address_size Unsigned.UInt64.zero;
+      write_address buf address_size Unsigned.UInt64.zero
+  | BaseAddress addr ->
+      let max_addr =
+        if address_size = 4 then Unsigned.UInt64.of_int 0xFFFFFFFF
+        else Unsigned.UInt64.max_int
+      in
+      write_address buf address_size max_addr;
+      write_address buf address_size addr
+  | Location { begin_addr; end_addr; expr } ->
+      write_address buf address_size begin_addr;
+      write_address buf address_size end_addr;
+      write_u16_le buf (Unsigned.UInt16.of_int (String.length expr));
+      Buffer.add_string buf expr
+
+let write_debug_loc buf (entries : Dwarf.DebugLoc.entry list)
+    (address_size : int) =
+  List.iter (fun e -> write_debug_loc_entry buf e address_size) entries
+
+let write_debug_ranges_entry buf (entry : Dwarf.DebugRanges.entry)
+    (address_size : int) =
+  match entry with
+  | EndOfList ->
+      write_address buf address_size Unsigned.UInt64.zero;
+      write_address buf address_size Unsigned.UInt64.zero
+  | BaseAddress addr ->
+      let max_addr =
+        if address_size = 4 then Unsigned.UInt64.of_int 0xFFFFFFFF
+        else Unsigned.UInt64.max_int
+      in
+      write_address buf address_size max_addr;
+      write_address buf address_size addr
+  | Range { begin_addr; end_addr } ->
+      write_address buf address_size begin_addr;
+      write_address buf address_size end_addr
+
+let write_debug_ranges buf (entries : Dwarf.DebugRanges.entry list)
+    (address_size : int) =
+  List.iter (fun e -> write_debug_ranges_entry buf e address_size) entries

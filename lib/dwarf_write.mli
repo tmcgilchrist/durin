@@ -76,3 +76,20 @@ val string_table_size : string_table -> int
 
 val write_expression :
   Buffer.t -> Dwarf.dwarf_expression_operation list -> Dwarf.encoding -> unit
+
+(** {2 Stage 9: Location/Range Lists} *)
+
+val write_location_entry :
+  Buffer.t -> Dwarf.DebugLoclists.location_entry -> int -> unit
+
+val write_location_list :
+  Buffer.t -> Dwarf.DebugLoclists.location_list -> int -> unit
+
+val write_range_entry :
+  Buffer.t -> Dwarf.DebugRnglists.range_entry -> int -> unit
+
+val write_range_list : Buffer.t -> Dwarf.DebugRnglists.range_list -> int -> unit
+val write_loclists_header : Buffer.t -> Dwarf.encoding -> int -> int -> unit
+val write_rnglists_header : Buffer.t -> Dwarf.encoding -> int -> int -> unit
+val write_debug_loc : Buffer.t -> Dwarf.DebugLoc.entry list -> int -> unit
+val write_debug_ranges : Buffer.t -> Dwarf.DebugRanges.entry list -> int -> unit

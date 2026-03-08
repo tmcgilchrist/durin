@@ -1081,6 +1081,222 @@ let test_write_expr_stack_value () =
   check string "stack_value" "DW_OP_stack_value"
     (Dwarf.string_of_operation_encoding (List.nth parsed 1).opcode)
 
+(* Stage 9: Location/Range list tests *)
+
+let addr_size = 8
+
+let roundtrip_location_list entries =
+  let list : Dwarf.DebugLoclists.location_list = { entries } in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_location_list buf list addr_size;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  Dwarf.DebugLoclists.parse_location_list cur (Unsigned.UInt8.of_int addr_size)
+
+let roundtrip_range_list entries =
+  let list : Dwarf.DebugRnglists.range_list = { entries } in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_range_list buf list addr_size;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  Dwarf.DebugRnglists.parse_range_list cur (Unsigned.UInt8.of_int addr_size)
+
+let test_write_lle_offset_pair () =
+  let entries =
+    Dwarf.DebugLoclists.
+      [
+        LLE_offset_pair
+          { start_offset = u64 0x10; end_offset = u64 0x20; expr = "\x50" };
+        LLE_end_of_list;
+      ]
+  in
+  let parsed = roundtrip_location_list entries in
+  check int "2 entries" 2 (List.length parsed.entries);
+  match List.hd parsed.entries with
+  | LLE_offset_pair { start_offset; end_offset; expr } ->
+      check int "start" 0x10 (Unsigned.UInt64.to_int start_offset);
+      check int "end" 0x20 (Unsigned.UInt64.to_int end_offset);
+      check int "expr len" 1 (String.length expr)
+  | _ -> fail "expected LLE_offset_pair"
+
+let test_write_lle_base_address () =
+  let entries =
+    Dwarf.DebugLoclists.
+      [ LLE_base_address { address = u64 0x400000 }; LLE_end_of_list ]
+  in
+  let parsed = roundtrip_location_list entries in
+  match List.hd parsed.entries with
+  | LLE_base_address { address } ->
+      check int "addr" 0x400000 (Unsigned.UInt64.to_int address)
+  | _ -> fail "expected LLE_base_address"
+
+let test_write_lle_start_end () =
+  let entries =
+    Dwarf.DebugLoclists.
+      [
+        LLE_start_end
+          { start_addr = u64 0x1000; end_addr = u64 0x2000; expr = "\x50\x51" };
+        LLE_end_of_list;
+      ]
+  in
+  let parsed = roundtrip_location_list entries in
+  match List.hd parsed.entries with
+  | LLE_start_end { start_addr; end_addr; expr } ->
+      check int "start" 0x1000 (Unsigned.UInt64.to_int start_addr);
+      check int "end" 0x2000 (Unsigned.UInt64.to_int end_addr);
+      check int "expr" 2 (String.length expr)
+  | _ -> fail "expected LLE_start_end"
+
+let test_write_lle_start_length () =
+  let entries =
+    Dwarf.DebugLoclists.
+      [
+        LLE_start_length
+          { start_addr = u64 0x3000; length = u64 0x100; expr = "\x50" };
+        LLE_end_of_list;
+      ]
+  in
+  let parsed = roundtrip_location_list entries in
+  match List.hd parsed.entries with
+  | LLE_start_length { start_addr; length; _ } ->
+      check int "start" 0x3000 (Unsigned.UInt64.to_int start_addr);
+      check int "length" 0x100 (Unsigned.UInt64.to_int length)
+  | _ -> fail "expected LLE_start_length"
+
+let test_write_lle_base_addressx () =
+  let entries =
+    Dwarf.DebugLoclists.[ LLE_base_addressx { index = 3 }; LLE_end_of_list ]
+  in
+  let parsed = roundtrip_location_list entries in
+  match List.hd parsed.entries with
+  | LLE_base_addressx { index } -> check int "index" 3 index
+  | _ -> fail "expected LLE_base_addressx"
+
+let test_write_lle_default_location () =
+  let entries =
+    Dwarf.DebugLoclists.
+      [ LLE_default_location { expr = "\x50" }; LLE_end_of_list ]
+  in
+  let parsed = roundtrip_location_list entries in
+  match List.hd parsed.entries with
+  | LLE_default_location { expr } -> check int "expr len" 1 (String.length expr)
+  | _ -> fail "expected LLE_default_location"
+
+let test_write_rle_offset_pair () =
+  let entries =
+    Dwarf.DebugRnglists.
+      [
+        RLE_offset_pair { start_offset = u64 0x10; end_offset = u64 0x30 };
+        RLE_end_of_list;
+      ]
+  in
+  let parsed = roundtrip_range_list entries in
+  check int "2 entries" 2 (List.length parsed.entries);
+  match List.hd parsed.entries with
+  | RLE_offset_pair { start_offset; end_offset } ->
+      check int "start" 0x10 (Unsigned.UInt64.to_int start_offset);
+      check int "end" 0x30 (Unsigned.UInt64.to_int end_offset)
+  | _ -> fail "expected RLE_offset_pair"
+
+let test_write_rle_base_address () =
+  let entries =
+    Dwarf.DebugRnglists.
+      [ RLE_base_address { address = u64 0x500000 }; RLE_end_of_list ]
+  in
+  let parsed = roundtrip_range_list entries in
+  match List.hd parsed.entries with
+  | RLE_base_address { address } ->
+      check int "addr" 0x500000 (Unsigned.UInt64.to_int address)
+  | _ -> fail "expected RLE_base_address"
+
+let test_write_rle_start_end () =
+  let entries =
+    Dwarf.DebugRnglists.
+      [
+        RLE_start_end { start_addr = u64 0x1000; end_addr = u64 0x2000 };
+        RLE_end_of_list;
+      ]
+  in
+  let parsed = roundtrip_range_list entries in
+  match List.hd parsed.entries with
+  | RLE_start_end { start_addr; end_addr } ->
+      check int "start" 0x1000 (Unsigned.UInt64.to_int start_addr);
+      check int "end" 0x2000 (Unsigned.UInt64.to_int end_addr)
+  | _ -> fail "expected RLE_start_end"
+
+let test_write_rle_start_length () =
+  let entries =
+    Dwarf.DebugRnglists.
+      [
+        RLE_start_length { start_addr = u64 0x4000; length = u64 0x200 };
+        RLE_end_of_list;
+      ]
+  in
+  let parsed = roundtrip_range_list entries in
+  match List.hd parsed.entries with
+  | RLE_start_length { start_addr; length } ->
+      check int "start" 0x4000 (Unsigned.UInt64.to_int start_addr);
+      check int "length" 0x200 (Unsigned.UInt64.to_int length)
+  | _ -> fail "expected RLE_start_length"
+
+let test_write_debug_loc_roundtrip () =
+  let entries =
+    Dwarf.DebugLoc.
+      [
+        Location
+          { begin_addr = u64 0x1000; end_addr = u64 0x1010; expr = "\x50" };
+        EndOfList;
+      ]
+  in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_debug_loc buf entries addr_size;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed = Dwarf.DebugLoc.parse_list cur addr_size in
+  check int "2 entries" 2 (List.length parsed);
+  match List.hd parsed with
+  | Location { begin_addr; end_addr; expr } ->
+      check int "begin" 0x1000 (Unsigned.UInt64.to_int begin_addr);
+      check int "end" 0x1010 (Unsigned.UInt64.to_int end_addr);
+      check int "expr" 1 (String.length expr)
+  | _ -> fail "expected Location"
+
+let test_write_debug_ranges_roundtrip () =
+  let entries =
+    Dwarf.DebugRanges.
+      [ Range { begin_addr = u64 0x2000; end_addr = u64 0x3000 }; EndOfList ]
+  in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_debug_ranges buf entries addr_size;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed = Dwarf.DebugRanges.parse_list cur addr_size in
+  check int "2 entries" 2 (List.length parsed);
+  match List.hd parsed with
+  | Range { begin_addr; end_addr } ->
+      check int "begin" 0x2000 (Unsigned.UInt64.to_int begin_addr);
+      check int "end" 0x3000 (Unsigned.UInt64.to_int end_addr)
+  | _ -> fail "expected Range"
+
+let test_write_loclists_header_roundtrip () =
+  let enc = default_encoding in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_loclists_header buf enc 0 10;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let _fmt, unit_length = Dwarf.parse_initial_length cur in
+  let version = Object.Buffer.Read.u16 cur in
+  let address_size = Object.Buffer.Read.u8 cur in
+  let segment_size = Object.Buffer.Read.u8 cur in
+  let offset_entry_count = Object.Buffer.Read.u32 cur in
+  check int "version" 5 (Unsigned.UInt16.to_int version);
+  check int "address_size" 8 (Unsigned.UInt8.to_int address_size);
+  check int "segment_size" 0 (Unsigned.UInt8.to_int segment_size);
+  check int "offset_entry_count" 0 (Unsigned.UInt32.to_int offset_entry_count);
+  check int "unit_length"
+    (2 + 1 + 1 + 4 + 10)
+    (Unsigned.UInt64.to_int unit_length)
+
 let () =
   run "Dwarf_write"
     [
@@ -1186,5 +1402,28 @@ let () =
           test_case "piece" `Quick test_write_expr_piece;
           test_case "plus_uconst" `Quick test_write_expr_plus_uconst;
           test_case "stack_value" `Quick test_write_expr_stack_value;
+        ] );
+      ( "location-lists",
+        [
+          test_case "offset_pair" `Quick test_write_lle_offset_pair;
+          test_case "base_address" `Quick test_write_lle_base_address;
+          test_case "start_end" `Quick test_write_lle_start_end;
+          test_case "start_length" `Quick test_write_lle_start_length;
+          test_case "base_addressx" `Quick test_write_lle_base_addressx;
+          test_case "default_location" `Quick test_write_lle_default_location;
+          test_case "loclists header" `Quick
+            test_write_loclists_header_roundtrip;
+        ] );
+      ( "range-lists",
+        [
+          test_case "offset_pair" `Quick test_write_rle_offset_pair;
+          test_case "base_address" `Quick test_write_rle_base_address;
+          test_case "start_end" `Quick test_write_rle_start_end;
+          test_case "start_length" `Quick test_write_rle_start_length;
+        ] );
+      ( "dwarf4-loc-ranges",
+        [
+          test_case "debug_loc" `Quick test_write_debug_loc_roundtrip;
+          test_case "debug_ranges" `Quick test_write_debug_ranges_roundtrip;
         ] );
     ]

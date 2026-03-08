@@ -552,6 +552,8 @@ type location_list_entry =
   | DW_LLE_start_end
   | DW_LLE_start_length
 
+val int_of_location_list_entry : location_list_entry -> int
+
 (* Base type encoding.
    The encodings of the constants used in the [DW_AT_encoding] attribute.
 
@@ -954,6 +956,8 @@ type range_list_entry =
           Each entry begins with an unsigned 1-byte code that indicates the kind
           of entry that follows. The encodings for these constants are given in
           Table 7.30: Range list entry encoding values *)
+
+val int_of_range_list_entry : range_list_entry -> int
 
 type t
 
