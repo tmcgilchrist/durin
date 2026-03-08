@@ -291,6 +291,9 @@ type attribute_encoding =
 val string_of_attribute_encoding : attribute_encoding -> string
 (** Convert an attribute_encoding type to its string representation *)
 
+val u64_of_attribute_encoding : attribute_encoding -> u64
+(** Convert an attribute_encoding to its numeric DWARF code *)
+
 (** Attribute form encoding. Table 7.6: Attribute form encodings *)
 type attribute_form_encoding =
   | DW_FORM_addr
@@ -341,6 +344,9 @@ type attribute_form_encoding =
 
 val string_of_attribute_form_encoding_variant :
   attribute_form_encoding -> string
+
+val u64_of_attribute_form_encoding : attribute_form_encoding -> u64
+(** Convert an attribute_form_encoding to its numeric DWARF code *)
 
 (** DWARF expression operations
 

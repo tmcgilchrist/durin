@@ -84,3 +84,155 @@ let write_address buf address_size (v : u64) =
 let write_null_terminated_string buf s =
   Buffer.add_string buf s;
   Buffer.add_char buf '\x00'
+
+(* Stage 2: Abbreviation Table *)
+
+let form_for_attribute_value :
+    Dwarf.DIE.attribute_value -> Dwarf.attribute_form_encoding = function
+  | String _ -> DW_FORM_string
+  | IndexedString _ -> DW_FORM_strx
+  | UData _ -> DW_FORM_udata
+  | SData _ -> DW_FORM_sdata
+  | Address _ -> DW_FORM_addr
+  | IndexedAddress _ -> DW_FORM_addrx
+  | Flag _ -> DW_FORM_flag_present
+  | Reference _ -> DW_FORM_ref4
+  | Block _ -> DW_FORM_block
+  | Language _ -> DW_FORM_udata
+  | Encoding _ -> DW_FORM_udata
+
+type die_shape = {
+  tag : Dwarf.abbreviation_tag;
+  has_children : bool;
+  attr_forms : (Dwarf.attribute_encoding * Dwarf.attribute_form_encoding) list;
+}
+
+module DieShapeMap = Map.Make (struct
+  type t = die_shape
+
+  let compare = Stdlib.compare
+end)
+
+let shape_of_die (die : Dwarf.DIE.t) =
+  let has_children =
+    match die.children () with Seq.Nil -> false | Seq.Cons _ -> true
+  in
+  let attr_forms =
+    List.map
+      (fun (a : Dwarf.DIE.attribute) ->
+        (a.attr, form_for_attribute_value a.value))
+      die.attributes
+  in
+  { tag = die.tag; has_children; attr_forms }
+
+let assign_abbreviations (dies : Dwarf.DIE.t list) =
+  let shapes = ref DieShapeMap.empty in
+  let next_code = ref 1 in
+  let offset_to_code = Hashtbl.create 16 in
+  let abbrevs = ref [] in
+  let rec walk die =
+    let shape = shape_of_die die in
+    let code =
+      match DieShapeMap.find_opt shape !shapes with
+      | Some code -> code
+      | None ->
+          let code = Unsigned.UInt64.of_int !next_code in
+          incr next_code;
+          shapes := DieShapeMap.add shape code !shapes;
+          let attr_specs =
+            List.map
+              (fun (attr_enc, form_enc) ->
+                Dwarf.
+                  {
+                    attr = u64_of_attribute_encoding attr_enc;
+                    form = u64_of_attribute_form_encoding form_enc;
+                    implicit_const = None;
+                  })
+              shape.attr_forms
+          in
+          let abbrev =
+            Dwarf.
+              {
+                code;
+                tag = uint64_of_abbreviation_tag shape.tag;
+                has_children = shape.has_children;
+                attr_specs;
+              }
+          in
+          abbrevs := abbrev :: !abbrevs;
+          code
+    in
+    Hashtbl.replace offset_to_code die.offset code;
+    Seq.iter walk die.children
+  in
+  List.iter walk dies;
+  let abbrev_array = Array.of_list (List.rev !abbrevs) in
+  let lookup offset =
+    match Hashtbl.find_opt offset_to_code offset with
+    | Some code -> code
+    | None ->
+        failwith
+          (Printf.sprintf "No abbreviation code for DIE offset %d" offset)
+  in
+  (abbrev_array, lookup)
+
+let write_abbrev_table buf (abbrevs : Dwarf.abbrev array) =
+  Array.iter
+    (fun (a : Dwarf.abbrev) ->
+      write_uleb128 buf a.code;
+      write_uleb128 buf a.tag;
+      write_u8 buf (Unsigned.UInt8.of_int (if a.has_children then 1 else 0));
+      List.iter
+        (fun (spec : Dwarf.attr_spec) ->
+          write_uleb128 buf spec.attr;
+          write_uleb128 buf spec.form;
+          match spec.implicit_const with
+          | Some v -> write_sleb128 buf (Signed.Int64.of_int64 v)
+          | None -> ())
+        a.attr_specs;
+      write_uleb128 buf Unsigned.UInt64.zero;
+      write_uleb128 buf Unsigned.UInt64.zero)
+    abbrevs;
+  write_uleb128 buf Unsigned.UInt64.zero
+
+let uleb128_size (v : u64) =
+  let open Unsigned.UInt64 in
+  let rec count v n =
+    let rest = shift_right v 7 in
+    if compare rest zero = 0 then n else count rest (n + 1)
+  in
+  count v 1
+
+let sleb128_size (v : i64) =
+  let open Signed.Int64 in
+  let mask = of_int 0x7f in
+  let neg_one = of_int (-1) in
+  let rec count v n =
+    let byte = to_int (logand v mask) in
+    let rest = shift_right v 7 in
+    if
+      (compare rest zero = 0 && byte land 0x40 = 0)
+      || (compare rest neg_one = 0 && byte land 0x40 <> 0)
+    then n
+    else count rest (n + 1)
+  in
+  count v 1
+
+let abbrev_table_size (abbrevs : Dwarf.abbrev array) =
+  let size = ref 0 in
+  Array.iter
+    (fun (a : Dwarf.abbrev) ->
+      size := !size + uleb128_size a.code;
+      size := !size + uleb128_size a.tag;
+      size := !size + 1;
+      List.iter
+        (fun (spec : Dwarf.attr_spec) ->
+          size := !size + uleb128_size spec.attr;
+          size := !size + uleb128_size spec.form;
+          match spec.implicit_const with
+          | Some v -> size := !size + sleb128_size (Signed.Int64.of_int64 v)
+          | None -> ())
+        a.attr_specs;
+      size := !size + 2)
+    abbrevs;
+  !size + 1

@@ -12,3 +12,21 @@ val write_initial_length : Buffer.t -> Dwarf.dwarf_format -> int -> unit
 val write_offset : Buffer.t -> Dwarf.dwarf_format -> u64 -> unit
 val write_address : Buffer.t -> int -> u64 -> unit
 val write_null_terminated_string : Buffer.t -> string -> unit
+
+(** {2 Stage 2: Abbreviation Table} *)
+
+val form_for_attribute_value :
+  Dwarf.DIE.attribute_value -> Dwarf.attribute_form_encoding
+
+type die_shape = {
+  tag : Dwarf.abbreviation_tag;
+  has_children : bool;
+  attr_forms : (Dwarf.attribute_encoding * Dwarf.attribute_form_encoding) list;
+}
+
+val shape_of_die : Dwarf.DIE.t -> die_shape
+val assign_abbreviations : Dwarf.DIE.t list -> Dwarf.abbrev array * (int -> u64)
+val write_abbrev_table : Buffer.t -> Dwarf.abbrev array -> unit
+val abbrev_table_size : Dwarf.abbrev array -> int
+val uleb128_size : u64 -> int
+val sleb128_size : i64 -> int
