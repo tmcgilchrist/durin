@@ -592,6 +592,200 @@ let test_attribute_value_size () =
   check_size "ref4" (Reference (u64 0)) Dwarf.DW_FORM_ref4 4;
   check_size "block" (Block "\x01\x02") Dwarf.DW_FORM_block 3
 
+(* Stage 4: DIE tree tests *)
+
+let abbrev_hashtable_of_array (abbrevs : Dwarf.abbrev array) =
+  let table = Hashtbl.create (Array.length abbrevs) in
+  Array.iter (fun (a : Dwarf.abbrev) -> Hashtbl.add table a.code a) abbrevs;
+  table
+
+let test_write_die_simple () =
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes =
+        [
+          { attr = DW_AT_name; value = String "test.c" };
+          { attr = DW_AT_producer; value = String "durin" };
+        ];
+      children = Seq.empty;
+      offset = 0;
+    }
+  in
+  let abbrevs, lookup = Dwarf_write.assign_abbreviations [ die ] in
+  let table = abbrev_hashtable_of_array abbrevs in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_die buf die default_encoding lookup;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  match Dwarf.DIE.parse_die cur table default_encoding obj_buf with
+  | None -> fail "expected Some die"
+  | Some parsed -> (
+      check int "tag" 0x11
+        (Unsigned.UInt64.to_int (Dwarf.uint64_of_abbreviation_tag parsed.tag));
+      check int "attr count" 2 (List.length parsed.attributes);
+      let name_attr = List.hd parsed.attributes in
+      (match name_attr.value with
+      | String s -> check string "name" "test.c" s
+      | _ -> fail "expected String for name");
+      let producer_attr = List.nth parsed.attributes 1 in
+      match producer_attr.value with
+      | String s -> check string "producer" "durin" s
+      | _ -> fail "expected String for producer")
+
+let test_write_die_with_children () =
+  let child : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_base_type;
+      attributes =
+        [
+          { attr = DW_AT_name; value = String "int" };
+          { attr = DW_AT_byte_size; value = UData (u64 4) };
+        ];
+      children = Seq.empty;
+      offset = 20;
+    }
+  in
+  let parent : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes = [ { attr = DW_AT_name; value = String "test.c" } ];
+      children = List.to_seq [ child ];
+      offset = 0;
+    }
+  in
+  let abbrevs, lookup = Dwarf_write.assign_abbreviations [ parent ] in
+  let table = abbrev_hashtable_of_array abbrevs in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_die buf parent default_encoding lookup;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  match Dwarf.DIE.parse_die cur table default_encoding obj_buf with
+  | None -> fail "expected Some die"
+  | Some parsed -> (
+      check int "parent tag" 0x11
+        (Unsigned.UInt64.to_int (Dwarf.uint64_of_abbreviation_tag parsed.tag));
+      match parsed.children () with
+      | Seq.Nil -> fail "expected children"
+      | Seq.Cons (child_parsed, _) -> (
+          check int "child tag" 0x24
+            (Unsigned.UInt64.to_int
+               (Dwarf.uint64_of_abbreviation_tag child_parsed.tag));
+          check int "child attr count" 2 (List.length child_parsed.attributes);
+          let name = List.hd child_parsed.attributes in
+          match name.value with
+          | String s -> check string "child name" "int" s
+          | _ -> fail "expected String"))
+
+let test_write_die_language_roundtrip () =
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes =
+        [
+          { attr = DW_AT_name; value = String "test.ml" };
+          { attr = DW_AT_language; value = Language Dwarf.DW_LANG_OCaml };
+        ];
+      children = Seq.empty;
+      offset = 0;
+    }
+  in
+  let abbrevs, lookup = Dwarf_write.assign_abbreviations [ die ] in
+  let table = abbrev_hashtable_of_array abbrevs in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_die buf die default_encoding lookup;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  match Dwarf.DIE.parse_die cur table default_encoding obj_buf with
+  | None -> fail "expected Some die"
+  | Some parsed -> (
+      let lang_attr = List.nth parsed.attributes 1 in
+      match lang_attr.value with
+      | Language l ->
+          check string "language roundtrip" "DW_LANG_OCaml"
+            (Dwarf.string_of_dwarf_language l)
+      | _ -> fail "expected Language")
+
+let test_die_size () =
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes =
+        [
+          { attr = DW_AT_name; value = String "test.c" };
+          { attr = DW_AT_producer; value = String "durin" };
+        ];
+      children = Seq.empty;
+      offset = 0;
+    }
+  in
+  let _, lookup = Dwarf_write.assign_abbreviations [ die ] in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_die buf die default_encoding lookup;
+  let written = Buffer.length buf in
+  let computed = Dwarf_write.die_size die default_encoding lookup in
+  check int "die_size matches written" written computed
+
+let test_die_size_with_children () =
+  let child : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_base_type;
+      attributes = [ { attr = DW_AT_name; value = String "int" } ];
+      children = Seq.empty;
+      offset = 20;
+    }
+  in
+  let parent : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes = [ { attr = DW_AT_name; value = String "test.c" } ];
+      children = List.to_seq [ child ];
+      offset = 0;
+    }
+  in
+  let _, lookup = Dwarf_write.assign_abbreviations [ parent ] in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_die buf parent default_encoding lookup;
+  let written = Buffer.length buf in
+  let computed = Dwarf_write.die_size parent default_encoding lookup in
+  check int "die_size with children matches written" written computed
+
+let test_write_die_forest () =
+  let die1 : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes = [ { attr = DW_AT_name; value = String "a.c" } ];
+      children = Seq.empty;
+      offset = 0;
+    }
+  in
+  let die2 : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes = [ { attr = DW_AT_name; value = String "b.c" } ];
+      children = Seq.empty;
+      offset = 50;
+    }
+  in
+  let abbrevs, lookup = Dwarf_write.assign_abbreviations [ die1; die2 ] in
+  let table = abbrev_hashtable_of_array abbrevs in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_die_forest buf [ die1; die2 ] default_encoding lookup;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  (match Dwarf.DIE.parse_die cur table default_encoding obj_buf with
+  | None -> fail "expected first die"
+  | Some d1 -> (
+      match (List.hd d1.attributes).value with
+      | String s -> check string "first die name" "a.c" s
+      | _ -> fail "expected String"));
+  match Dwarf.DIE.parse_die cur table default_encoding obj_buf with
+  | None -> fail "expected second die"
+  | Some d2 -> (
+      match (List.hd d2.attributes).value with
+      | String s -> check string "second die name" "b.c" s
+      | _ -> fail "expected String")
+
 let () =
   run "Dwarf_write"
     [
@@ -655,5 +849,15 @@ let () =
           test_case "indexed_string" `Quick test_write_attr_indexed_string;
           test_case "indexed_address" `Quick test_write_attr_indexed_address;
           test_case "attribute_value_size" `Quick test_attribute_value_size;
+        ] );
+      ( "die-tree",
+        [
+          test_case "simple die" `Quick test_write_die_simple;
+          test_case "die with children" `Quick test_write_die_with_children;
+          test_case "language roundtrip" `Quick
+            test_write_die_language_roundtrip;
+          test_case "die_size" `Quick test_die_size;
+          test_case "die_size with children" `Quick test_die_size_with_children;
+          test_case "die forest" `Quick test_write_die_forest;
         ] );
     ]

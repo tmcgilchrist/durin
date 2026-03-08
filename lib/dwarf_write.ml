@@ -287,3 +287,44 @@ let attribute_value_size (value : Dwarf.DIE.attribute_value)
       let len = String.length b in
       uleb128_size (Unsigned.UInt64.of_int len) + len
   | _ -> failwith "Unsupported form/value combination for size"
+
+(* Stage 4: DIE Tree Serialisation *)
+
+let rec write_die buf (die : Dwarf.DIE.t) (enc : Dwarf.encoding)
+    (lookup : int -> u64) =
+  let code = lookup die.offset in
+  write_uleb128 buf code;
+  List.iter
+    (fun (attr : Dwarf.DIE.attribute) ->
+      let form = form_for_attribute_value attr.value in
+      write_attribute_value buf attr.value form enc)
+    die.attributes;
+  let has_children =
+    match die.children () with Seq.Nil -> false | Seq.Cons _ -> true
+  in
+  if has_children then (
+    Seq.iter (fun child -> write_die buf child enc lookup) die.children;
+    write_u8 buf (Unsigned.UInt8.of_int 0))
+
+let rec die_size (die : Dwarf.DIE.t) (enc : Dwarf.encoding)
+    (lookup : int -> u64) =
+  let code = lookup die.offset in
+  let size = ref (uleb128_size code) in
+  List.iter
+    (fun (attr : Dwarf.DIE.attribute) ->
+      let form = form_for_attribute_value attr.value in
+      size := !size + attribute_value_size attr.value form enc)
+    die.attributes;
+  let has_children =
+    match die.children () with Seq.Nil -> false | Seq.Cons _ -> true
+  in
+  if has_children then (
+    Seq.iter
+      (fun child -> size := !size + die_size child enc lookup)
+      die.children;
+    size := !size + 1);
+  !size
+
+let write_die_forest buf (dies : Dwarf.DIE.t list) (enc : Dwarf.encoding)
+    (lookup : int -> u64) =
+  List.iter (fun die -> write_die buf die enc lookup) dies

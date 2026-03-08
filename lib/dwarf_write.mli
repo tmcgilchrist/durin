@@ -45,3 +45,13 @@ val attribute_value_size :
   Dwarf.attribute_form_encoding ->
   Dwarf.encoding ->
   int
+
+(** {2 Stage 4: DIE Tree Serialisation} *)
+
+val write_die :
+  Buffer.t -> Dwarf.DIE.t -> Dwarf.encoding -> (int -> u64) -> unit
+
+val die_size : Dwarf.DIE.t -> Dwarf.encoding -> (int -> u64) -> int
+
+val write_die_forest :
+  Buffer.t -> Dwarf.DIE.t list -> Dwarf.encoding -> (int -> u64) -> unit
