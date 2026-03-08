@@ -1476,6 +1476,102 @@ let test_write_debug_line_discriminator () =
   check int "e1.disc" 2
     (Unsigned.UInt32.to_int (List.nth parsed 1).discriminator)
 
+let test_write_cie_roundtrip () =
+  let cie = Dwarf.CallFrame.create_default_cie () in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_cie buf cie;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let p = Dwarf.CallFrame.parse_common_information_entry cur in
+  check int "version"
+    (Unsigned.UInt8.to_int cie.version)
+    (Unsigned.UInt8.to_int p.version);
+  check int "address_size"
+    (Unsigned.UInt8.to_int cie.address_size)
+    (Unsigned.UInt8.to_int p.address_size);
+  check int "code_alignment"
+    (Unsigned.UInt64.to_int cie.code_alignment_factor)
+    (Unsigned.UInt64.to_int p.code_alignment_factor);
+  check int "data_alignment"
+    (Signed.Int64.to_int cie.data_alignment_factor)
+    (Signed.Int64.to_int p.data_alignment_factor);
+  check int "return_addr_reg"
+    (Unsigned.UInt64.to_int cie.return_address_register)
+    (Unsigned.UInt64.to_int p.return_address_register);
+  check string "augmentation" cie.augmentation p.augmentation
+
+let test_write_cfi_initial_state () =
+  let ibuf = Buffer.create 16 in
+  Dwarf_write.write_cfi_instructions ibuf
+    [ CFA_def_cfa (7, 8); CFA_offset (16, 1) ];
+  let instructions = Buffer.contents ibuf in
+  let cie =
+    {
+      (Dwarf.CallFrame.create_default_cie ()) with
+      initial_instructions = instructions;
+    }
+  in
+  let state = Dwarf.CallFrame.parse_initial_state cie in
+  check int "cfa_register" 7 state.cfa_register;
+  check int "cfa_offset" 8 (Int64.to_int state.cfa_offset);
+  match Hashtbl.find_opt state.register_rules 16 with
+  | Some (Dwarf.CallFrame.Rule_offset off) ->
+      check int "r16 offset" (-8) (Int64.to_int off)
+  | _ -> fail "r16 should have Rule_offset"
+
+let test_write_debug_frame_section () =
+  let cie = Dwarf.CallFrame.create_default_cie () in
+  let fde : Dwarf.CallFrame.frame_description_entry =
+    {
+      format = Dwarf.DWARF32;
+      length = Unsigned.UInt64.of_int 0;
+      cie_pointer = Unsigned.UInt64.of_int 0;
+      initial_location = Unsigned.UInt64.of_int 0x401000;
+      address_range = Unsigned.UInt64.of_int 0x80;
+      augmentation_length = None;
+      augmentation_data = None;
+      instructions = "";
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_debug_frame buf
+    [ Dwarf.CallFrame.CIE cie; Dwarf.CallFrame.FDE fde ];
+  (* Pad for FDE parser bug *)
+  for _ = 1 to 4 do
+    Buffer.add_char buf '\x00'
+  done;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let section =
+    Dwarf.CallFrame.parse_debug_frame_section cur (Buffer.length buf)
+  in
+  check int "entry_count" 2 section.entry_count;
+  (match List.nth section.entries 0 with
+  | Dwarf.CallFrame.CIE p ->
+      check int "cie version"
+        (Unsigned.UInt8.to_int cie.version)
+        (Unsigned.UInt8.to_int p.version)
+  | _ -> fail "first entry should be CIE");
+  match List.nth section.entries 1 with
+  | Dwarf.CallFrame.FDE p ->
+      check int64 "fde location"
+        (Unsigned.UInt64.to_int64 fde.initial_location)
+        (Unsigned.UInt64.to_int64 p.initial_location)
+  | _ -> fail "second entry should be FDE"
+
+let test_write_cfi_advance_loc () =
+  let ibuf = Buffer.create 16 in
+  Dwarf_write.write_cfi_instructions ibuf
+    [ CFA_def_cfa (7, 8); CFA_advance_loc 4; CFA_def_cfa_offset 16 ];
+  let instructions = Buffer.contents ibuf in
+  let results = Dwarf.CallFrame.parse_cfi_instructions instructions 1L 1L in
+  check int "2 results" 2 (List.length results);
+  let pc0, _ = List.nth results 0 in
+  check int "first at pc 0" 0 pc0;
+  let pc1, _ = List.nth results 1 in
+  check int "second at pc 4" 4 pc1
+
 let test_write_loclists_header_roundtrip () =
   let enc = default_encoding in
   let buf = Buffer.create 64 in
@@ -1632,5 +1728,12 @@ let () =
           test_case "stmt toggle" `Quick test_write_debug_line_stmt_toggle;
           test_case "multi sequence" `Quick test_write_debug_line_multi_seq;
           test_case "discriminator" `Quick test_write_debug_line_discriminator;
+        ] );
+      ( "cfi",
+        [
+          test_case "cie roundtrip" `Quick test_write_cie_roundtrip;
+          test_case "cfi initial state" `Quick test_write_cfi_initial_state;
+          test_case "debug_frame section" `Quick test_write_debug_frame_section;
+          test_case "advance_loc" `Quick test_write_cfi_advance_loc;
         ] );
     ]
