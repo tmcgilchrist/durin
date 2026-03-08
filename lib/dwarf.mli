@@ -523,6 +523,7 @@ type operation_encoding =
   | DW_OP_hi_user
 
 val operation_encoding : int -> operation_encoding
+val int_of_operation_encoding : operation_encoding -> int
 val string_of_operation_encoding : operation_encoding -> string
 
 type dwarf_expression_operation = {

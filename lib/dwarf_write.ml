@@ -376,3 +376,77 @@ let write_string_table buf table =
   Buffer.add_string buf (Buffer.contents table.buf)
 
 let string_table_size table = Buffer.length table.buf
+
+(* Stage 7: Expression Encoding *)
+
+let write_op_byte buf (opcode : Dwarf.operation_encoding) =
+  Buffer.add_char buf (Char.chr (Dwarf.int_of_operation_encoding opcode))
+
+let write_2byte_le buf v =
+  Buffer.add_char buf (Char.chr (v land 0xff));
+  Buffer.add_char buf (Char.chr ((v lsr 8) land 0xff))
+
+let write_4byte_le buf v =
+  Buffer.add_char buf (Char.chr (v land 0xff));
+  Buffer.add_char buf (Char.chr ((v lsr 8) land 0xff));
+  Buffer.add_char buf (Char.chr ((v lsr 16) land 0xff));
+  Buffer.add_char buf (Char.chr ((v lsr 24) land 0xff))
+
+let write_expression buf (ops : Dwarf.dwarf_expression_operation list)
+    (_enc : Dwarf.encoding) =
+  List.iter
+    (fun (op : Dwarf.dwarf_expression_operation) ->
+      write_op_byte buf op.opcode;
+      match op.opcode with
+      | DW_OP_deref | DW_OP_dup | DW_OP_drop | DW_OP_over | DW_OP_swap
+      | DW_OP_rot | DW_OP_xderef | DW_OP_abs | DW_OP_and | DW_OP_div
+      | DW_OP_minus | DW_OP_mod | DW_OP_mul | DW_OP_neg | DW_OP_not | DW_OP_or
+      | DW_OP_plus | DW_OP_shl | DW_OP_shr | DW_OP_shra | DW_OP_xor | DW_OP_eq
+      | DW_OP_ge | DW_OP_gt | DW_OP_le | DW_OP_lt | DW_OP_ne | DW_OP_nop
+      | DW_OP_push_object_address | DW_OP_form_tls_address
+      | DW_OP_call_frame_cfa | DW_OP_stack_value | DW_OP_hi_user ->
+          ()
+      | DW_OP_lit0 | DW_OP_lit1 | DW_OP_lit2 | DW_OP_lit3 | DW_OP_lit4
+      | DW_OP_lit5 | DW_OP_lit6 | DW_OP_lit7 | DW_OP_lit8 | DW_OP_lit9
+      | DW_OP_lit10 | DW_OP_lit11 | DW_OP_lit12 | DW_OP_lit13 | DW_OP_lit14
+      | DW_OP_lit15 | DW_OP_lit16 | DW_OP_lit17 | DW_OP_lit18 | DW_OP_lit19
+      | DW_OP_lit20 | DW_OP_lit21 | DW_OP_lit22 | DW_OP_lit23 | DW_OP_lit24
+      | DW_OP_lit25 | DW_OP_lit26 | DW_OP_lit27 | DW_OP_lit28 | DW_OP_lit29
+      | DW_OP_lit30 | DW_OP_lit31 ->
+          ()
+      | DW_OP_reg0 | DW_OP_reg1 | DW_OP_reg2 | DW_OP_reg3 | DW_OP_reg4
+      | DW_OP_reg5 | DW_OP_reg6 | DW_OP_reg7 | DW_OP_reg8 | DW_OP_reg9
+      | DW_OP_reg10 | DW_OP_reg11 | DW_OP_reg12 | DW_OP_reg13 | DW_OP_reg14
+      | DW_OP_reg15 | DW_OP_reg16 | DW_OP_reg17 | DW_OP_reg18 | DW_OP_reg19
+      | DW_OP_reg20 | DW_OP_reg21 | DW_OP_reg22 | DW_OP_reg23 | DW_OP_reg24
+      | DW_OP_reg25 | DW_OP_reg26 | DW_OP_reg27 | DW_OP_reg28 | DW_OP_reg29
+      | DW_OP_reg30 | DW_OP_reg31 ->
+          ()
+      | DW_OP_const1u | DW_OP_const1s | DW_OP_pick | DW_OP_deref_size
+      | DW_OP_xderef_size ->
+          Buffer.add_char buf (Char.chr (List.hd op.operands land 0xff))
+      | DW_OP_const2u | DW_OP_const2s | DW_OP_bra | DW_OP_skip | DW_OP_call2 ->
+          write_2byte_le buf (List.hd op.operands)
+      | DW_OP_const4u | DW_OP_const4s | DW_OP_call4 | DW_OP_GNU_parameter_ref ->
+          write_4byte_le buf (List.hd op.operands)
+      | DW_OP_constu | DW_OP_plus_uconst | DW_OP_regx | DW_OP_piece
+      | DW_OP_addrx | DW_OP_constx | DW_OP_convert | DW_OP_reinterpret ->
+          write_uleb128 buf (Unsigned.UInt64.of_int (List.hd op.operands))
+      | DW_OP_consts | DW_OP_fbreg ->
+          write_sleb128 buf (Signed.Int64.of_int (List.hd op.operands))
+      | DW_OP_breg0 | DW_OP_breg1 | DW_OP_breg2 | DW_OP_breg3 | DW_OP_breg4
+      | DW_OP_breg5 | DW_OP_breg6 | DW_OP_breg7 | DW_OP_breg8 | DW_OP_breg9
+      | DW_OP_breg10 | DW_OP_breg11 | DW_OP_breg12 | DW_OP_breg13 | DW_OP_breg14
+      | DW_OP_breg15 | DW_OP_breg16 | DW_OP_breg17 | DW_OP_breg18 | DW_OP_breg19
+      | DW_OP_breg20 | DW_OP_breg21 | DW_OP_breg22 | DW_OP_breg23 | DW_OP_breg24
+      | DW_OP_breg25 | DW_OP_breg26 | DW_OP_breg27 | DW_OP_breg28 | DW_OP_breg29
+      | DW_OP_breg30 | DW_OP_breg31 ->
+          write_sleb128 buf (Signed.Int64.of_int (List.hd op.operands))
+      | DW_OP_bregx ->
+          write_uleb128 buf (Unsigned.UInt64.of_int (List.nth op.operands 0));
+          write_sleb128 buf (Signed.Int64.of_int (List.nth op.operands 1))
+      | DW_OP_bit_piece ->
+          write_uleb128 buf (Unsigned.UInt64.of_int (List.nth op.operands 0));
+          write_uleb128 buf (Unsigned.UInt64.of_int (List.nth op.operands 1))
+      | _ -> failwith "Unsupported operation for write")
+    ops

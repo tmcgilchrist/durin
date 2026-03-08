@@ -71,3 +71,8 @@ val create_string_table : unit -> string_table
 val add_string : string_table -> string -> int
 val write_string_table : Buffer.t -> string_table -> unit
 val string_table_size : string_table -> int
+
+(** {2 Stage 7: Expression Encoding} *)
+
+val write_expression :
+  Buffer.t -> Dwarf.dwarf_expression_operation list -> Dwarf.encoding -> unit

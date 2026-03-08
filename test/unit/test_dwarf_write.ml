@@ -977,6 +977,110 @@ let test_string_table_size () =
     (Dwarf_write.string_table_size table);
   check int "expected size" 7 (Dwarf_write.string_table_size table)
 
+(* Stage 7: Expression encoding tests *)
+
+let roundtrip_expression ops =
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_expression buf ops default_encoding;
+  let expr_bytes = Buffer.contents buf in
+  Dwarf.parse_dwarf_expression ~encoding:default_encoding expr_bytes
+
+let op opcode operands : Dwarf.dwarf_expression_operation =
+  { opcode; operands; operand_string = None }
+
+let test_write_expr_no_operands () =
+  let ops =
+    [ op Dwarf.DW_OP_dup []; op Dwarf.DW_OP_drop []; op Dwarf.DW_OP_nop [] ]
+  in
+  let parsed = roundtrip_expression ops in
+  check int "3 ops" 3 (List.length parsed);
+  check string "op0" "DW_OP_dup"
+    (Dwarf.string_of_operation_encoding (List.nth parsed 0).opcode);
+  check string "op1" "DW_OP_drop"
+    (Dwarf.string_of_operation_encoding (List.nth parsed 1).opcode);
+  check string "op2" "DW_OP_nop"
+    (Dwarf.string_of_operation_encoding (List.nth parsed 2).opcode)
+
+let test_write_expr_literals () =
+  let ops = [ op Dwarf.DW_OP_lit0 []; op Dwarf.DW_OP_lit31 [] ] in
+  let parsed = roundtrip_expression ops in
+  check int "2 ops" 2 (List.length parsed);
+  check string "lit0" "DW_OP_lit0"
+    (Dwarf.string_of_operation_encoding (List.nth parsed 0).opcode);
+  check string "lit31" "DW_OP_lit31"
+    (Dwarf.string_of_operation_encoding (List.nth parsed 1).opcode)
+
+let test_write_expr_const1u () =
+  let ops = [ op Dwarf.DW_OP_const1u [ 42 ] ] in
+  let parsed = roundtrip_expression ops in
+  check int "1 op" 1 (List.length parsed);
+  check string "opcode" "DW_OP_const1u"
+    (Dwarf.string_of_operation_encoding (List.hd parsed).opcode);
+  check int "operand" 42 (List.hd (List.hd parsed).operands)
+
+let test_write_expr_const2u () =
+  let ops = [ op Dwarf.DW_OP_const2u [ 0x1234 ] ] in
+  let parsed = roundtrip_expression ops in
+  check int "operand" 0x1234 (List.hd (List.hd parsed).operands)
+
+let test_write_expr_const4u () =
+  let ops = [ op Dwarf.DW_OP_const4u [ 0x12345678 ] ] in
+  let parsed = roundtrip_expression ops in
+  check int "operand" 0x12345678 (List.hd (List.hd parsed).operands)
+
+let test_write_expr_constu () =
+  let ops = [ op Dwarf.DW_OP_constu [ 300 ] ] in
+  let parsed = roundtrip_expression ops in
+  check int "operand" 300 (List.hd (List.hd parsed).operands)
+
+let test_write_expr_consts () =
+  let ops = [ op Dwarf.DW_OP_consts [ -42 ] ] in
+  let parsed = roundtrip_expression ops in
+  check int "operand" (-42) (List.hd (List.hd parsed).operands)
+
+let test_write_expr_fbreg () =
+  let ops = [ op Dwarf.DW_OP_fbreg [ -16 ] ] in
+  let parsed = roundtrip_expression ops in
+  check string "opcode" "DW_OP_fbreg"
+    (Dwarf.string_of_operation_encoding (List.hd parsed).opcode);
+  check int "operand" (-16) (List.hd (List.hd parsed).operands)
+
+let test_write_expr_breg () =
+  let ops = [ op Dwarf.DW_OP_breg7 [ 8 ] ] in
+  let parsed = roundtrip_expression ops in
+  check string "opcode" "DW_OP_breg7"
+    (Dwarf.string_of_operation_encoding (List.hd parsed).opcode);
+  check int "operand" 8 (List.hd (List.hd parsed).operands)
+
+let test_write_expr_bregx () =
+  let ops = [ op Dwarf.DW_OP_bregx [ 33; -4 ] ] in
+  let parsed = roundtrip_expression ops in
+  check string "opcode" "DW_OP_bregx"
+    (Dwarf.string_of_operation_encoding (List.hd parsed).opcode);
+  check int "reg" 33 (List.nth (List.hd parsed).operands 0);
+  check int "offset" (-4) (List.nth (List.hd parsed).operands 1)
+
+let test_write_expr_piece () =
+  let ops = [ op Dwarf.DW_OP_reg0 []; op Dwarf.DW_OP_piece [ 4 ] ] in
+  let parsed = roundtrip_expression ops in
+  check int "2 ops" 2 (List.length parsed);
+  check int "piece size" 4 (List.hd (List.nth parsed 1).operands)
+
+let test_write_expr_plus_uconst () =
+  let ops =
+    [ op Dwarf.DW_OP_fbreg [ -32 ]; op Dwarf.DW_OP_plus_uconst [ 8 ] ]
+  in
+  let parsed = roundtrip_expression ops in
+  check int "2 ops" 2 (List.length parsed);
+  check int "uconst" 8 (List.hd (List.nth parsed 1).operands)
+
+let test_write_expr_stack_value () =
+  let ops = [ op Dwarf.DW_OP_lit5 []; op Dwarf.DW_OP_stack_value [] ] in
+  let parsed = roundtrip_expression ops in
+  check int "2 ops" 2 (List.length parsed);
+  check string "stack_value" "DW_OP_stack_value"
+    (Dwarf.string_of_operation_encoding (List.nth parsed 1).opcode)
+
 let () =
   run "Dwarf_write"
     [
@@ -1066,5 +1170,21 @@ let () =
           test_case "dedup" `Quick test_string_table_dedup;
           test_case "roundtrip" `Quick test_string_table_roundtrip;
           test_case "size" `Quick test_string_table_size;
+        ] );
+      ( "expression",
+        [
+          test_case "no operands" `Quick test_write_expr_no_operands;
+          test_case "literals" `Quick test_write_expr_literals;
+          test_case "const1u" `Quick test_write_expr_const1u;
+          test_case "const2u" `Quick test_write_expr_const2u;
+          test_case "const4u" `Quick test_write_expr_const4u;
+          test_case "constu" `Quick test_write_expr_constu;
+          test_case "consts" `Quick test_write_expr_consts;
+          test_case "fbreg" `Quick test_write_expr_fbreg;
+          test_case "breg" `Quick test_write_expr_breg;
+          test_case "bregx" `Quick test_write_expr_bregx;
+          test_case "piece" `Quick test_write_expr_piece;
+          test_case "plus_uconst" `Quick test_write_expr_plus_uconst;
+          test_case "stack_value" `Quick test_write_expr_stack_value;
         ] );
     ]
