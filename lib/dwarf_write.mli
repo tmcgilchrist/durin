@@ -93,3 +93,11 @@ val write_loclists_header : Buffer.t -> Dwarf.encoding -> int -> int -> unit
 val write_rnglists_header : Buffer.t -> Dwarf.encoding -> int -> int -> unit
 val write_debug_loc : Buffer.t -> Dwarf.DebugLoc.entry list -> int -> unit
 val write_debug_ranges : Buffer.t -> Dwarf.DebugRanges.entry list -> int -> unit
+
+(** {2 Stage 10: Line Program Writer} *)
+
+val write_debug_line :
+  Buffer.t ->
+  Dwarf.DebugLine.line_program_header ->
+  Dwarf.DebugLine.line_table_entry list ->
+  unit

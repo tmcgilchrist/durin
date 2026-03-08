@@ -601,3 +601,207 @@ let write_debug_ranges_entry buf (entry : Dwarf.DebugRanges.entry)
 let write_debug_ranges buf (entries : Dwarf.DebugRanges.entry list)
     (address_size : int) =
   List.iter (fun e -> write_debug_ranges_entry buf e address_size) entries
+
+(* Stage 10: Line Program Writer *)
+
+let int_of_lnct = function
+  | Dwarf.DW_LNCT_path -> 0x1
+  | DW_LNCT_directory_index -> 0x2
+  | DW_LNCT_timestamp -> 0x3
+  | DW_LNCT_size -> 0x4
+  | DW_LNCT_MD5 -> 0x5
+  | DW_LNCT_lo_user -> 0x2000
+  | DW_LNCT_hi_user -> 0x3fff
+
+let find_dir_index dirs dir =
+  let rec find i =
+    if i >= Array.length dirs then 0
+    else if dirs.(i) = dir then i
+    else find (i + 1)
+  in
+  find 0
+
+let write_format_descs buf descs =
+  Array.iter
+    (fun (ct, form) ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (int_of_lnct ct));
+      write_uleb128 buf (Dwarf.u64_of_attribute_form_encoding form))
+    descs
+
+let write_line_dir_entry buf (h : Dwarf.DebugLine.line_program_header) dir =
+  Array.iter
+    (fun (ct, form) ->
+      match (ct, form) with
+      | Dwarf.DW_LNCT_path, Dwarf.DW_FORM_string ->
+          write_null_terminated_string buf dir
+      | _ -> failwith "Unsupported directory format")
+    h.directory_entry_formats
+
+let write_line_file_entry buf (h : Dwarf.DebugLine.line_program_header)
+    (file : Dwarf.DebugLine.file_entry) =
+  Array.iter
+    (fun (ct, form) ->
+      match (ct, form) with
+      | Dwarf.DW_LNCT_path, Dwarf.DW_FORM_string ->
+          write_null_terminated_string buf file.name
+      | Dwarf.DW_LNCT_directory_index, Dwarf.DW_FORM_udata ->
+          let idx = find_dir_index h.directories file.directory in
+          write_uleb128 buf (Unsigned.UInt64.of_int idx)
+      | Dwarf.DW_LNCT_timestamp, Dwarf.DW_FORM_udata ->
+          write_uleb128 buf file.timestamp
+      | Dwarf.DW_LNCT_size, Dwarf.DW_FORM_udata -> write_uleb128 buf file.size
+      | Dwarf.DW_LNCT_MD5, Dwarf.DW_FORM_data16 -> (
+          match file.md5_checksum with
+          | Some hex ->
+              for i = 0 to 15 do
+                let b = int_of_string ("0x" ^ String.sub hex (i * 2) 2) in
+                write_u8 buf (Unsigned.UInt8.of_int b)
+              done
+          | None ->
+              for _ = 0 to 15 do
+                write_u8 buf (Unsigned.UInt8.of_int 0)
+              done)
+      | _ -> failwith "Unsupported file entry format")
+    h.file_name_entry_formats
+
+let write_line_header_body buf (h : Dwarf.DebugLine.line_program_header) =
+  write_u8 buf h.minimum_instruction_length;
+  write_u8 buf h.maximum_operations_per_instruction;
+  write_u8 buf (Unsigned.UInt8.of_int (if h.default_is_stmt then 1 else 0));
+  let lb = if h.line_base < 0 then h.line_base + 256 else h.line_base in
+  write_u8 buf (Unsigned.UInt8.of_int lb);
+  write_u8 buf h.line_range;
+  write_u8 buf h.opcode_base;
+  Array.iter (fun l -> write_u8 buf l) h.standard_opcode_lengths;
+  write_u8 buf h.directory_entry_format_count;
+  write_format_descs buf h.directory_entry_formats;
+  write_uleb128 buf
+    (Unsigned.UInt64.of_int (Unsigned.UInt32.to_int h.directories_count));
+  Array.iter (fun dir -> write_line_dir_entry buf h dir) h.directories;
+  write_u8 buf h.file_name_entry_format_count;
+  write_format_descs buf h.file_name_entry_formats;
+  write_uleb128 buf
+    (Unsigned.UInt64.of_int (Unsigned.UInt32.to_int h.file_names_count));
+  Array.iter (fun file -> write_line_file_entry buf h file) h.file_names
+
+let write_lne buf opcode_byte operands_writer =
+  let op_buf = Buffer.create 16 in
+  operands_writer op_buf;
+  let len = 1 + Buffer.length op_buf in
+  write_u8 buf (Unsigned.UInt8.of_int 0);
+  write_uleb128 buf (Unsigned.UInt64.of_int len);
+  write_u8 buf (Unsigned.UInt8.of_int opcode_byte);
+  Buffer.add_string buf (Buffer.contents op_buf)
+
+let encode_line_entries buf (h : Dwarf.DebugLine.line_program_header)
+    (entries : Dwarf.DebugLine.line_table_entry list) =
+  let addr_sz = Unsigned.UInt8.to_int h.address_size in
+  let min_inst = max 1 (Unsigned.UInt8.to_int h.minimum_instruction_length) in
+  let addr = ref Unsigned.UInt64.zero in
+  let file = ref (Unsigned.UInt32.of_int 0) in
+  let ln = ref (Unsigned.UInt32.of_int 1) in
+  let col = ref (Unsigned.UInt32.of_int 0) in
+  let stmt = ref h.default_is_stmt in
+  let cur_isa = ref (Unsigned.UInt32.of_int 0) in
+  let first = ref true in
+  let set_addr buf a =
+    write_lne buf 0x02 (fun b -> write_address b addr_sz a);
+    addr := a
+  in
+  let reset () =
+    addr := Unsigned.UInt64.zero;
+    file := Unsigned.UInt32.of_int 0;
+    ln := Unsigned.UInt32.of_int 1;
+    col := Unsigned.UInt32.of_int 0;
+    stmt := h.default_is_stmt;
+    cur_isa := Unsigned.UInt32.of_int 0;
+    first := true
+  in
+  List.iter
+    (fun (e : Dwarf.DebugLine.line_table_entry) ->
+      if e.end_sequence then (
+        if Unsigned.UInt64.compare e.address !addr <> 0 then
+          set_addr buf e.address;
+        write_lne buf 0x01 (fun _ -> ());
+        reset ())
+      else (
+        if !first then (
+          set_addr buf e.address;
+          first := false)
+        else if Unsigned.UInt64.compare e.address !addr <> 0 then (
+          let d =
+            Unsigned.UInt64.to_int (Unsigned.UInt64.sub e.address !addr)
+          in
+          let adv = d / min_inst in
+          (* DW_LNS_advance_pc *)
+          write_u8 buf (Unsigned.UInt8.of_int 0x02);
+          write_uleb128 buf (Unsigned.UInt64.of_int adv);
+          addr := e.address);
+        if Unsigned.UInt32.compare e.file_index !file <> 0 then (
+          (* DW_LNS_set_file *)
+          write_u8 buf (Unsigned.UInt8.of_int 0x04);
+          write_uleb128 buf
+            (Unsigned.UInt64.of_int (Unsigned.UInt32.to_int e.file_index));
+          file := e.file_index);
+        if Unsigned.UInt32.compare e.column !col <> 0 then (
+          (* DW_LNS_set_column *)
+          write_u8 buf (Unsigned.UInt8.of_int 0x05);
+          write_uleb128 buf
+            (Unsigned.UInt64.of_int (Unsigned.UInt32.to_int e.column));
+          col := e.column);
+        if e.is_stmt <> !stmt then (
+          (* DW_LNS_negate_stmt *)
+          write_u8 buf (Unsigned.UInt8.of_int 0x06);
+          stmt := e.is_stmt);
+        if e.basic_block then
+          (* DW_LNS_set_basic_block *)
+          write_u8 buf (Unsigned.UInt8.of_int 0x07);
+        if e.prologue_end then
+          (* DW_LNS_set_prologue_end *)
+          write_u8 buf (Unsigned.UInt8.of_int 0x0a);
+        if e.epilogue_begin then
+          (* DW_LNS_set_epilogue_begin *)
+          write_u8 buf (Unsigned.UInt8.of_int 0x0b);
+        (if Unsigned.UInt32.to_int e.discriminator <> 0 then
+           let du64 =
+             Unsigned.UInt64.of_int (Unsigned.UInt32.to_int e.discriminator)
+           in
+           write_lne buf 0x04 (fun b -> write_uleb128 b du64));
+        if Unsigned.UInt32.compare e.isa !cur_isa <> 0 then (
+          (* DW_LNS_set_isa *)
+          write_u8 buf (Unsigned.UInt8.of_int 0x0c);
+          write_uleb128 buf
+            (Unsigned.UInt64.of_int (Unsigned.UInt32.to_int e.isa));
+          cur_isa := e.isa);
+        let ld = Unsigned.UInt32.to_int e.line - Unsigned.UInt32.to_int !ln in
+        if ld <> 0 then (
+          (* DW_LNS_advance_line *)
+          write_u8 buf (Unsigned.UInt8.of_int 0x03);
+          write_sleb128 buf (Signed.Int64.of_int ld);
+          ln := e.line);
+        (* DW_LNS_copy *)
+        write_u8 buf (Unsigned.UInt8.of_int 0x01)))
+    entries
+
+let write_debug_line buf (header : Dwarf.DebugLine.line_program_header)
+    (entries : Dwarf.DebugLine.line_table_entry list) =
+  let fmt = header.format in
+  let ver = Unsigned.UInt16.to_int header.version in
+  let hdr_buf = Buffer.create 256 in
+  write_line_header_body hdr_buf header;
+  let hdr_len = Buffer.length hdr_buf in
+  let prog_buf = Buffer.create 256 in
+  encode_line_entries prog_buf header entries;
+  let prog_len = Buffer.length prog_buf in
+  let off_sz = if fmt = Dwarf.DWARF32 then 4 else 8 in
+  let unit_len =
+    2 + (if ver >= 5 then 2 else 0) + off_sz + hdr_len + prog_len
+  in
+  write_initial_length buf fmt unit_len;
+  write_u16_le buf header.version;
+  if ver >= 5 then (
+    write_u8 buf header.address_size;
+    write_u8 buf header.segment_selector_size);
+  write_offset buf fmt (Unsigned.UInt64.of_int hdr_len);
+  Buffer.add_string buf (Buffer.contents hdr_buf);
+  Buffer.add_string buf (Buffer.contents prog_buf)

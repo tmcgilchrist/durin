@@ -1278,6 +1278,204 @@ let test_write_debug_ranges_roundtrip () =
       check int "end" 0x3000 (Unsigned.UInt64.to_int end_addr)
   | _ -> fail "expected Range"
 
+(* Stage 10: Line Program Writer tests *)
+
+let default_line_header () : Dwarf.DebugLine.line_program_header =
+  {
+    format = DWARF32;
+    unit_length = Unsigned.UInt64.zero;
+    version = Unsigned.UInt16.of_int 5;
+    address_size = Unsigned.UInt8.of_int 8;
+    segment_selector_size = Unsigned.UInt8.of_int 0;
+    header_length = Unsigned.UInt64.zero;
+    minimum_instruction_length = Unsigned.UInt8.of_int 1;
+    maximum_operations_per_instruction = Unsigned.UInt8.of_int 1;
+    default_is_stmt = true;
+    line_base = -5;
+    line_range = Unsigned.UInt8.of_int 14;
+    opcode_base = Unsigned.UInt8.of_int 13;
+    standard_opcode_lengths =
+      Array.map Unsigned.UInt8.of_int [| 0; 1; 1; 1; 1; 0; 0; 0; 1; 0; 0; 1 |];
+    directory_entry_format_count = Unsigned.UInt8.of_int 1;
+    directory_entry_formats = [| (Dwarf.DW_LNCT_path, Dwarf.DW_FORM_string) |];
+    directories_count = Unsigned.UInt32.of_int 1;
+    directories = [| "/src" |];
+    file_name_entry_format_count = Unsigned.UInt8.of_int 2;
+    file_name_entry_formats =
+      [|
+        (Dwarf.DW_LNCT_path, Dwarf.DW_FORM_string);
+        (Dwarf.DW_LNCT_directory_index, Dwarf.DW_FORM_udata);
+      |];
+    file_names_count = Unsigned.UInt32.of_int 1;
+    file_names =
+      [|
+        {
+          name = "main.c";
+          timestamp = Unsigned.UInt64.zero;
+          size = Unsigned.UInt64.zero;
+          directory = "/src";
+          md5_checksum = None;
+        };
+      |];
+  }
+
+let line_entry ?(file = 0) ?(col = 0) ?(is_stmt = true) ?(bb = false)
+    ?(pe = false) ?(eb = false) ?(disc = 0) ?(isa = 0) ?(es = false) ~addr ~ln
+    () : Dwarf.DebugLine.line_table_entry =
+  {
+    address = Unsigned.UInt64.of_int addr;
+    line = Unsigned.UInt32.of_int ln;
+    column = Unsigned.UInt32.of_int col;
+    file_index = Unsigned.UInt32.of_int file;
+    isa = Unsigned.UInt32.of_int isa;
+    discriminator = Unsigned.UInt32.of_int disc;
+    op_index = Unsigned.UInt32.of_int 0;
+    is_stmt;
+    basic_block = bb;
+    end_sequence = es;
+    prologue_end = pe;
+    epilogue_begin = eb;
+  }
+
+let test_write_debug_line_header () =
+  let header = default_line_header () in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_line buf header [];
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let p = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
+  check int "version" 5 (Unsigned.UInt16.to_int p.version);
+  check int "address_size" 8 (Unsigned.UInt8.to_int p.address_size);
+  check int "line_base" (-5) p.line_base;
+  check int "line_range" 14 (Unsigned.UInt8.to_int p.line_range);
+  check int "opcode_base" 13 (Unsigned.UInt8.to_int p.opcode_base);
+  check int "min_inst_len" 1
+    (Unsigned.UInt8.to_int p.minimum_instruction_length);
+  check bool "default_is_stmt" true p.default_is_stmt;
+  check int "dirs" 1 (Array.length p.directories);
+  check string "dir0" "/src" p.directories.(0);
+  check int "files" 1 (Array.length p.file_names);
+  check string "file0" "main.c" p.file_names.(0).name;
+  check string "file0_dir" "/src" p.file_names.(0).directory
+
+let test_write_debug_line_simple () =
+  let header = default_line_header () in
+  let entries =
+    [
+      line_entry ~addr:0x1000 ~ln:1 ();
+      line_entry ~addr:0x1004 ~ln:2 ();
+      line_entry ~addr:0x1010 ~ln:5 ~es:true ();
+    ]
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_line buf header entries;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
+  let parsed = Dwarf.DebugLine.parse_line_program cur ph in
+  check int "3 entries" 3 (List.length parsed);
+  let e0 = List.nth parsed 0 in
+  check int "e0.addr" 0x1000 (Unsigned.UInt64.to_int e0.address);
+  check int "e0.line" 1 (Unsigned.UInt32.to_int e0.line);
+  let e1 = List.nth parsed 1 in
+  check int "e1.addr" 0x1004 (Unsigned.UInt64.to_int e1.address);
+  check int "e1.line" 2 (Unsigned.UInt32.to_int e1.line);
+  let e2 = List.nth parsed 2 in
+  check int "e2.addr" 0x1010 (Unsigned.UInt64.to_int e2.address);
+  check bool "e2.end_seq" true e2.end_sequence
+
+let test_write_debug_line_columns () =
+  let header = default_line_header () in
+  let entries =
+    [
+      line_entry ~addr:0x2000 ~ln:10 ~col:5 ();
+      line_entry ~addr:0x2008 ~ln:10 ~col:20 ();
+      line_entry ~addr:0x2010 ~ln:11 ~col:1 ~pe:true ();
+      line_entry ~addr:0x2020 ~ln:0 ~es:true ();
+    ]
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_line buf header entries;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
+  let parsed = Dwarf.DebugLine.parse_line_program cur ph in
+  check int "4 entries" 4 (List.length parsed);
+  let e0 = List.nth parsed 0 in
+  check int "e0.col" 5 (Unsigned.UInt32.to_int e0.column);
+  let e1 = List.nth parsed 1 in
+  check int "e1.col" 20 (Unsigned.UInt32.to_int e1.column);
+  check int "e1.line" 10 (Unsigned.UInt32.to_int e1.line);
+  let e2 = List.nth parsed 2 in
+  check int "e2.col" 1 (Unsigned.UInt32.to_int e2.column);
+  check int "e2.line" 11 (Unsigned.UInt32.to_int e2.line);
+  check bool "e2.pe" true e2.prologue_end
+
+let test_write_debug_line_stmt_toggle () =
+  let header = default_line_header () in
+  let entries =
+    [
+      line_entry ~addr:0x3000 ~ln:1 ();
+      line_entry ~addr:0x3004 ~ln:2 ~is_stmt:false ();
+      line_entry ~addr:0x3008 ~ln:3 ();
+      line_entry ~addr:0x3010 ~ln:0 ~es:true ();
+    ]
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_line buf header entries;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
+  let parsed = Dwarf.DebugLine.parse_line_program cur ph in
+  check int "4 entries" 4 (List.length parsed);
+  check bool "e0.is_stmt" true (List.nth parsed 0).is_stmt;
+  check bool "e1.is_stmt" false (List.nth parsed 1).is_stmt;
+  check bool "e2.is_stmt" true (List.nth parsed 2).is_stmt
+
+let test_write_debug_line_multi_seq () =
+  let header = default_line_header () in
+  let entries =
+    [
+      line_entry ~addr:0x1000 ~ln:1 ();
+      line_entry ~addr:0x1010 ~ln:0 ~es:true ();
+      line_entry ~addr:0x2000 ~ln:10 ();
+      line_entry ~addr:0x2020 ~ln:0 ~es:true ();
+    ]
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_line buf header entries;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
+  let parsed = Dwarf.DebugLine.parse_line_program cur ph in
+  check int "4 entries" 4 (List.length parsed);
+  let e0 = List.nth parsed 0 in
+  check int "e0.addr" 0x1000 (Unsigned.UInt64.to_int e0.address);
+  let e2 = List.nth parsed 2 in
+  check int "e2.addr" 0x2000 (Unsigned.UInt64.to_int e2.address);
+  check int "e2.line" 10 (Unsigned.UInt32.to_int e2.line)
+
+let test_write_debug_line_discriminator () =
+  let header = default_line_header () in
+  let entries =
+    [
+      line_entry ~addr:0x4000 ~ln:1 ~disc:1 ();
+      line_entry ~addr:0x4004 ~ln:1 ~disc:2 ();
+      line_entry ~addr:0x4010 ~ln:0 ~es:true ();
+    ]
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_line buf header entries;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
+  let parsed = Dwarf.DebugLine.parse_line_program cur ph in
+  check int "3 entries" 3 (List.length parsed);
+  check int "e0.disc" 1
+    (Unsigned.UInt32.to_int (List.nth parsed 0).discriminator);
+  check int "e1.disc" 2
+    (Unsigned.UInt32.to_int (List.nth parsed 1).discriminator)
+
 let test_write_loclists_header_roundtrip () =
   let enc = default_encoding in
   let buf = Buffer.create 64 in
@@ -1425,5 +1623,14 @@ let () =
         [
           test_case "debug_loc" `Quick test_write_debug_loc_roundtrip;
           test_case "debug_ranges" `Quick test_write_debug_ranges_roundtrip;
+        ] );
+      ( "line-program",
+        [
+          test_case "header" `Quick test_write_debug_line_header;
+          test_case "simple entries" `Quick test_write_debug_line_simple;
+          test_case "columns and flags" `Quick test_write_debug_line_columns;
+          test_case "stmt toggle" `Quick test_write_debug_line_stmt_toggle;
+          test_case "multi sequence" `Quick test_write_debug_line_multi_seq;
+          test_case "discriminator" `Quick test_write_debug_line_discriminator;
         ] );
     ]
