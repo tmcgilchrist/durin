@@ -236,3 +236,54 @@ let abbrev_table_size (abbrevs : Dwarf.abbrev array) =
       size := !size + 2)
     abbrevs;
   !size + 1
+
+(* Stage 3: Attribute Value Serialisation *)
+
+let write_attribute_value buf (value : Dwarf.DIE.attribute_value)
+    (form : Dwarf.attribute_form_encoding) (enc : Dwarf.encoding) =
+  match (form, value) with
+  | DW_FORM_string, String s -> write_null_terminated_string buf s
+  | DW_FORM_strx, IndexedString (idx, _) ->
+      write_uleb128 buf (Unsigned.UInt64.of_int idx)
+  | DW_FORM_udata, UData v -> write_uleb128 buf v
+  | DW_FORM_udata, Language l ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_dwarf_language l))
+  | DW_FORM_udata, Encoding e ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_base_type e))
+  | DW_FORM_sdata, SData v -> write_sleb128 buf v
+  | DW_FORM_addr, Address a ->
+      write_address buf (Unsigned.UInt8.to_int enc.address_size) a
+  | DW_FORM_addrx, IndexedAddress (idx, _) ->
+      write_uleb128 buf (Unsigned.UInt64.of_int idx)
+  | DW_FORM_flag_present, Flag _ -> ()
+  | DW_FORM_flag, Flag b ->
+      write_u8 buf (Unsigned.UInt8.of_int (if b then 1 else 0))
+  | DW_FORM_ref4, Reference r ->
+      write_u32_le buf (Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 r))
+  | DW_FORM_block, Block b ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (String.length b));
+      Buffer.add_string buf b
+  | _ -> failwith "Unsupported form/value combination"
+
+let attribute_value_size (value : Dwarf.DIE.attribute_value)
+    (form : Dwarf.attribute_form_encoding) (enc : Dwarf.encoding) =
+  match (form, value) with
+  | DW_FORM_string, String s -> String.length s + 1
+  | DW_FORM_strx, IndexedString (idx, _) ->
+      uleb128_size (Unsigned.UInt64.of_int idx)
+  | DW_FORM_udata, UData v -> uleb128_size v
+  | DW_FORM_udata, Language l ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_dwarf_language l))
+  | DW_FORM_udata, Encoding e ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_base_type e))
+  | DW_FORM_sdata, SData v -> sleb128_size v
+  | DW_FORM_addr, Address _ -> Unsigned.UInt8.to_int enc.address_size
+  | DW_FORM_addrx, IndexedAddress (idx, _) ->
+      uleb128_size (Unsigned.UInt64.of_int idx)
+  | DW_FORM_flag_present, Flag _ -> 0
+  | DW_FORM_flag, Flag _ -> 1
+  | DW_FORM_ref4, Reference _ -> 4
+  | DW_FORM_block, Block b ->
+      let len = String.length b in
+      uleb128_size (Unsigned.UInt64.of_int len) + len
+  | _ -> failwith "Unsupported form/value combination for size"

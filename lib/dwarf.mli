@@ -581,6 +581,8 @@ type base_type =
   | DW_ATE_lo_user
   | DW_ATE_hi_user
 
+val int_of_base_type : base_type -> int
+
 val string_of_base_type : base_type -> string
 (** Convert a [base_type] to its string representation *)
 
@@ -665,6 +667,8 @@ type dwarf_language =
   | DW_LANG_BLISS
   | DW_LANG_lo_user
   | DW_LANG_hi_user
+
+val int_of_dwarf_language : dwarf_language -> int
 
 val string_of_dwarf_language : dwarf_language -> string
 (** Convert a dwarf_language to its string representation *)

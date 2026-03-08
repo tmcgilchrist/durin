@@ -30,3 +30,18 @@ val write_abbrev_table : Buffer.t -> Dwarf.abbrev array -> unit
 val abbrev_table_size : Dwarf.abbrev array -> int
 val uleb128_size : u64 -> int
 val sleb128_size : i64 -> int
+
+(** {2 Stage 3: Attribute Value Serialisation} *)
+
+val write_attribute_value :
+  Buffer.t ->
+  Dwarf.DIE.attribute_value ->
+  Dwarf.attribute_form_encoding ->
+  Dwarf.encoding ->
+  unit
+
+val attribute_value_size :
+  Dwarf.DIE.attribute_value ->
+  Dwarf.attribute_form_encoding ->
+  Dwarf.encoding ->
+  int

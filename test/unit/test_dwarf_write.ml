@@ -441,6 +441,157 @@ let test_assign_then_write_roundtrip () =
     (Unsigned.UInt64.to_int parsed.tag);
   check int "roundtrip: 2 attr_specs" 2 (List.length parsed.attr_specs)
 
+(* Stage 3: Attribute value tests *)
+
+let default_encoding : Dwarf.encoding =
+  {
+    format = DWARF32;
+    address_size = Unsigned.UInt8.of_int 8;
+    version = Unsigned.UInt16.of_int 5;
+  }
+
+let roundtrip_attr_value value form enc =
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_attribute_value buf value form enc;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  Dwarf.DIE.parse_attribute_value cur form enc obj_buf ()
+
+let test_write_attr_string () =
+  let result =
+    roundtrip_attr_value (String "hello") Dwarf.DW_FORM_string default_encoding
+  in
+  match result with
+  | String s -> check string "string roundtrip" "hello" s
+  | _ -> fail "expected String"
+
+let test_write_attr_udata () =
+  let result =
+    roundtrip_attr_value
+      (UData (u64 12345))
+      Dwarf.DW_FORM_udata default_encoding
+  in
+  match result with
+  | UData v -> check int "udata roundtrip" 12345 (Unsigned.UInt64.to_int v)
+  | _ -> fail "expected UData"
+
+let test_write_attr_sdata () =
+  let result =
+    roundtrip_attr_value
+      (SData (Signed.Int64.of_int (-42)))
+      Dwarf.DW_FORM_sdata default_encoding
+  in
+  match result with
+  | SData v -> check int "sdata roundtrip" (-42) (Signed.Int64.to_int v)
+  | _ -> fail "expected SData"
+
+let test_write_attr_addr () =
+  let addr = Unsigned.UInt64.of_int 0x400000 in
+  let result =
+    roundtrip_attr_value (Address addr) Dwarf.DW_FORM_addr default_encoding
+  in
+  match result with
+  | Address v ->
+      check int64 "addr roundtrip"
+        (Unsigned.UInt64.to_int64 addr)
+        (Unsigned.UInt64.to_int64 v)
+  | _ -> fail "expected Address"
+
+let test_write_attr_flag_present () =
+  let result =
+    roundtrip_attr_value (Flag true) Dwarf.DW_FORM_flag_present default_encoding
+  in
+  match result with
+  | Flag b -> check bool "flag_present roundtrip" true b
+  | _ -> fail "expected Flag"
+
+let test_write_attr_flag () =
+  let enc = { default_encoding with format = DWARF32 } in
+  let result = roundtrip_attr_value (Flag true) Dwarf.DW_FORM_flag enc in
+  (match result with
+  | Flag b -> check bool "flag true roundtrip" true b
+  | _ -> fail "expected Flag");
+  let result = roundtrip_attr_value (Flag false) Dwarf.DW_FORM_flag enc in
+  match result with
+  | Flag b -> check bool "flag false roundtrip" false b
+  | _ -> fail "expected Flag"
+
+let test_write_attr_ref4 () =
+  let result =
+    roundtrip_attr_value
+      (Reference (u64 0x1234))
+      Dwarf.DW_FORM_ref4 default_encoding
+  in
+  match result with
+  | Reference v -> check int "ref4 roundtrip" 0x1234 (Unsigned.UInt64.to_int v)
+  | _ -> fail "expected Reference"
+
+let test_write_attr_block () =
+  let data = "\x01\x02\x03\x04\x05" in
+  let result =
+    roundtrip_attr_value (Block data) Dwarf.DW_FORM_block default_encoding
+  in
+  match result with
+  | Block b -> check string "block roundtrip" data b
+  | _ -> fail "expected Block"
+
+let test_write_attr_language () =
+  let result =
+    roundtrip_attr_value (Language Dwarf.DW_LANG_OCaml) Dwarf.DW_FORM_udata
+      default_encoding
+  in
+  match result with
+  | UData v -> check int "language roundtrip" 0x1b (Unsigned.UInt64.to_int v)
+  | _ -> fail "expected UData"
+
+let test_write_attr_encoding () =
+  let result =
+    roundtrip_attr_value (Encoding Dwarf.DW_ATE_signed) Dwarf.DW_FORM_udata
+      default_encoding
+  in
+  match result with
+  | UData v -> check int "encoding roundtrip" 0x05 (Unsigned.UInt64.to_int v)
+  | _ -> fail "expected UData"
+
+let test_write_attr_indexed_string () =
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_attribute_value buf
+    (IndexedString (7, "ignored"))
+    Dwarf.DW_FORM_strx default_encoding;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let idx = Object.Buffer.Read.uleb128 cur in
+  check int "strx index roundtrip" 7 idx
+
+let test_write_attr_indexed_address () =
+  let result =
+    roundtrip_attr_value
+      (IndexedAddress (3, u64 0))
+      Dwarf.DW_FORM_addrx default_encoding
+  in
+  match result with
+  | IndexedAddress (idx, _) -> check int "addrx index roundtrip" 3 idx
+  | _ -> fail "expected IndexedAddress"
+
+let test_attribute_value_size () =
+  let enc = default_encoding in
+  let check_size msg value form expected =
+    let computed = Dwarf_write.attribute_value_size value form enc in
+    let buf = Buffer.create 64 in
+    Dwarf_write.write_attribute_value buf value form enc;
+    let written = Buffer.length buf in
+    check int (msg ^ " computed") expected computed;
+    check int (msg ^ " matches written") written computed
+  in
+  check_size "string" (String "hi") Dwarf.DW_FORM_string 3;
+  check_size "udata" (UData (u64 128)) Dwarf.DW_FORM_udata 2;
+  check_size "sdata" (SData (Signed.Int64.of_int (-1))) Dwarf.DW_FORM_sdata 1;
+  check_size "addr" (Address (u64 0)) Dwarf.DW_FORM_addr 8;
+  check_size "flag_present" (Flag true) Dwarf.DW_FORM_flag_present 0;
+  check_size "flag" (Flag true) Dwarf.DW_FORM_flag 1;
+  check_size "ref4" (Reference (u64 0)) Dwarf.DW_FORM_ref4 4;
+  check_size "block" (Block "\x01\x02") Dwarf.DW_FORM_block 3
+
 let () =
   run "Dwarf_write"
     [
@@ -488,5 +639,21 @@ let () =
             test_assign_abbreviations_with_children;
           test_case "assign then write roundtrip" `Quick
             test_assign_then_write_roundtrip;
+        ] );
+      ( "attribute-values",
+        [
+          test_case "string" `Quick test_write_attr_string;
+          test_case "udata" `Quick test_write_attr_udata;
+          test_case "sdata" `Quick test_write_attr_sdata;
+          test_case "addr" `Quick test_write_attr_addr;
+          test_case "flag_present" `Quick test_write_attr_flag_present;
+          test_case "flag" `Quick test_write_attr_flag;
+          test_case "ref4" `Quick test_write_attr_ref4;
+          test_case "block" `Quick test_write_attr_block;
+          test_case "language" `Quick test_write_attr_language;
+          test_case "encoding" `Quick test_write_attr_encoding;
+          test_case "indexed_string" `Quick test_write_attr_indexed_string;
+          test_case "indexed_address" `Quick test_write_attr_indexed_address;
+          test_case "attribute_value_size" `Quick test_attribute_value_size;
         ] );
     ]
