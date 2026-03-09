@@ -1766,9 +1766,11 @@ let bool_of_int = function 0 -> false | _ -> true
 
 (* Object-format-aware section finder that works with both ELF and MachO *)
 let find_debug_section_by_type buffer section_type =
-  let object_format = Object_format.detect_format buffer in
-  let section_name = object_format_to_section_name object_format section_type in
   try
+    let object_format = Object_format.detect_format buffer in
+    let section_name =
+      object_format_to_section_name object_format section_type
+    in
     match object_format with
     | ELF -> (
         let open Object.Elf in
@@ -2161,6 +2163,37 @@ module DIE = struct
           attribute_form_encoding (Unsigned.UInt64.of_int actual_form_code)
         in
         parse_attribute_value cur actual_form encoding full_buffer ()
+    | DW_FORM_GNU_addr_index ->
+        (* GNU Fission form: ULEB128 index into .debug_addr,
+           semantically identical to DW_FORM_addrx *)
+        let index = Object.Buffer.Read.uleb128 cur in
+        IndexedAddress (index, Unsigned.UInt64.of_int index)
+    | DW_FORM_GNU_str_index ->
+        (* GNU Fission form: ULEB128 index into .debug_str_offsets,
+           semantically identical to DW_FORM_strx *)
+        let index = Object.Buffer.Read.uleb128 cur in
+        let resolved_string =
+          resolve_string_index full_buffer encoding.format index
+        in
+        IndexedString (index, resolved_string)
+    | DW_FORM_GNU_ref_alt ->
+        (* GNU form: offset into alternate/supplementary .debug_info *)
+        let offset = read_offset_for_format encoding.format cur in
+        Reference offset
+    | DW_FORM_GNU_strp_alt -> (
+        (* GNU form: offset into alternate/supplementary .debug_str *)
+        let offset = read_offset_for_format encoding.format cur in
+        let offset_int = Unsigned.UInt64.to_int offset in
+        match find_debug_section_by_type full_buffer Debug_str with
+        | Some (str_section_offset, _) -> (
+            match
+              read_string_from_section full_buffer offset_int
+                (Unsigned.UInt64.to_int str_section_offset)
+            with
+            | Some s -> String s
+            | None ->
+                String (Printf.sprintf "<gnu_strp_alt_offset:%d>" offset_int))
+        | None -> String (Printf.sprintf "<gnu_strp_alt_offset:%d>" offset_int))
     | _ -> String "<unsupported_form>"
 
   let process_language_attribute (raw_value : attribute_value) : attribute_value

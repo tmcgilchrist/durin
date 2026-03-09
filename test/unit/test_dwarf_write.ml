@@ -592,6 +592,60 @@ let test_attribute_value_size () =
   check_size "ref4" (Reference (u64 0)) Dwarf.DW_FORM_ref4 4;
   check_size "block" (Block "\x01\x02") Dwarf.DW_FORM_block 3
 
+(* GNU extension form parsing tests *)
+
+let parse_form_from_bytes bytes form enc =
+  let buf = Buffer.create (String.length bytes) in
+  Buffer.add_string buf bytes;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  Dwarf.DIE.parse_attribute_value cur form enc obj_buf ()
+
+let test_parse_gnu_addr_index () =
+  let buf = Buffer.create 8 in
+  Dwarf_write.write_uleb128 buf (Unsigned.UInt64.of_int 5);
+  let result =
+    parse_form_from_bytes (Buffer.contents buf) Dwarf.DW_FORM_GNU_addr_index
+      default_encoding
+  in
+  match result with
+  | IndexedAddress (idx, _) -> check int "GNU_addr_index" 5 idx
+  | _ -> fail "expected IndexedAddress"
+
+let test_parse_gnu_str_index () =
+  let buf = Buffer.create 8 in
+  Dwarf_write.write_uleb128 buf (Unsigned.UInt64.of_int 3);
+  let result =
+    parse_form_from_bytes (Buffer.contents buf) Dwarf.DW_FORM_GNU_str_index
+      default_encoding
+  in
+  match result with
+  | IndexedString (idx, _) -> check int "GNU_str_index" 3 idx
+  | _ -> fail "expected IndexedString"
+
+let test_parse_gnu_ref_alt () =
+  let buf = Buffer.create 8 in
+  Dwarf_write.write_offset buf Dwarf.DWARF32 (Unsigned.UInt64.of_int 0x1234);
+  let result =
+    parse_form_from_bytes (Buffer.contents buf) Dwarf.DW_FORM_GNU_ref_alt
+      default_encoding
+  in
+  match result with
+  | Reference v -> check int "GNU_ref_alt" 0x1234 (Unsigned.UInt64.to_int v)
+  | _ -> fail "expected Reference"
+
+let test_parse_gnu_strp_alt () =
+  let buf = Buffer.create 8 in
+  Dwarf_write.write_offset buf Dwarf.DWARF32 (Unsigned.UInt64.of_int 0x5678);
+  let result =
+    parse_form_from_bytes (Buffer.contents buf) Dwarf.DW_FORM_GNU_strp_alt
+      default_encoding
+  in
+  match result with
+  | String s ->
+      check bool "GNU_strp_alt returns string" true (String.length s > 0)
+  | _ -> fail "expected String"
+
 (* Stage 4: DIE tree tests *)
 
 let abbrev_hashtable_of_array (abbrevs : Dwarf.abbrev array) =
@@ -3163,5 +3217,12 @@ let () =
           test_case "debug_macro" `Quick test_debug_macro_dwarf64;
           test_case "pubnames" `Quick test_pubnames_dwarf64;
           test_case "pubtypes" `Quick test_pubtypes_dwarf64;
+        ] );
+      ( "gnu-forms",
+        [
+          test_case "GNU_addr_index" `Quick test_parse_gnu_addr_index;
+          test_case "GNU_str_index" `Quick test_parse_gnu_str_index;
+          test_case "GNU_ref_alt" `Quick test_parse_gnu_ref_alt;
+          test_case "GNU_strp_alt" `Quick test_parse_gnu_strp_alt;
         ] );
     ]

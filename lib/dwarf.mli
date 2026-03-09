@@ -340,6 +340,11 @@ type attribute_form_encoding =
   | DW_FORM_addrx2
   | DW_FORM_addrx3
   | DW_FORM_addrx4
+  | DW_FORM_GNU_addr_index  (** GNU Fission: ULEB128 index into .debug_addr *)
+  | DW_FORM_GNU_str_index
+      (** GNU Fission: ULEB128 index into .debug_str_offsets *)
+  | DW_FORM_GNU_ref_alt  (** GNU: offset into alternate .debug_info *)
+  | DW_FORM_GNU_strp_alt  (** GNU: offset into alternate .debug_str *)
   | DW_FORM_unknown of int  (** Unknown or vendor-specific forms *)
 
 val string_of_attribute_form_encoding_variant :

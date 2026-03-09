@@ -42,6 +42,10 @@ type attribute_form_encoding =
   | DW_FORM_addrx2
   | DW_FORM_addrx3
   | DW_FORM_addrx4
+  | DW_FORM_GNU_addr_index
+  | DW_FORM_GNU_str_index
+  | DW_FORM_GNU_ref_alt
+  | DW_FORM_GNU_strp_alt
   | DW_FORM_unknown of int  (** Unknown or vendor-specific forms *)
 
 let attribute_form_encoding x =
@@ -89,6 +93,10 @@ let attribute_form_encoding x =
   | 0x2a -> DW_FORM_addrx2
   | 0x2b -> DW_FORM_addrx3
   | 0x2c -> DW_FORM_addrx4
+  | 0x1f01 -> DW_FORM_GNU_addr_index
+  | 0x1f02 -> DW_FORM_GNU_str_index
+  | 0x1f20 -> DW_FORM_GNU_ref_alt
+  | 0x1f21 -> DW_FORM_GNU_strp_alt
   | n -> DW_FORM_unknown n
 
 let string_of_attribute_form_encoding form_code =
@@ -137,6 +145,10 @@ let string_of_attribute_form_encoding form_code =
   | 0x2a -> "DW_FORM_addrx2"
   | 0x2b -> "DW_FORM_addrx3"
   | 0x2c -> "DW_FORM_addrx4"
+  | 0x1f01 -> "DW_FORM_GNU_addr_index"
+  | 0x1f02 -> "DW_FORM_GNU_str_index"
+  | 0x1f20 -> "DW_FORM_GNU_ref_alt"
+  | 0x1f21 -> "DW_FORM_GNU_strp_alt"
   | code -> Printf.sprintf "DW_FORM_<0x%02x>" code
 
 let string_of_attribute_form_encoding_variant = function
@@ -183,6 +195,10 @@ let string_of_attribute_form_encoding_variant = function
   | DW_FORM_addrx2 -> "DW_FORM_addrx2"
   | DW_FORM_addrx3 -> "DW_FORM_addrx3"
   | DW_FORM_addrx4 -> "DW_FORM_addrx4"
+  | DW_FORM_GNU_addr_index -> "DW_FORM_GNU_addr_index"
+  | DW_FORM_GNU_str_index -> "DW_FORM_GNU_str_index"
+  | DW_FORM_GNU_ref_alt -> "DW_FORM_GNU_ref_alt"
+  | DW_FORM_GNU_strp_alt -> "DW_FORM_GNU_strp_alt"
   | DW_FORM_unknown i -> Printf.sprintf "DW_FORM_unknown(%d)" i
 
 let u64_of_attribute_form_encoding = function
@@ -229,4 +245,8 @@ let u64_of_attribute_form_encoding = function
   | DW_FORM_addrx2 -> Unsigned.UInt64.of_int 0x2a
   | DW_FORM_addrx3 -> Unsigned.UInt64.of_int 0x2b
   | DW_FORM_addrx4 -> Unsigned.UInt64.of_int 0x2c
+  | DW_FORM_GNU_addr_index -> Unsigned.UInt64.of_int 0x1f01
+  | DW_FORM_GNU_str_index -> Unsigned.UInt64.of_int 0x1f02
+  | DW_FORM_GNU_ref_alt -> Unsigned.UInt64.of_int 0x1f20
+  | DW_FORM_GNU_strp_alt -> Unsigned.UInt64.of_int 0x1f21
   | DW_FORM_unknown n -> Unsigned.UInt64.of_int n
