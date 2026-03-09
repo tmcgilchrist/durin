@@ -176,3 +176,17 @@ val write_debug_macro_entry :
 
 val write_debug_macro_unit : Buffer.t -> Dwarf.debug_macro_unit -> unit
 val write_debug_macro : Buffer.t -> Dwarf.debug_macro_section -> unit
+
+(** {2 Stage 18: .debug_pubnames/.debug_pubtypes Writers} *)
+
+val write_pubnames_set :
+  Buffer.t ->
+  Dwarf.DebugPubnames.header ->
+  Dwarf.DebugPubnames.entry list ->
+  unit
+
+val write_pubtypes_set :
+  Buffer.t ->
+  Dwarf.DebugPubtypes.header ->
+  Dwarf.DebugPubtypes.entry list ->
+  unit

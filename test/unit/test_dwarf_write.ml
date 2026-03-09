@@ -2269,7 +2269,8 @@ let test_write_unit_index_tu () =
 let make_macro_header ?(flags = 0) () : Dwarf.debug_macro_header =
   {
     format = Dwarf.DWARF32;
-    version = Unsigned.UInt16.of_int 5; (* DWARF 5 *)
+    version = Unsigned.UInt16.of_int 5;
+    (* DWARF 5 *)
     flags = Unsigned.UInt8.of_int flags;
     debug_line_offset = None;
     debug_str_offsets_offset = None;
@@ -2391,6 +2392,80 @@ let test_write_debug_macro_strp () =
     (Dwarf.string_of_macro_info_entry_type e1.entry_type);
   check int "e1 offset" 0x200
     (Unsigned.UInt64.to_int (Option.get e1.string_offset))
+
+(* Stage 18: .debug_pubnames/.debug_pubtypes tests *)
+
+let test_write_pubnames_set () =
+  let header : Dwarf.DebugPubnames.header =
+    {
+      format = Dwarf.DWARF32;
+      unit_length = Unsigned.UInt64.zero;
+      version = Unsigned.UInt16.of_int 2;
+      debug_info_offset = u64 0;
+      debug_info_length = u64 0x200;
+    }
+  in
+  let entries =
+    Dwarf.DebugPubnames.
+      [
+        { offset = u64 0x2a; name = "main" };
+        { offset = u64 0x50; name = "helper" };
+        { offset = u64 0x80; name = "init" };
+      ]
+  in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_pubnames_set buf header entries;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed_h, parsed_e = Dwarf.DebugPubnames.parse_set cur in
+  check int "version" 2 (Unsigned.UInt16.to_int parsed_h.version);
+  check int "debug_info_offset" 0
+    (Unsigned.UInt64.to_int parsed_h.debug_info_offset);
+  check int "debug_info_length" 0x200
+    (Unsigned.UInt64.to_int parsed_h.debug_info_length);
+  check int "entry count" 3 (List.length parsed_e);
+  let e0 = List.nth parsed_e 0 in
+  check int "e0 offset" 0x2a (Unsigned.UInt64.to_int e0.offset);
+  check string "e0 name" "main" e0.name;
+  let e1 = List.nth parsed_e 1 in
+  check int "e1 offset" 0x50 (Unsigned.UInt64.to_int e1.offset);
+  check string "e1 name" "helper" e1.name;
+  let e2 = List.nth parsed_e 2 in
+  check int "e2 offset" 0x80 (Unsigned.UInt64.to_int e2.offset);
+  check string "e2 name" "init" e2.name
+
+let test_write_pubtypes_set () =
+  let header : Dwarf.DebugPubtypes.header =
+    {
+      format = Dwarf.DWARF32;
+      unit_length = Unsigned.UInt64.zero;
+      version = Unsigned.UInt16.of_int 2;
+      debug_info_offset = u64 0;
+      debug_info_length = u64 0x100;
+    }
+  in
+  let entries =
+    Dwarf.DebugPubtypes.
+      [
+        { offset = u64 0x30; name = "int" };
+        { offset = u64 0x40; name = "char" };
+      ]
+  in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_pubtypes_set buf header entries;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed_h, parsed_e = Dwarf.DebugPubtypes.parse_set cur in
+  check int "version" 2 (Unsigned.UInt16.to_int parsed_h.version);
+  check int "debug_info_length" 0x100
+    (Unsigned.UInt64.to_int parsed_h.debug_info_length);
+  check int "entry count" 2 (List.length parsed_e);
+  let e0 = List.nth parsed_e 0 in
+  check int "e0 offset" 0x30 (Unsigned.UInt64.to_int e0.offset);
+  check string "e0 name" "int" e0.name;
+  let e1 = List.nth parsed_e 1 in
+  check int "e1 offset" 0x40 (Unsigned.UInt64.to_int e1.offset);
+  check string "e1 name" "char" e1.name
 
 let () =
   run "Dwarf_write"
@@ -2574,4 +2649,8 @@ let () =
             test_write_debug_macro_start_end_file;
           test_case "strp+import" `Quick test_write_debug_macro_strp;
         ] );
+      ( "debug-pubnames",
+        [ test_case "pubnames set" `Quick test_write_pubnames_set ] );
+      ( "debug-pubtypes",
+        [ test_case "pubtypes set" `Quick test_write_pubtypes_set ] );
     ]

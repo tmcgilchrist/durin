@@ -1431,3 +1431,49 @@ let write_debug_macro_unit buf (u : Dwarf.debug_macro_unit) =
 
 let write_debug_macro buf (sec : Dwarf.debug_macro_section) =
   List.iter (fun u -> write_debug_macro_unit buf u) sec.units
+
+(* Stage 18: .debug_pubnames/.debug_pubtypes Writers *)
+
+let write_pubnames_set buf (h : Dwarf.DebugPubnames.header)
+    (entries : Dwarf.DebugPubnames.entry list) =
+  let fmt = h.format in
+  let off_sz = Dwarf.offset_size_for_format fmt in
+  let entries_sz =
+    List.fold_left
+      (fun acc (e : Dwarf.DebugPubnames.entry) ->
+        acc + off_sz + String.length e.name + 1)
+      0 entries
+  in
+  let body_sz = 2 + off_sz + off_sz + entries_sz + off_sz in
+  write_initial_length buf fmt body_sz;
+  write_u16_le buf h.version;
+  write_offset buf fmt h.debug_info_offset;
+  write_offset buf fmt h.debug_info_length;
+  List.iter
+    (fun (e : Dwarf.DebugPubnames.entry) ->
+      write_offset buf fmt e.offset;
+      write_null_terminated_string buf e.name)
+    entries;
+  write_offset buf fmt Unsigned.UInt64.zero
+
+let write_pubtypes_set buf (h : Dwarf.DebugPubtypes.header)
+    (entries : Dwarf.DebugPubtypes.entry list) =
+  let fmt = h.format in
+  let off_sz = Dwarf.offset_size_for_format fmt in
+  let entries_sz =
+    List.fold_left
+      (fun acc (e : Dwarf.DebugPubtypes.entry) ->
+        acc + off_sz + String.length e.name + 1)
+      0 entries
+  in
+  let body_sz = 2 + off_sz + off_sz + entries_sz + off_sz in
+  write_initial_length buf fmt body_sz;
+  write_u16_le buf h.version;
+  write_offset buf fmt h.debug_info_offset;
+  write_offset buf fmt h.debug_info_length;
+  List.iter
+    (fun (e : Dwarf.DebugPubtypes.entry) ->
+      write_offset buf fmt e.offset;
+      write_null_terminated_string buf e.name)
+    entries;
+  write_offset buf fmt Unsigned.UInt64.zero
