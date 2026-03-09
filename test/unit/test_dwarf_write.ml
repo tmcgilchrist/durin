@@ -1733,6 +1733,85 @@ let test_write_eh_cie_augmented () =
       | None -> fail "expected augmentation data")
   | _ -> fail "expected EH_CIE"
 
+(* Stage 13: .debug_aranges tests *)
+
+let make_aranges_header ?(addr_sz = 8) ?(debug_info_off = 0) () :
+    Dwarf.DebugAranges.header =
+  {
+    format = Dwarf.DWARF32;
+    unit_length = Unsigned.UInt64.zero;
+    version = Unsigned.UInt16.of_int 2;
+    debug_info_offset = Unsigned.UInt64.of_int debug_info_off;
+    address_size = Unsigned.UInt8.of_int addr_sz;
+    segment_size = Unsigned.UInt8.of_int 0;
+    header_span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+  }
+
+let test_write_aranges_set () =
+  let header = make_aranges_header () in
+  let ranges =
+    Dwarf.DebugAranges.
+      [
+        { start_address = u64 0x401000; length = u64 0x200 };
+        { start_address = u64 0x402000; length = u64 0x100 };
+      ]
+  in
+  let aset = Dwarf.DebugAranges.{ header; ranges } in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_aranges_set buf aset;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let _fmt, _unit_length = Dwarf.parse_initial_length cur in
+  let version = Object.Buffer.Read.u16 cur in
+  check int "version" 2 (Unsigned.UInt16.to_int version);
+  let debug_info_off = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  check int "debug_info_offset" 0 (Unsigned.UInt64.to_int debug_info_off);
+  let addr_sz = Object.Buffer.Read.u8 cur in
+  check int "address_size" 8 (Unsigned.UInt8.to_int addr_sz);
+  let seg_sz = Object.Buffer.Read.u8 cur in
+  check int "segment_size" 0 (Unsigned.UInt8.to_int seg_sz);
+  (* Skip 4 bytes padding *)
+  for _ = 1 to 4 do
+    ignore (Object.Buffer.Read.u8 cur)
+  done;
+  (* Read first range *)
+  let a1 = Object.Buffer.Read.u64 cur in
+  let l1 = Object.Buffer.Read.u64 cur in
+  check int "range1 start" 0x401000 (Unsigned.UInt64.to_int a1);
+  check int "range1 length" 0x200 (Unsigned.UInt64.to_int l1);
+  (* Read second range *)
+  let a2 = Object.Buffer.Read.u64 cur in
+  let l2 = Object.Buffer.Read.u64 cur in
+  check int "range2 start" 0x402000 (Unsigned.UInt64.to_int a2);
+  check int "range2 length" 0x100 (Unsigned.UInt64.to_int l2);
+  (* Read terminator *)
+  let t1 = Object.Buffer.Read.u64 cur in
+  let t2 = Object.Buffer.Read.u64 cur in
+  check int "term start" 0 (Unsigned.UInt64.to_int t1);
+  check int "term length" 0 (Unsigned.UInt64.to_int t2)
+
+let test_write_aranges_empty () =
+  let header = make_aranges_header () in
+  let aset = Dwarf.DebugAranges.{ header; ranges = [] } in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_aranges_set buf aset;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let _fmt, unit_length = Dwarf.parse_initial_length cur in
+  let expected_body = 2 + 4 + 1 + 1 + 4 + (1 * 8 * 2) in
+  check int "unit_length" expected_body (Unsigned.UInt64.to_int unit_length);
+  let _version = Object.Buffer.Read.u16 cur in
+  let _off = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let _addr_sz = Object.Buffer.Read.u8 cur in
+  let _seg_sz = Object.Buffer.Read.u8 cur in
+  for _ = 1 to 4 do
+    ignore (Object.Buffer.Read.u8 cur)
+  done;
+  let t1 = Object.Buffer.Read.u64 cur in
+  let t2 = Object.Buffer.Read.u64 cur in
+  check int "term start" 0 (Unsigned.UInt64.to_int t1);
+  check int "term length" 0 (Unsigned.UInt64.to_int t2)
+
 let () =
   run "Dwarf_write"
     [
@@ -1883,5 +1962,10 @@ let () =
           test_case "eh cie roundtrip" `Quick test_write_eh_cie_roundtrip;
           test_case "eh frame cie+fde" `Quick test_write_eh_frame_cie_fde;
           test_case "eh cie augmented" `Quick test_write_eh_cie_augmented;
+        ] );
+      ( "aranges",
+        [
+          test_case "aranges set" `Quick test_write_aranges_set;
+          test_case "aranges empty" `Quick test_write_aranges_empty;
         ] );
     ]

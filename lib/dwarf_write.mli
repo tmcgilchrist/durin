@@ -148,3 +148,7 @@ val write_eh_fde :
   Buffer.t -> Dwarf.CallFrame.frame_description_entry -> int -> unit
 
 val write_eh_frame : Buffer.t -> Dwarf.EHFrame.eh_frame_entry list -> unit
+
+(** {2 Stage 13: .debug_aranges Writer} *)
+
+val write_aranges_set : Buffer.t -> Dwarf.DebugAranges.aranges_set -> unit

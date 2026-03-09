@@ -1056,3 +1056,30 @@ let write_eh_frame buf entries =
       | Dwarf.EHFrame.EH_CIE cie -> write_eh_cie buf cie
       | Dwarf.EHFrame.EH_FDE fde -> write_eh_fde buf fde 0)
     entries
+
+(* Stage 13: .debug_aranges Writer *)
+
+let write_aranges_set buf (aset : Dwarf.DebugAranges.aranges_set) =
+  let h = aset.header in
+  let addr_sz = Unsigned.UInt8.to_int h.address_size in
+  let fmt = h.format in
+  let off_sz = Dwarf.offset_size_for_format fmt in
+  let header_content_sz = 2 + off_sz + 1 + 1 in
+  let pad = 4 in
+  let range_count = List.length aset.ranges + 1 in
+  let body_sz = header_content_sz + pad + (range_count * addr_sz * 2) in
+  write_initial_length buf fmt body_sz;
+  write_u16_le buf h.version;
+  write_offset buf fmt h.debug_info_offset;
+  write_u8 buf h.address_size;
+  write_u8 buf h.segment_size;
+  for _ = 1 to pad do
+    write_u8 buf (Unsigned.UInt8.of_int 0)
+  done;
+  List.iter
+    (fun (r : Dwarf.DebugAranges.address_range) ->
+      write_address buf addr_sz r.start_address;
+      write_address buf addr_sz r.length)
+    aset.ranges;
+  write_address buf addr_sz Unsigned.UInt64.zero;
+  write_address buf addr_sz Unsigned.UInt64.zero
