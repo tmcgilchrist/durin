@@ -3903,15 +3903,14 @@ module CallFrame = struct
     let initial_location = Object.Buffer.Read.u64 cur in
     let address_range = Object.Buffer.Read.u64 cur in
 
-    (* Calculate remaining bytes for instructions *)
+    (* Calculate remaining bytes for instructions.
+       length is the number of bytes after the initial_length field.
+       Subtract the fields we already read (cie_pointer, initial_location,
+       address_range) to get the instructions length. *)
     let offset_size = offset_size_for_format format in
     let header_size = offset_size + 16 in
-    (* cie_pointer + initial_location + address_range *)
     let total_length = Unsigned.UInt64.to_int length in
-    let length_field_size = match format with DWARF32 -> 4 | DWARF64 -> 12 in
-    let instructions_length =
-      max 0 (total_length - header_size + length_field_size)
-    in
+    let instructions_length = max 0 (total_length - header_size) in
 
     (* For now, assume no augmentation data in FDEs for simplicity *)
     let augmentation_length = None in

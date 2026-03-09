@@ -1537,10 +1537,6 @@ let test_write_debug_frame_section () =
   let buf = Buffer.create 128 in
   Dwarf_write.write_debug_frame buf
     [ Dwarf.CallFrame.CIE cie; Dwarf.CallFrame.FDE fde ];
-  (* Pad for FDE parser bug *)
-  for _ = 1 to 4 do
-    Buffer.add_char buf '\x00'
-  done;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let section =
@@ -2545,6 +2541,425 @@ let test_write_type_unit_with_die () =
     (Unsigned.UInt64.to_int hdr.type_signature);
   check int "type_offset" 0x17 (Unsigned.UInt64.to_int hdr.type_offset)
 
+(* DWARF64 format roundtrip tests *)
+
+let dwarf64_encoding : Dwarf.encoding =
+  {
+    format = DWARF64;
+    address_size = Unsigned.UInt8.of_int 8;
+    version = Unsigned.UInt16.of_int 5;
+  }
+
+let test_compile_unit_dwarf64 () =
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes =
+        [
+          { attr = DW_AT_name; value = String "test64.c" };
+          { attr = DW_AT_producer; value = String "durin64" };
+        ];
+      children = Seq.empty;
+      offset = 0;
+    }
+  in
+  let enc = dwarf64_encoding in
+  let abbrevs, lookup = Dwarf_write.assign_abbreviations [ die ] in
+  let table = abbrev_hashtable_of_array abbrevs in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_compile_unit buf enc die lookup Unsigned.UInt64.zero;
+  let total = Buffer.length buf in
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let _span, header = Dwarf.parse_compile_unit_header cur in
+  check
+    (module struct
+      type t = Dwarf.dwarf_format
+
+      let equal a b = a = b
+      let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
+    end)
+    "format is DWARF64" Dwarf.DWARF64 header.format;
+  check int "version" 5 (Unsigned.UInt16.to_int header.version);
+  check int "address_size" 8 (Unsigned.UInt8.to_int header.address_size);
+  let unit_length = Unsigned.UInt64.to_int header.unit_length in
+  check int "unit_length + 12 = total" total (unit_length + 12);
+  match Dwarf.DIE.parse_die cur table enc obj_buf with
+  | None -> fail "expected die"
+  | Some parsed -> check int "attr count" 2 (List.length parsed.attributes)
+
+let test_debug_info_dwarf64 () =
+  let child : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_base_type;
+      attributes =
+        [
+          { attr = DW_AT_name; value = String "int" };
+          { attr = DW_AT_byte_size; value = UData (u64 4) };
+        ];
+      children = Seq.empty;
+      offset = 20;
+    }
+  in
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_compile_unit;
+      attributes = [ { attr = DW_AT_name; value = String "d64.c" } ];
+      children = List.to_seq [ child ];
+      offset = 0;
+    }
+  in
+  let enc = dwarf64_encoding in
+  let info_str, abbrev_str = Dwarf_write.write_debug_info enc [ die ] in
+  let abbrev_buf = object_buffer_of_string abbrev_str in
+  let abbrev_cur = Object.Buffer.cursor abbrev_buf ~at:0 in
+  let abbrev_table = parse_abbrev_from_cursor abbrev_cur in
+  let info_buf = object_buffer_of_string info_str in
+  let info_cur = Object.Buffer.cursor info_buf ~at:0 in
+  let _span, header = Dwarf.parse_compile_unit_header info_cur in
+  check
+    (module struct
+      type t = Dwarf.dwarf_format
+
+      let equal a b = a = b
+      let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
+    end)
+    "format is DWARF64" Dwarf.DWARF64 header.format;
+  let unit_length = Unsigned.UInt64.to_int header.unit_length in
+  check int "unit_length + 12 = total" (String.length info_str)
+    (unit_length + 12);
+  match Dwarf.DIE.parse_die info_cur abbrev_table enc info_buf with
+  | None -> fail "expected die"
+  | Some parsed -> (
+      match parsed.children () with
+      | Seq.Nil -> fail "expected children"
+      | Seq.Cons (child_parsed, _) ->
+          check int "child attrs" 2 (List.length child_parsed.attributes))
+
+let test_cie_dwarf64 () =
+  let cie =
+    { (Dwarf.CallFrame.create_default_cie ()) with format = Dwarf.DWARF64 }
+  in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_cie buf cie;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let p = Dwarf.CallFrame.parse_common_information_entry cur in
+  check
+    (module struct
+      type t = Dwarf.dwarf_format
+
+      let equal a b = a = b
+      let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
+    end)
+    "format is DWARF64" Dwarf.DWARF64 p.format;
+  check int64 "cie_id is 0xFFFFFFFFFFFFFFFF"
+    (Int64.of_string "0xFFFFFFFFFFFFFFFF")
+    (Unsigned.UInt64.to_int64 p.cie_id);
+  check int "version"
+    (Unsigned.UInt8.to_int cie.version)
+    (Unsigned.UInt8.to_int p.version);
+  check int "code_alignment"
+    (Unsigned.UInt64.to_int cie.code_alignment_factor)
+    (Unsigned.UInt64.to_int p.code_alignment_factor);
+  check string "augmentation" cie.augmentation p.augmentation
+
+let test_debug_frame_dwarf64 () =
+  let cie =
+    { (Dwarf.CallFrame.create_default_cie ()) with format = Dwarf.DWARF64 }
+  in
+  let fde : Dwarf.CallFrame.frame_description_entry =
+    {
+      format = Dwarf.DWARF64;
+      length = Unsigned.UInt64.of_int 0;
+      cie_pointer = Unsigned.UInt64.of_int 0;
+      initial_location = Unsigned.UInt64.of_int 0x401000;
+      address_range = Unsigned.UInt64.of_int 0x80;
+      augmentation_length = None;
+      augmentation_data = None;
+      instructions = "";
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_frame buf
+    [ Dwarf.CallFrame.CIE cie; Dwarf.CallFrame.FDE fde ];
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let section =
+    Dwarf.CallFrame.parse_debug_frame_section cur (Buffer.length buf)
+  in
+  check int "entry_count" 2 section.entry_count;
+  (match List.nth section.entries 0 with
+  | Dwarf.CallFrame.CIE p ->
+      check
+        (module struct
+          type t = Dwarf.dwarf_format
+
+          let equal a b = a = b
+
+          let pp fmt v =
+            Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
+        end)
+        "cie format" Dwarf.DWARF64 p.format
+  | _ -> fail "first entry should be CIE");
+  match List.nth section.entries 1 with
+  | Dwarf.CallFrame.FDE p ->
+      check int64 "fde location"
+        (Unsigned.UInt64.to_int64 fde.initial_location)
+        (Unsigned.UInt64.to_int64 p.initial_location)
+  | _ -> fail "second entry should be FDE"
+
+let test_aranges_dwarf64 () =
+  let header : Dwarf.DebugAranges.header =
+    {
+      format = Dwarf.DWARF64;
+      unit_length = Unsigned.UInt64.zero;
+      version = Unsigned.UInt16.of_int 2;
+      debug_info_offset = Unsigned.UInt64.of_int 0;
+      address_size = Unsigned.UInt8.of_int 8;
+      segment_size = Unsigned.UInt8.of_int 0;
+      header_span =
+        { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+    }
+  in
+  let ranges =
+    Dwarf.DebugAranges.
+      [
+        { start_address = u64 0x401000; length = u64 0x200 };
+        { start_address = u64 0x402000; length = u64 0x100 };
+      ]
+  in
+  let aset = Dwarf.DebugAranges.{ header; ranges } in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_aranges_set buf aset;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let fmt, _unit_length = Dwarf.parse_initial_length cur in
+  check
+    (module struct
+      type t = Dwarf.dwarf_format
+
+      let equal a b = a = b
+      let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
+    end)
+    "format is DWARF64" Dwarf.DWARF64 fmt;
+  let version = Object.Buffer.Read.u16 cur in
+  check int "version" 2 (Unsigned.UInt16.to_int version);
+  let debug_info_off = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  check int "debug_info_offset" 0 (Unsigned.UInt64.to_int debug_info_off);
+  let addr_sz = Object.Buffer.Read.u8 cur in
+  check int "address_size" 8 (Unsigned.UInt8.to_int addr_sz);
+  let _seg_sz = Object.Buffer.Read.u8 cur in
+  (* Skip padding to 2*address_size boundary *)
+  for _ = 1 to 4 do
+    ignore (Object.Buffer.Read.u8 cur)
+  done;
+  let a1 = Object.Buffer.Read.u64 cur in
+  check int "range1 start" 0x401000 (Unsigned.UInt64.to_int a1);
+  let l1 = Object.Buffer.Read.u64 cur in
+  check int "range1 length" 0x200 (Unsigned.UInt64.to_int l1)
+
+let test_debug_addr_dwarf64 () =
+  let header : Dwarf.DebugAddr.header =
+    {
+      format = Dwarf.DWARF64;
+      unit_length = Unsigned.UInt64.zero;
+      version = Unsigned.UInt16.of_int 5;
+      address_size = Unsigned.UInt8.of_int 8;
+      segment_selector_size = Unsigned.UInt8.of_int 0;
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+    }
+  in
+  let entries =
+    Dwarf.DebugAddr.
+      [|
+        { segment = None; address = u64 0x501000 };
+        { segment = None; address = u64 0x502000 };
+      |]
+  in
+  let t = Dwarf.DebugAddr.{ header; entries } in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_debug_addr buf t;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed_header = Dwarf.DebugAddr.parse_header cur in
+  check
+    (module struct
+      type t = Dwarf.dwarf_format
+
+      let equal a b = a = b
+      let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
+    end)
+    "format is DWARF64" Dwarf.DWARF64 parsed_header.format;
+  check int "version" 5 (Unsigned.UInt16.to_int parsed_header.version);
+  let parsed_entries = Dwarf.DebugAddr.parse_entries cur parsed_header in
+  check int "entry count" 2 (Array.length parsed_entries);
+  check int "addr 0" 0x501000
+    (Unsigned.UInt64.to_int parsed_entries.(0).address);
+  check int "addr 1" 0x502000
+    (Unsigned.UInt64.to_int parsed_entries.(1).address)
+
+let test_debug_str_offsets_dwarf64 () =
+  let header : Dwarf.DebugStrOffsets.header =
+    {
+      format = Dwarf.DWARF64;
+      unit_length = Unsigned.UInt64.zero;
+      version = Unsigned.UInt16.of_int 5;
+      padding = Unsigned.UInt16.of_int 0;
+      header_span =
+        { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+    }
+  in
+  let offsets =
+    Dwarf.DebugStrOffsets.
+      [|
+        { offset = u64 0; resolved_string = None };
+        { offset = u64 10; resolved_string = None };
+        { offset = u64 25; resolved_string = None };
+      |]
+  in
+  let t = Dwarf.DebugStrOffsets.{ header; offsets } in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_debug_str_offsets buf t;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed_header = Dwarf.DebugStrOffsets.parse_header cur in
+  check
+    (module struct
+      type t = Dwarf.dwarf_format
+
+      let equal a b = a = b
+      let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
+    end)
+    "format is DWARF64" Dwarf.DWARF64 parsed_header.format;
+  let o0 = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  check int "offset 0" 0 (Unsigned.UInt64.to_int o0);
+  let o1 = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  check int "offset 1" 10 (Unsigned.UInt64.to_int o1);
+  let o2 = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  check int "offset 2" 25 (Unsigned.UInt64.to_int o2)
+
+let test_debug_macro_dwarf64 () =
+  let header : Dwarf.debug_macro_header =
+    {
+      format = Dwarf.DWARF64;
+      version = Unsigned.UInt16.of_int 5;
+      flags = Unsigned.UInt8.of_int 0x01;
+      debug_line_offset = None;
+      debug_str_offsets_offset = None;
+    }
+  in
+  let entries =
+    Dwarf.
+      [
+        {
+          entry_type = DW_MACRO_define_strp;
+          line_number = Some (Unsigned.UInt32.of_int 5);
+          string_offset = Some (u64 0x100);
+          string_value = None;
+          file_index = None;
+        };
+      ]
+  in
+  let unit = Dwarf.{ header; entries } in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_debug_macro_unit buf unit;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed = Dwarf.parse_debug_macro_unit cur in
+  check
+    (module struct
+      type t = Dwarf.dwarf_format
+
+      let equal a b = a = b
+      let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
+    end)
+    "format is DWARF64" Dwarf.DWARF64 parsed.header.format;
+  check int "entry count" 1 (List.length parsed.entries);
+  let e0 = List.nth parsed.entries 0 in
+  check int "e0 str_offset" 0x100
+    (Unsigned.UInt64.to_int (Option.get e0.string_offset))
+
+let test_pubnames_dwarf64 () =
+  let header : Dwarf.DebugPubnames.header =
+    {
+      format = Dwarf.DWARF64;
+      unit_length = Unsigned.UInt64.zero;
+      version = Unsigned.UInt16.of_int 2;
+      debug_info_offset = u64 0;
+      debug_info_length = u64 0x200;
+    }
+  in
+  let entries =
+    Dwarf.DebugPubnames.
+      [
+        { offset = u64 0x2a; name = "main" };
+        { offset = u64 0x50; name = "helper" };
+      ]
+  in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_pubnames_set buf header entries;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed_h, parsed_e = Dwarf.DebugPubnames.parse_set cur in
+  check
+    (module struct
+      type t = Dwarf.dwarf_format
+
+      let equal a b = a = b
+      let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
+    end)
+    "format is DWARF64" Dwarf.DWARF64 parsed_h.format;
+  check int "version" 2 (Unsigned.UInt16.to_int parsed_h.version);
+  check int "debug_info_length" 0x200
+    (Unsigned.UInt64.to_int parsed_h.debug_info_length);
+  check int "entry count" 2 (List.length parsed_e);
+  let e0 = List.nth parsed_e 0 in
+  check int "e0 offset" 0x2a (Unsigned.UInt64.to_int e0.offset);
+  check string "e0 name" "main" e0.name;
+  let e1 = List.nth parsed_e 1 in
+  check int "e1 offset" 0x50 (Unsigned.UInt64.to_int e1.offset);
+  check string "e1 name" "helper" e1.name
+
+let test_pubtypes_dwarf64 () =
+  let header : Dwarf.DebugPubtypes.header =
+    {
+      format = Dwarf.DWARF64;
+      unit_length = Unsigned.UInt64.zero;
+      version = Unsigned.UInt16.of_int 2;
+      debug_info_offset = u64 0;
+      debug_info_length = u64 0x100;
+    }
+  in
+  let entries =
+    Dwarf.DebugPubtypes.
+      [
+        { offset = u64 0x30; name = "int" };
+        { offset = u64 0x40; name = "char" };
+      ]
+  in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_pubtypes_set buf header entries;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed_h, parsed_e = Dwarf.DebugPubtypes.parse_set cur in
+  check
+    (module struct
+      type t = Dwarf.dwarf_format
+
+      let equal a b = a = b
+      let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
+    end)
+    "format is DWARF64" Dwarf.DWARF64 parsed_h.format;
+  check int "version" 2 (Unsigned.UInt16.to_int parsed_h.version);
+  check int "debug_info_length" 0x100
+    (Unsigned.UInt64.to_int parsed_h.debug_info_length);
+  check int "entry count" 2 (List.length parsed_e);
+  let e0 = List.nth parsed_e 0 in
+  check int "e0 offset" 0x30 (Unsigned.UInt64.to_int e0.offset);
+  check string "e0 name" "int" e0.name
+
 let () =
   run "Dwarf_write"
     [
@@ -2735,5 +3150,18 @@ let () =
         [
           test_case "type unit header" `Quick test_write_type_unit_header;
           test_case "type unit with die" `Quick test_write_type_unit_with_die;
+        ] );
+      ( "dwarf64",
+        [
+          test_case "compile_unit" `Quick test_compile_unit_dwarf64;
+          test_case "debug_info" `Quick test_debug_info_dwarf64;
+          test_case "cie" `Quick test_cie_dwarf64;
+          test_case "debug_frame" `Quick test_debug_frame_dwarf64;
+          test_case "aranges" `Quick test_aranges_dwarf64;
+          test_case "debug_addr" `Quick test_debug_addr_dwarf64;
+          test_case "debug_str_offsets" `Quick test_debug_str_offsets_dwarf64;
+          test_case "debug_macro" `Quick test_debug_macro_dwarf64;
+          test_case "pubnames" `Quick test_pubnames_dwarf64;
+          test_case "pubtypes" `Quick test_pubtypes_dwarf64;
         ] );
     ]
