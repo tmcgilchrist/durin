@@ -164,3 +164,7 @@ val write_debug_names_abbrev_table :
   Buffer.t -> Dwarf.DebugNames.debug_names_abbrev list -> unit
 
 val write_debug_names : Buffer.t -> Dwarf.DebugNames.debug_names_section -> unit
+
+(** {2 Stage 16: Split DWARF Index Writer} *)
+
+val write_unit_index : Buffer.t -> Dwarf.SplitDwarf.unit_index -> unit

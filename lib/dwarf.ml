@@ -6902,6 +6902,15 @@ module SplitDwarf = struct
     | DW_SECT_MACRO
     | DW_SECT_RNGLISTS
 
+  let int_of_dw_sect = function
+    | DW_SECT_INFO -> 1
+    | DW_SECT_ABBREV -> 3
+    | DW_SECT_LINE -> 4
+    | DW_SECT_LOCLISTS -> 5
+    | DW_SECT_STR_OFFSETS -> 6
+    | DW_SECT_MACRO -> 7
+    | DW_SECT_RNGLISTS -> 8
+
   let dw_sect_of_int = function
     | 1 -> Some DW_SECT_INFO
     | 3 -> Some DW_SECT_ABBREV

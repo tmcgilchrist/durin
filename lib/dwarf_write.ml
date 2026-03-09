@@ -1296,3 +1296,88 @@ let write_debug_str_offsets buf (t : Dwarf.DebugStrOffsets.t) =
     (fun (e : Dwarf.DebugStrOffsets.offset_entry) ->
       write_offset buf h.format e.offset)
     t.offsets
+
+(* Stage 16: Split DWARF index writers *)
+
+let write_unit_index buf (idx : Dwarf.SplitDwarf.unit_index) =
+  let uc = idx.unit_count in
+  let slot_count =
+    if uc = 0 then 1
+    else
+      let n = ref 1 in
+      while !n < uc * 2 do
+        n := !n * 2
+      done;
+      !n
+  in
+  (* Collect all distinct dw_sect columns *)
+  let columns =
+    let tbl = Hashtbl.create 8 in
+    Array.iter
+      (fun (e : Dwarf.SplitDwarf.index_entry) ->
+        List.iter (fun (s, _, _) -> Hashtbl.replace tbl s ()) e.contributions)
+      idx.entries;
+    Hashtbl.fold (fun k () acc -> k :: acc) tbl []
+    |> List.sort (fun a b ->
+           compare
+             (Dwarf.SplitDwarf.int_of_dw_sect a)
+             (Dwarf.SplitDwarf.int_of_dw_sect b))
+  in
+  let sc = List.length columns in
+  (* Build hash table *)
+  let hash_slots = Array.make slot_count Unsigned.UInt64.zero in
+  let index_slots = Array.make slot_count 0 in
+  Array.iteri
+    (fun row (e : Dwarf.SplitDwarf.index_entry) ->
+      let h = Unsigned.UInt64.to_int64 e.dwo_id in
+      let mask = slot_count - 1 in
+      let start = Int64.to_int h land mask in
+      let rec find_slot s =
+        if index_slots.(s) = 0 then s else find_slot ((s + 1) land mask)
+      in
+      let slot = find_slot start in
+      hash_slots.(slot) <- e.dwo_id;
+      index_slots.(slot) <- row + 1)
+    idx.entries;
+  (* Header *)
+  write_u32_le buf (Unsigned.UInt32.of_int idx.version);
+  write_u32_le buf (Unsigned.UInt32.of_int 0);
+  write_u32_le buf (Unsigned.UInt32.of_int sc);
+  write_u32_le buf (Unsigned.UInt32.of_int uc);
+  write_u32_le buf (Unsigned.UInt32.of_int slot_count);
+  (* Hash table *)
+  Array.iter (fun h -> write_u64_le buf h) hash_slots;
+  (* Index table *)
+  Array.iter (fun i -> write_u32_le buf (Unsigned.UInt32.of_int i)) index_slots;
+  (* Column headers *)
+  List.iter
+    (fun s ->
+      write_u32_le buf
+        (Unsigned.UInt32.of_int (Dwarf.SplitDwarf.int_of_dw_sect s)))
+    columns;
+  (* Offsets *)
+  Array.iter
+    (fun (e : Dwarf.SplitDwarf.index_entry) ->
+      List.iter
+        (fun col ->
+          let off =
+            match List.find_opt (fun (s, _, _) -> s = col) e.contributions with
+            | Some (_, o, _) -> o
+            | None -> 0
+          in
+          write_u32_le buf (Unsigned.UInt32.of_int off))
+        columns)
+    idx.entries;
+  (* Sizes *)
+  Array.iter
+    (fun (e : Dwarf.SplitDwarf.index_entry) ->
+      List.iter
+        (fun col ->
+          let sz =
+            match List.find_opt (fun (s, _, _) -> s = col) e.contributions with
+            | Some (_, _, s) -> s
+            | None -> 0
+          in
+          write_u32_le buf (Unsigned.UInt32.of_int sz))
+        columns)
+    idx.entries

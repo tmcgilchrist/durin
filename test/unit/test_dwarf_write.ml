@@ -2132,6 +2132,138 @@ let test_write_debug_names_abbrev_table () =
   let zt = Object.Buffer.Read.uleb128 cur in
   check int "table_term" 0 zt
 
+(* Stage 16: Split DWARF index tests *)
+
+let test_write_unit_index_cu () =
+  let idx =
+    Dwarf.SplitDwarf.
+      {
+        version = 5;
+        unit_count = 2;
+        entries =
+          [|
+            {
+              dwo_id = u64 0xAABBCCDD;
+              contributions =
+                [ (DW_SECT_INFO, 0, 100); (DW_SECT_ABBREV, 100, 50) ];
+            };
+            {
+              dwo_id = u64 0x11223344;
+              contributions =
+                [ (DW_SECT_INFO, 200, 80); (DW_SECT_ABBREV, 300, 40) ];
+            };
+          |];
+      }
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_unit_index buf idx;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  (* Header *)
+  let version = Object.Buffer.Read.u32 cur in
+  check int "version" 5 (Unsigned.UInt32.to_int version);
+  let _padding = Object.Buffer.Read.u32 cur in
+  let section_count = Object.Buffer.Read.u32 cur in
+  check int "section_count" 2 (Unsigned.UInt32.to_int section_count);
+  let unit_count = Object.Buffer.Read.u32 cur in
+  check int "unit_count" 2 (Unsigned.UInt32.to_int unit_count);
+  let slot_count = Object.Buffer.Read.u32 cur in
+  let sc = Unsigned.UInt32.to_int slot_count in
+  check bool "slot_count >= 4" true (sc >= 4);
+  (* Hash table: slot_count u64s *)
+  let hashes = Array.init sc (fun _ -> Object.Buffer.Read.u64 cur) in
+  (* Index table: slot_count u32s *)
+  let indices =
+    Array.init sc (fun _ -> Unsigned.UInt32.to_int (Object.Buffer.Read.u32 cur))
+  in
+  (* Check both IDs are present *)
+  let has_id id =
+    Array.exists (fun h -> Unsigned.UInt64.to_int h = id) hashes
+  in
+  check bool "has id1" true (has_id 0xAABBCCDD);
+  check bool "has id2" true (has_id 0x11223344);
+  (* Check indices are 1-based row references *)
+  let used_indices =
+    Array.to_list indices |> List.filter (fun i -> i > 0) |> List.sort compare
+  in
+  check (list int) "used indices" [ 1; 2 ] used_indices;
+  (* Column headers *)
+  let col0 = Object.Buffer.Read.u32 cur in
+  let col1 = Object.Buffer.Read.u32 cur in
+  check int "col0 (INFO)" 1 (Unsigned.UInt32.to_int col0);
+  check int "col1 (ABBREV)" 3 (Unsigned.UInt32.to_int col1);
+  (* Offsets: 2 rows × 2 cols *)
+  let off00 = Object.Buffer.Read.u32 cur in
+  let off01 = Object.Buffer.Read.u32 cur in
+  let off10 = Object.Buffer.Read.u32 cur in
+  let off11 = Object.Buffer.Read.u32 cur in
+  check int "off[0][INFO]" 0 (Unsigned.UInt32.to_int off00);
+  check int "off[0][ABBREV]" 100 (Unsigned.UInt32.to_int off01);
+  check int "off[1][INFO]" 200 (Unsigned.UInt32.to_int off10);
+  check int "off[1][ABBREV]" 300 (Unsigned.UInt32.to_int off11);
+  (* Sizes: 2 rows × 2 cols *)
+  let sz00 = Object.Buffer.Read.u32 cur in
+  let sz01 = Object.Buffer.Read.u32 cur in
+  let sz10 = Object.Buffer.Read.u32 cur in
+  let sz11 = Object.Buffer.Read.u32 cur in
+  check int "sz[0][INFO]" 100 (Unsigned.UInt32.to_int sz00);
+  check int "sz[0][ABBREV]" 50 (Unsigned.UInt32.to_int sz01);
+  check int "sz[1][INFO]" 80 (Unsigned.UInt32.to_int sz10);
+  check int "sz[1][ABBREV]" 40 (Unsigned.UInt32.to_int sz11)
+
+let test_write_unit_index_tu () =
+  let idx =
+    Dwarf.SplitDwarf.
+      {
+        version = 5;
+        unit_count = 1;
+        entries =
+          [|
+            {
+              dwo_id = u64 0xDEADBEEF;
+              contributions =
+                [ (DW_SECT_INFO, 0, 64); (DW_SECT_STR_OFFSETS, 64, 32) ];
+            };
+          |];
+      }
+  in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_unit_index buf idx;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let version = Object.Buffer.Read.u32 cur in
+  check int "version" 5 (Unsigned.UInt32.to_int version);
+  let _padding = Object.Buffer.Read.u32 cur in
+  let sc = Object.Buffer.Read.u32 cur in
+  check int "section_count" 2 (Unsigned.UInt32.to_int sc);
+  let uc = Object.Buffer.Read.u32 cur in
+  check int "unit_count" 1 (Unsigned.UInt32.to_int uc);
+  let slot_count = Object.Buffer.Read.u32 cur in
+  let slots = Unsigned.UInt32.to_int slot_count in
+  check bool "slot_count >= 2" true (slots >= 2);
+  (* Skip hash + index tables *)
+  for _ = 1 to slots do
+    ignore (Object.Buffer.Read.u64 cur)
+  done;
+  for _ = 1 to slots do
+    ignore (Object.Buffer.Read.u32 cur)
+  done;
+  (* Column headers *)
+  let c0 = Object.Buffer.Read.u32 cur in
+  let c1 = Object.Buffer.Read.u32 cur in
+  check int "col0 (INFO)" 1 (Unsigned.UInt32.to_int c0);
+  check int "col1 (STR_OFFSETS)" 6 (Unsigned.UInt32.to_int c1);
+  (* Offsets *)
+  let o0 = Object.Buffer.Read.u32 cur in
+  let o1 = Object.Buffer.Read.u32 cur in
+  check int "off[0][INFO]" 0 (Unsigned.UInt32.to_int o0);
+  check int "off[0][STR_OFFSETS]" 64 (Unsigned.UInt32.to_int o1);
+  (* Sizes *)
+  let s0 = Object.Buffer.Read.u32 cur in
+  let s1 = Object.Buffer.Read.u32 cur in
+  check int "sz[0][INFO]" 64 (Unsigned.UInt32.to_int s0);
+  check int "sz[0][STR_OFFSETS]" 32 (Unsigned.UInt32.to_int s1)
+
 let () =
   run "Dwarf_write"
     [
@@ -2301,5 +2433,10 @@ let () =
         [
           test_case "simple section" `Quick test_write_debug_names_simple;
           test_case "abbrev table" `Quick test_write_debug_names_abbrev_table;
+        ] );
+      ( "split-dwarf",
+        [
+          test_case "cu index" `Quick test_write_unit_index_cu;
+          test_case "tu index" `Quick test_write_unit_index_tu;
         ] );
     ]

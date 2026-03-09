@@ -2929,6 +2929,8 @@ module SplitDwarf : sig
     | DW_SECT_MACRO
     | DW_SECT_RNGLISTS
 
+  val int_of_dw_sect : dw_sect -> int
+
   type index_entry = {
     dwo_id : u64;
     contributions : (dw_sect * int * int) list;
