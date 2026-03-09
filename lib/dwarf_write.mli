@@ -152,3 +152,8 @@ val write_eh_frame : Buffer.t -> Dwarf.EHFrame.eh_frame_entry list -> unit
 (** {2 Stage 13: .debug_aranges Writer} *)
 
 val write_aranges_set : Buffer.t -> Dwarf.DebugAranges.aranges_set -> unit
+
+(** {2 Stage 14: .debug_addr and .debug_str_offsets Writers} *)
+
+val write_debug_addr : Buffer.t -> Dwarf.DebugAddr.t -> unit
+val write_debug_str_offsets : Buffer.t -> Dwarf.DebugStrOffsets.t -> unit

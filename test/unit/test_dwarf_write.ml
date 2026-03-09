@@ -1812,6 +1812,121 @@ let test_write_aranges_empty () =
   check int "term start" 0 (Unsigned.UInt64.to_int t1);
   check int "term length" 0 (Unsigned.UInt64.to_int t2)
 
+(* Stage 14: .debug_addr and .debug_str_offsets tests *)
+
+let test_write_debug_addr () =
+  let header : Dwarf.DebugAddr.header =
+    {
+      format = Dwarf.DWARF32;
+      unit_length = Unsigned.UInt64.zero;
+      version = Unsigned.UInt16.of_int 5;
+      address_size = Unsigned.UInt8.of_int 8;
+      segment_selector_size = Unsigned.UInt8.of_int 0;
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+    }
+  in
+  let entries =
+    Dwarf.DebugAddr.
+      [|
+        { segment = None; address = u64 0x401000 };
+        { segment = None; address = u64 0x402000 };
+        { segment = None; address = u64 0x403000 };
+      |]
+  in
+  let t = Dwarf.DebugAddr.{ header; entries } in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_debug_addr buf t;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed_header = Dwarf.DebugAddr.parse_header cur in
+  check int "version" 5 (Unsigned.UInt16.to_int parsed_header.version);
+  check int "address_size" 8 (Unsigned.UInt8.to_int parsed_header.address_size);
+  check int "segment_selector_size" 0
+    (Unsigned.UInt8.to_int parsed_header.segment_selector_size);
+  let parsed_entries = Dwarf.DebugAddr.parse_entries cur parsed_header in
+  check int "entry count" 3 (Array.length parsed_entries);
+  check int "addr 0" 0x401000
+    (Unsigned.UInt64.to_int parsed_entries.(0).address);
+  check int "addr 1" 0x402000
+    (Unsigned.UInt64.to_int parsed_entries.(1).address);
+  check int "addr 2" 0x403000
+    (Unsigned.UInt64.to_int parsed_entries.(2).address)
+
+let test_write_debug_str_offsets () =
+  let header : Dwarf.DebugStrOffsets.header =
+    {
+      format = Dwarf.DWARF32;
+      unit_length = Unsigned.UInt64.zero;
+      version = Unsigned.UInt16.of_int 5;
+      padding = Unsigned.UInt16.of_int 0;
+      header_span =
+        { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+    }
+  in
+  let offsets =
+    Dwarf.DebugStrOffsets.
+      [|
+        { offset = u64 0; resolved_string = None };
+        { offset = u64 10; resolved_string = None };
+        { offset = u64 25; resolved_string = None };
+        { offset = u64 42; resolved_string = None };
+      |]
+  in
+  let t = Dwarf.DebugStrOffsets.{ header; offsets } in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_debug_str_offsets buf t;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed_header = Dwarf.DebugStrOffsets.parse_header cur in
+  check int "version" 5 (Unsigned.UInt16.to_int parsed_header.version);
+  check int "padding" 0 (Unsigned.UInt16.to_int parsed_header.padding);
+  (* Read the 4 offsets manually *)
+  let o0 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  check int "offset 0" 0 (Unsigned.UInt64.to_int o0);
+  let o1 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  check int "offset 1" 10 (Unsigned.UInt64.to_int o1);
+  let o2 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  check int "offset 2" 25 (Unsigned.UInt64.to_int o2);
+  let o3 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  check int "offset 3" 42 (Unsigned.UInt64.to_int o3)
+
+let test_write_debug_addr_segments () =
+  let header : Dwarf.DebugAddr.header =
+    {
+      format = Dwarf.DWARF32;
+      unit_length = Unsigned.UInt64.zero;
+      version = Unsigned.UInt16.of_int 5;
+      address_size = Unsigned.UInt8.of_int 4;
+      segment_selector_size = Unsigned.UInt8.of_int 4;
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+    }
+  in
+  let entries =
+    Dwarf.DebugAddr.
+      [|
+        { segment = Some (u64 1); address = u64 0x1000 };
+        { segment = Some (u64 2); address = u64 0x2000 };
+      |]
+  in
+  let t = Dwarf.DebugAddr.{ header; entries } in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_debug_addr buf t;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed_header = Dwarf.DebugAddr.parse_header cur in
+  check int "segment_selector_size" 4
+    (Unsigned.UInt8.to_int parsed_header.segment_selector_size);
+  let parsed_entries = Dwarf.DebugAddr.parse_entries cur parsed_header in
+  check int "entry count" 2 (Array.length parsed_entries);
+  (match parsed_entries.(0).segment with
+  | Some s -> check int "seg 0" 1 (Unsigned.UInt64.to_int s)
+  | None -> fail "expected segment");
+  check int "addr 0" 0x1000 (Unsigned.UInt64.to_int parsed_entries.(0).address);
+  (match parsed_entries.(1).segment with
+  | Some s -> check int "seg 1" 2 (Unsigned.UInt64.to_int s)
+  | None -> fail "expected segment");
+  check int "addr 1" 0x2000 (Unsigned.UInt64.to_int parsed_entries.(1).address)
+
 let () =
   run "Dwarf_write"
     [
@@ -1967,5 +2082,14 @@ let () =
         [
           test_case "aranges set" `Quick test_write_aranges_set;
           test_case "aranges empty" `Quick test_write_aranges_empty;
+        ] );
+      ( "debug-addr",
+        [
+          test_case "addr roundtrip" `Quick test_write_debug_addr;
+          test_case "addr with segments" `Quick test_write_debug_addr_segments;
+        ] );
+      ( "debug-str-offsets",
+        [
+          test_case "str_offsets roundtrip" `Quick test_write_debug_str_offsets;
         ] );
     ]

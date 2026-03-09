@@ -1083,3 +1083,39 @@ let write_aranges_set buf (aset : Dwarf.DebugAranges.aranges_set) =
     aset.ranges;
   write_address buf addr_sz Unsigned.UInt64.zero;
   write_address buf addr_sz Unsigned.UInt64.zero
+
+(* Stage 14: .debug_addr and .debug_str_offsets Writers *)
+
+let write_debug_addr buf (t : Dwarf.DebugAddr.t) =
+  let h = t.header in
+  let addr_sz = Unsigned.UInt8.to_int h.address_size in
+  let seg_sz = Unsigned.UInt8.to_int h.segment_selector_size in
+  let entry_sz = seg_sz + addr_sz in
+  let n = Array.length t.entries in
+  let header_content_sz = 2 + 1 + 1 in
+  let body_sz = header_content_sz + (n * entry_sz) in
+  write_initial_length buf h.format body_sz;
+  write_u16_le buf h.version;
+  write_u8 buf h.address_size;
+  write_u8 buf h.segment_selector_size;
+  Array.iter
+    (fun (e : Dwarf.DebugAddr.entry) ->
+      (match e.segment with
+      | Some s when seg_sz > 0 -> write_address buf seg_sz s
+      | _ -> ());
+      write_address buf addr_sz e.address)
+    t.entries
+
+let write_debug_str_offsets buf (t : Dwarf.DebugStrOffsets.t) =
+  let h = t.header in
+  let off_sz = Dwarf.offset_size_for_format h.format in
+  let n = Array.length t.offsets in
+  let header_content_sz = 2 + 2 in
+  let body_sz = header_content_sz + (n * off_sz) in
+  write_initial_length buf h.format body_sz;
+  write_u16_le buf h.version;
+  write_u16_le buf h.padding;
+  Array.iter
+    (fun (e : Dwarf.DebugStrOffsets.offset_entry) ->
+      write_offset buf h.format e.offset)
+    t.offsets
