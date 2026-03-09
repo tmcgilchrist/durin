@@ -1381,3 +1381,53 @@ let write_unit_index buf (idx : Dwarf.SplitDwarf.unit_index) =
           write_u32_le buf (Unsigned.UInt32.of_int sz))
         columns)
     idx.entries
+
+(* Stage 17: .debug_macro Writer *)
+
+let write_debug_macro_entry buf (fmt : Dwarf.dwarf_format)
+    (e : Dwarf.debug_macro_entry) =
+  write_u8 buf
+    (Unsigned.UInt8.of_int (Dwarf.int_of_macro_info_entry_type e.entry_type));
+  match e.entry_type with
+  | DW_MACRO_define | DW_MACRO_undef ->
+      let line = Option.value e.line_number ~default:Unsigned.UInt32.zero in
+      write_uleb128 buf (Unsigned.UInt64.of_uint32 line);
+      let s = Option.value e.string_value ~default:"" in
+      write_null_terminated_string buf s
+  | DW_MACRO_define_strp | DW_MACRO_undef_strp | DW_MACRO_define_sup
+  | DW_MACRO_undef_sup ->
+      let line = Option.value e.line_number ~default:Unsigned.UInt32.zero in
+      write_uleb128 buf (Unsigned.UInt64.of_uint32 line);
+      let off = Option.value e.string_offset ~default:Unsigned.UInt64.zero in
+      write_offset buf fmt off
+  | DW_MACRO_define_strx | DW_MACRO_undef_strx ->
+      let line = Option.value e.line_number ~default:Unsigned.UInt32.zero in
+      write_uleb128 buf (Unsigned.UInt64.of_uint32 line);
+      let off = Option.value e.string_offset ~default:Unsigned.UInt64.zero in
+      write_uleb128 buf off
+  | DW_MACRO_start_file ->
+      let line = Option.value e.line_number ~default:Unsigned.UInt32.zero in
+      write_uleb128 buf (Unsigned.UInt64.of_uint32 line);
+      let fi = Option.value e.file_index ~default:Unsigned.UInt32.zero in
+      write_uleb128 buf (Unsigned.UInt64.of_uint32 fi)
+  | DW_MACRO_end_file -> ()
+  | DW_MACRO_import | DW_MACRO_import_sup ->
+      let off = Option.value e.string_offset ~default:Unsigned.UInt64.zero in
+      write_offset buf fmt off
+  | _ -> ()
+
+let write_debug_macro_unit buf (u : Dwarf.debug_macro_unit) =
+  let h = u.header in
+  write_u16_le buf h.version;
+  write_u8 buf h.flags;
+  (match h.debug_line_offset with
+  | Some off -> write_offset buf h.format off
+  | None -> ());
+  (match h.debug_str_offsets_offset with
+  | Some off -> write_offset buf h.format off
+  | None -> ());
+  List.iter (fun e -> write_debug_macro_entry buf h.format e) u.entries;
+  write_u8 buf (Unsigned.UInt8.of_int 0)
+
+let write_debug_macro buf (sec : Dwarf.debug_macro_section) =
+  List.iter (fun u -> write_debug_macro_unit buf u) sec.units

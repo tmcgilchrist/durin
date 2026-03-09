@@ -806,6 +806,7 @@ type macro_info_entry_type =
   | DW_MACRO_hi_user
 
 val macro_info_entry_type_of_u8 : Types.u8 -> macro_info_entry_type
+val int_of_macro_info_entry_type : macro_info_entry_type -> int
 val string_of_macro_info_entry_type : macro_info_entry_type -> string
 
 (* TODO Place this into DebugMacro module and provide documentation. *)

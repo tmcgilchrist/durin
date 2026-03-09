@@ -2264,6 +2264,134 @@ let test_write_unit_index_tu () =
   check int "sz[0][INFO]" 64 (Unsigned.UInt32.to_int s0);
   check int "sz[0][STR_OFFSETS]" 32 (Unsigned.UInt32.to_int s1)
 
+(* Stage 17: .debug_macro tests *)
+
+let make_macro_header ?(flags = 0) () : Dwarf.debug_macro_header =
+  {
+    format = Dwarf.DWARF32;
+    version = Unsigned.UInt16.of_int 5; (* DWARF 5 *)
+    flags = Unsigned.UInt8.of_int flags;
+    debug_line_offset = None;
+    debug_str_offsets_offset = None;
+  }
+
+let test_write_debug_macro_define_undef () =
+  let header = make_macro_header () in
+  let entries =
+    Dwarf.
+      [
+        {
+          entry_type = DW_MACRO_define;
+          line_number = Some (Unsigned.UInt32.of_int 10);
+          string_offset = None;
+          string_value = Some "FOO=1";
+          file_index = None;
+        };
+        {
+          entry_type = DW_MACRO_undef;
+          line_number = Some (Unsigned.UInt32.of_int 20);
+          string_offset = None;
+          string_value = Some "BAR";
+          file_index = None;
+        };
+      ]
+  in
+  let unit = Dwarf.{ header; entries } in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_debug_macro_unit buf unit;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed = Dwarf.parse_debug_macro_unit cur in
+  check int "entry count" 2 (List.length parsed.entries);
+  let e0 = List.nth parsed.entries 0 in
+  check string "e0 type" "DW_MACRO_define"
+    (Dwarf.string_of_macro_info_entry_type e0.entry_type);
+  check int "e0 line" 10 (Unsigned.UInt32.to_int (Option.get e0.line_number));
+  check string "e0 string" "FOO=1" (Option.get e0.string_value);
+  let e1 = List.nth parsed.entries 1 in
+  check string "e1 type" "DW_MACRO_undef"
+    (Dwarf.string_of_macro_info_entry_type e1.entry_type);
+  check int "e1 line" 20 (Unsigned.UInt32.to_int (Option.get e1.line_number));
+  check string "e1 string" "BAR" (Option.get e1.string_value)
+
+let test_write_debug_macro_start_end_file () =
+  let header = make_macro_header () in
+  let entries =
+    Dwarf.
+      [
+        {
+          entry_type = DW_MACRO_start_file;
+          line_number = Some (Unsigned.UInt32.of_int 1);
+          string_offset = None;
+          string_value = None;
+          file_index = Some (Unsigned.UInt32.of_int 3);
+        };
+        {
+          entry_type = DW_MACRO_end_file;
+          line_number = None;
+          string_offset = None;
+          string_value = None;
+          file_index = None;
+        };
+      ]
+  in
+  let unit = Dwarf.{ header; entries } in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_debug_macro_unit buf unit;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed = Dwarf.parse_debug_macro_unit cur in
+  check int "entry count" 2 (List.length parsed.entries);
+  let e0 = List.nth parsed.entries 0 in
+  check string "e0 type" "DW_MACRO_start_file"
+    (Dwarf.string_of_macro_info_entry_type e0.entry_type);
+  check int "e0 line" 1 (Unsigned.UInt32.to_int (Option.get e0.line_number));
+  check int "e0 file_index" 3
+    (Unsigned.UInt32.to_int (Option.get e0.file_index));
+  let e1 = List.nth parsed.entries 1 in
+  check string "e1 type" "DW_MACRO_end_file"
+    (Dwarf.string_of_macro_info_entry_type e1.entry_type)
+
+let test_write_debug_macro_strp () =
+  let header = make_macro_header () in
+  let entries =
+    Dwarf.
+      [
+        {
+          entry_type = DW_MACRO_define_strp;
+          line_number = Some (Unsigned.UInt32.of_int 5);
+          string_offset = Some (u64 0x100);
+          string_value = None;
+          file_index = None;
+        };
+        {
+          entry_type = DW_MACRO_import;
+          line_number = None;
+          string_offset = Some (u64 0x200);
+          string_value = None;
+          file_index = None;
+        };
+      ]
+  in
+  let unit = Dwarf.{ header; entries } in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_debug_macro_unit buf unit;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let parsed = Dwarf.parse_debug_macro_unit cur in
+  check int "entry count" 2 (List.length parsed.entries);
+  let e0 = List.nth parsed.entries 0 in
+  check string "e0 type" "DW_MACRO_define_strp"
+    (Dwarf.string_of_macro_info_entry_type e0.entry_type);
+  check int "e0 line" 5 (Unsigned.UInt32.to_int (Option.get e0.line_number));
+  check int "e0 str_offset" 0x100
+    (Unsigned.UInt64.to_int (Option.get e0.string_offset));
+  let e1 = List.nth parsed.entries 1 in
+  check string "e1 type" "DW_MACRO_import"
+    (Dwarf.string_of_macro_info_entry_type e1.entry_type);
+  check int "e1 offset" 0x200
+    (Unsigned.UInt64.to_int (Option.get e1.string_offset))
+
 let () =
   run "Dwarf_write"
     [
@@ -2438,5 +2566,12 @@ let () =
         [
           test_case "cu index" `Quick test_write_unit_index_cu;
           test_case "tu index" `Quick test_write_unit_index_tu;
+        ] );
+      ( "debug-macro",
+        [
+          test_case "define+undef" `Quick test_write_debug_macro_define_undef;
+          test_case "start/end file" `Quick
+            test_write_debug_macro_start_end_file;
+          test_case "strp+import" `Quick test_write_debug_macro_strp;
         ] );
     ]

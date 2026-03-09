@@ -168,3 +168,11 @@ val write_debug_names : Buffer.t -> Dwarf.DebugNames.debug_names_section -> unit
 (** {2 Stage 16: Split DWARF Index Writer} *)
 
 val write_unit_index : Buffer.t -> Dwarf.SplitDwarf.unit_index -> unit
+
+(** {2 Stage 17: .debug_macro Writer} *)
+
+val write_debug_macro_entry :
+  Buffer.t -> Dwarf.dwarf_format -> Dwarf.debug_macro_entry -> unit
+
+val write_debug_macro_unit : Buffer.t -> Dwarf.debug_macro_unit -> unit
+val write_debug_macro : Buffer.t -> Dwarf.debug_macro_section -> unit
