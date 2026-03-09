@@ -1927,6 +1927,211 @@ let test_write_debug_addr_segments () =
   | None -> fail "expected segment");
   check int "addr 1" 0x2000 (Unsigned.UInt64.to_int parsed_entries.(1).address)
 
+(* Stage 15: .debug_names tests *)
+
+let test_write_debug_names_simple () =
+  let abbrevs =
+    Dwarf.DebugNames.
+      [
+        {
+          code = u64 1;
+          tag = DW_TAG_subprogram;
+          attributes =
+            [
+              (DW_IDX_compile_unit, Dwarf.DW_FORM_udata);
+              (DW_IDX_die_offset, Dwarf.DW_FORM_ref4);
+            ];
+        };
+      ]
+  in
+  let entries =
+    Dwarf.DebugNames.
+      [|
+        {
+          name_offset = Unsigned.UInt32.of_int 0;
+          die_offset = Unsigned.UInt32.of_int 0x100;
+          attributes = [ (DW_IDX_compile_unit, u64 0) ];
+        };
+        {
+          name_offset = Unsigned.UInt32.of_int 5;
+          die_offset = Unsigned.UInt32.of_int 0x200;
+          attributes = [ (DW_IDX_compile_unit, u64 0) ];
+        };
+      |]
+  in
+  let name_table =
+    Dwarf.DebugNames.
+      [|
+        { offset = Unsigned.UInt32.of_int 0; value = "main" };
+        { offset = Unsigned.UInt32.of_int 5; value = "foo" };
+      |]
+  in
+  let hash0 = Dwarf.DebugNames.djb2_hash "main" in
+  let hash1 = Dwarf.DebugNames.djb2_hash "foo" in
+  let sec =
+    Dwarf.DebugNames.
+      {
+        header =
+          {
+            format = Dwarf.DWARF32;
+            unit_length = Unsigned.UInt64.zero;
+            version = Unsigned.UInt16.of_int 5;
+            padding = Unsigned.UInt16.of_int 0;
+            comp_unit_count = Unsigned.UInt32.of_int 1;
+            local_type_unit_count = Unsigned.UInt32.of_int 0;
+            foreign_type_unit_count = Unsigned.UInt32.of_int 0;
+            bucket_count = Unsigned.UInt32.of_int 2;
+            name_count = Unsigned.UInt32.of_int 2;
+            abbrev_table_size = Unsigned.UInt32.zero;
+            augmentation_string_size = Unsigned.UInt32.of_int 0;
+            augmentation_string = "";
+            span = 0;
+          };
+        comp_unit_offsets = [| Unsigned.UInt32.of_int 0 |];
+        local_type_unit_offsets = [||];
+        foreign_type_unit_signatures = [||];
+        buckets = [| Unsigned.UInt32.of_int 1; Unsigned.UInt32.of_int 2 |];
+        hash_table = [| hash0; hash1 |];
+        name_table;
+        entry_offsets = [||];
+        abbreviation_table = abbrevs;
+        entry_pool = entries;
+      }
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_names buf sec;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let _fmt, _unit_length = Dwarf.parse_initial_length cur in
+  let version = Object.Buffer.Read.u16 cur in
+  check int "version" 5 (Unsigned.UInt16.to_int version);
+  let _padding = Object.Buffer.Read.u16 cur in
+  let cu_count = Object.Buffer.Read.u32 cur in
+  check int "cu_count" 1 (Unsigned.UInt32.to_int cu_count);
+  let ltu_count = Object.Buffer.Read.u32 cur in
+  check int "ltu_count" 0 (Unsigned.UInt32.to_int ltu_count);
+  let ftu_count = Object.Buffer.Read.u32 cur in
+  check int "ftu_count" 0 (Unsigned.UInt32.to_int ftu_count);
+  let bc = Object.Buffer.Read.u32 cur in
+  check int "bucket_count" 2 (Unsigned.UInt32.to_int bc);
+  let nc = Object.Buffer.Read.u32 cur in
+  check int "name_count" 2 (Unsigned.UInt32.to_int nc);
+  let _abbrev_sz = Object.Buffer.Read.u32 cur in
+  let aug_sz = Object.Buffer.Read.u32 cur in
+  check int "aug_sz" 0 (Unsigned.UInt32.to_int aug_sz);
+  let cu0 = Object.Buffer.Read.u32 cur in
+  check int "cu0" 0 (Unsigned.UInt32.to_int cu0);
+  let _b0 = Object.Buffer.Read.u32 cur in
+  let _b1 = Object.Buffer.Read.u32 cur in
+  let h0 = Object.Buffer.Read.u32 cur in
+  let h1 = Object.Buffer.Read.u32 cur in
+  check int "hash0" (Unsigned.UInt32.to_int hash0) (Unsigned.UInt32.to_int h0);
+  check int "hash1" (Unsigned.UInt32.to_int hash1) (Unsigned.UInt32.to_int h1);
+  let n0 = Object.Buffer.Read.u32 cur in
+  let n1 = Object.Buffer.Read.u32 cur in
+  check int "name0_offset" 0 (Unsigned.UInt32.to_int n0);
+  check int "name1_offset" 5 (Unsigned.UInt32.to_int n1);
+  let _eo0 = Object.Buffer.Read.u32 cur in
+  let _eo1 = Object.Buffer.Read.u32 cur in
+  (* Abbreviation table *)
+  let abbrev_code = Object.Buffer.Read.uleb128 cur in
+  check int "abbrev code" 1 abbrev_code;
+  let abbrev_tag = Object.Buffer.Read.uleb128 cur in
+  check int "abbrev tag (subprogram)" 0x2e abbrev_tag;
+  let idx_attr = Object.Buffer.Read.uleb128 cur in
+  check int "idx attr (compile_unit)" 1 idx_attr;
+  let idx_form = Object.Buffer.Read.uleb128 cur in
+  check int "idx form (udata)" 0x0f idx_form;
+  let die_attr = Object.Buffer.Read.uleb128 cur in
+  check int "die attr (die_offset)" 3 die_attr;
+  let die_form = Object.Buffer.Read.uleb128 cur in
+  check int "die form (ref4)" 0x13 die_form;
+  let term1 = Object.Buffer.Read.uleb128 cur in
+  check int "attr term" 0 term1;
+  let term2 = Object.Buffer.Read.uleb128 cur in
+  check int "form term" 0 term2;
+  let table_term = Object.Buffer.Read.uleb128 cur in
+  check int "table term" 0 table_term;
+  (* Entry pool: first entry *)
+  let e0_code = Object.Buffer.Read.uleb128 cur in
+  check int "entry0 abbrev" 1 e0_code;
+  let e0_cu = Object.Buffer.Read.uleb128 cur in
+  check int "entry0 cu_idx" 0 e0_cu;
+  let e0_die = Object.Buffer.Read.u32 cur in
+  check int "entry0 die_offset" 0x100 (Unsigned.UInt32.to_int e0_die);
+  let e0_term = Object.Buffer.Read.u8 cur in
+  check int "entry0 term" 0 (Unsigned.UInt8.to_int e0_term);
+  (* Entry pool: second entry *)
+  let e1_code = Object.Buffer.Read.uleb128 cur in
+  check int "entry1 abbrev" 1 e1_code;
+  let e1_cu = Object.Buffer.Read.uleb128 cur in
+  check int "entry1 cu_idx" 0 e1_cu;
+  let e1_die = Object.Buffer.Read.u32 cur in
+  check int "entry1 die_offset" 0x200 (Unsigned.UInt32.to_int e1_die)
+
+let test_write_debug_names_abbrev_table () =
+  let abbrevs =
+    Dwarf.DebugNames.
+      [
+        {
+          code = u64 1;
+          tag = DW_TAG_variable;
+          attributes =
+            [
+              (DW_IDX_compile_unit, Dwarf.DW_FORM_udata);
+              (DW_IDX_die_offset, Dwarf.DW_FORM_ref4);
+            ];
+        };
+        {
+          code = u64 2;
+          tag = DW_TAG_subprogram;
+          attributes = [ (DW_IDX_die_offset, Dwarf.DW_FORM_ref4) ];
+        };
+      ]
+  in
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_debug_names_abbrev_table buf abbrevs;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  (* First abbrev: code=1, tag=variable(0x34) *)
+  let c1 = Object.Buffer.Read.uleb128 cur in
+  check int "code1" 1 c1;
+  let t1 = Object.Buffer.Read.uleb128 cur in
+  check int "tag1 (variable)" 0x34 t1;
+  (* attr pair: DW_IDX_compile_unit=1, DW_FORM_udata=0x0f *)
+  let a1 = Object.Buffer.Read.uleb128 cur in
+  check int "attr1" 1 a1;
+  let f1 = Object.Buffer.Read.uleb128 cur in
+  check int "form1" 0x0f f1;
+  (* attr pair: DW_IDX_die_offset=3, DW_FORM_ref4=0x13 *)
+  let a2 = Object.Buffer.Read.uleb128 cur in
+  check int "attr2" 3 a2;
+  let f2 = Object.Buffer.Read.uleb128 cur in
+  check int "form2" 0x13 f2;
+  (* terminator pair *)
+  let z1 = Object.Buffer.Read.uleb128 cur in
+  check int "term_attr" 0 z1;
+  let z2 = Object.Buffer.Read.uleb128 cur in
+  check int "term_form" 0 z2;
+  (* Second abbrev: code=2, tag=subprogram(0x2e) *)
+  let c2 = Object.Buffer.Read.uleb128 cur in
+  check int "code2" 2 c2;
+  let t2 = Object.Buffer.Read.uleb128 cur in
+  check int "tag2 (subprogram)" 0x2e t2;
+  (* attr pair: DW_IDX_die_offset=3, DW_FORM_ref4=0x13 *)
+  let a3 = Object.Buffer.Read.uleb128 cur in
+  check int "attr3" 3 a3;
+  let f3 = Object.Buffer.Read.uleb128 cur in
+  check int "form3" 0x13 f3;
+  (* terminator pair *)
+  let z3 = Object.Buffer.Read.uleb128 cur in
+  check int "term2_attr" 0 z3;
+  let z4 = Object.Buffer.Read.uleb128 cur in
+  check int "term2_form" 0 z4;
+  (* table terminator *)
+  let zt = Object.Buffer.Read.uleb128 cur in
+  check int "table_term" 0 zt
+
 let () =
   run "Dwarf_write"
     [
@@ -2091,5 +2296,10 @@ let () =
       ( "debug-str-offsets",
         [
           test_case "str_offsets roundtrip" `Quick test_write_debug_str_offsets;
+        ] );
+      ( "debug-names",
+        [
+          test_case "simple section" `Quick test_write_debug_names_simple;
+          test_case "abbrev table" `Quick test_write_debug_names_abbrev_table;
         ] );
     ]

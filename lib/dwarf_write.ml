@@ -1106,6 +1106,183 @@ let write_debug_addr buf (t : Dwarf.DebugAddr.t) =
       write_address buf addr_sz e.address)
     t.entries
 
+(* Stage 15: .debug_names Writer *)
+
+let write_debug_names_abbrev_table buf
+    (abbrevs : Dwarf.DebugNames.debug_names_abbrev list) =
+  List.iter
+    (fun (a : Dwarf.DebugNames.debug_names_abbrev) ->
+      write_uleb128 buf a.code;
+      write_uleb128 buf (Dwarf.uint64_of_abbreviation_tag a.tag);
+      List.iter
+        (fun (attr, form) ->
+          write_uleb128 buf
+            (Unsigned.UInt64.of_int (Dwarf.int_of_name_index_attribute attr));
+          write_uleb128 buf (Dwarf.u64_of_attribute_form_encoding form))
+        a.attributes;
+      write_uleb128 buf Unsigned.UInt64.zero;
+      write_uleb128 buf Unsigned.UInt64.zero)
+    abbrevs;
+  write_uleb128 buf Unsigned.UInt64.zero
+
+let debug_names_abbrev_table_size
+    (abbrevs : Dwarf.DebugNames.debug_names_abbrev list) =
+  let sz = ref 0 in
+  List.iter
+    (fun (a : Dwarf.DebugNames.debug_names_abbrev) ->
+      sz := !sz + uleb128_size a.code;
+      sz := !sz + uleb128_size (Dwarf.uint64_of_abbreviation_tag a.tag);
+      List.iter
+        (fun (attr, form) ->
+          sz :=
+            !sz
+            + uleb128_size
+                (Unsigned.UInt64.of_int
+                   (Dwarf.int_of_name_index_attribute attr));
+          sz := !sz + uleb128_size (Dwarf.u64_of_attribute_form_encoding form))
+        a.attributes;
+      sz := !sz + 1 + 1)
+    abbrevs;
+  sz := !sz + 1;
+  !sz
+
+let write_debug_names_entry buf
+    (abbrevs : Dwarf.DebugNames.debug_names_abbrev list)
+    (entry : Dwarf.DebugNames.name_index_entry) =
+  let abbrev =
+    List.find
+      (fun (a : Dwarf.DebugNames.debug_names_abbrev) ->
+        List.length a.attributes = List.length entry.attributes + 1
+        && List.exists
+             (fun (attr, _) -> attr = Dwarf.DW_IDX_die_offset)
+             a.attributes)
+      abbrevs
+  in
+  write_uleb128 buf abbrev.code;
+  List.iter
+    (fun (attr, form) ->
+      let value =
+        if attr = Dwarf.DW_IDX_die_offset then
+          Unsigned.UInt64.of_uint32 entry.die_offset
+        else
+          match List.assoc_opt attr entry.attributes with
+          | Some v -> v
+          | None -> Unsigned.UInt64.zero
+      in
+      match form with
+      | Dwarf.DW_FORM_ref4 ->
+          write_u32_le buf
+            (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int value))
+      | Dwarf.DW_FORM_udata -> write_uleb128 buf value
+      | Dwarf.DW_FORM_flag_present -> ()
+      | _ ->
+          write_u32_le buf
+            (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int value)))
+    abbrev.attributes
+
+let debug_names_entry_size (abbrevs : Dwarf.DebugNames.debug_names_abbrev list)
+    (entry : Dwarf.DebugNames.name_index_entry) =
+  let abbrev =
+    List.find
+      (fun (a : Dwarf.DebugNames.debug_names_abbrev) ->
+        List.length a.attributes = List.length entry.attributes + 1
+        && List.exists
+             (fun (attr, _) -> attr = Dwarf.DW_IDX_die_offset)
+             a.attributes)
+      abbrevs
+  in
+  let sz = ref (uleb128_size abbrev.code) in
+  List.iter
+    (fun (attr, form) ->
+      let value =
+        if attr = Dwarf.DW_IDX_die_offset then
+          Unsigned.UInt64.of_uint32 entry.die_offset
+        else
+          match List.assoc_opt attr entry.attributes with
+          | Some v -> v
+          | None -> Unsigned.UInt64.zero
+      in
+      match form with
+      | Dwarf.DW_FORM_ref4 -> sz := !sz + 4
+      | Dwarf.DW_FORM_udata -> sz := !sz + uleb128_size value
+      | Dwarf.DW_FORM_flag_present -> ()
+      | _ -> sz := !sz + 4)
+    abbrev.attributes;
+  !sz
+
+let write_debug_names buf (sec : Dwarf.DebugNames.debug_names_section) =
+  let h = sec.header in
+  let nc = Unsigned.UInt32.to_int h.name_count in
+  let cu_count = Unsigned.UInt32.to_int h.comp_unit_count in
+  let ltu_count = Unsigned.UInt32.to_int h.local_type_unit_count in
+  let ftu_count = Unsigned.UInt32.to_int h.foreign_type_unit_count in
+  let bc = Unsigned.UInt32.to_int h.bucket_count in
+  let aug_sz = Unsigned.UInt32.to_int h.augmentation_string_size in
+  let abbrev_sz = debug_names_abbrev_table_size sec.abbreviation_table in
+  (* Compute entry pool size *)
+  let entry_pool_sz = ref 0 in
+  for i = 0 to nc - 1 do
+    entry_pool_sz :=
+      !entry_pool_sz
+      + debug_names_entry_size sec.abbreviation_table sec.entry_pool.(i)
+      + 1
+  done;
+  (* header content after initial_length:
+     version(2) + padding(2) + comp_unit_count(4) +
+     local_type_unit_count(4) + foreign_type_unit_count(4) +
+     bucket_count(4) + name_count(4) + abbrev_table_size(4) +
+     augmentation_string_size(4) + augmentation_string *)
+  let header_content_sz = 2 + 2 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + aug_sz in
+  let arrays_sz =
+    (cu_count * 4) + (ltu_count * 4) + (ftu_count * 8) + (bc * 4) + (nc * 4)
+    + (nc * 4) + (nc * 4)
+  in
+  let body_sz = header_content_sz + arrays_sz + abbrev_sz + !entry_pool_sz in
+  (* Header *)
+  write_initial_length buf h.format body_sz;
+  write_u16_le buf h.version;
+  write_u16_le buf h.padding;
+  write_u32_le buf h.comp_unit_count;
+  write_u32_le buf h.local_type_unit_count;
+  write_u32_le buf h.foreign_type_unit_count;
+  write_u32_le buf h.bucket_count;
+  write_u32_le buf h.name_count;
+  write_u32_le buf (Unsigned.UInt32.of_int abbrev_sz);
+  write_u32_le buf h.augmentation_string_size;
+  if aug_sz > 0 then Buffer.add_string buf h.augmentation_string;
+  (* CU offsets *)
+  Array.iter (fun o -> write_u32_le buf o) sec.comp_unit_offsets;
+  (* Local TU offsets *)
+  Array.iter (fun o -> write_u32_le buf o) sec.local_type_unit_offsets;
+  (* Foreign TU signatures *)
+  Array.iter (fun s -> write_u64_le buf s) sec.foreign_type_unit_signatures;
+  (* Hash buckets *)
+  Array.iter (fun b -> write_u32_le buf b) sec.buckets;
+  (* Hash values *)
+  Array.iter (fun h -> write_u32_le buf h) sec.hash_table;
+  (* Name table: string offsets *)
+  Array.iter
+    (fun (e : Dwarf.DebugNames.debug_str_entry) -> write_u32_le buf e.offset)
+    sec.name_table;
+  (* Entry offsets *)
+  let offsets = Array.make nc Unsigned.UInt32.zero in
+  let cur_off = ref 0 in
+  for i = 0 to nc - 1 do
+    offsets.(i) <- Unsigned.UInt32.of_int !cur_off;
+    cur_off :=
+      !cur_off
+      + debug_names_entry_size sec.abbreviation_table sec.entry_pool.(i)
+      + 1
+  done;
+  Array.iter (fun o -> write_u32_le buf o) offsets;
+  (* Abbreviation table *)
+  write_debug_names_abbrev_table buf sec.abbreviation_table;
+  (* Entry pool *)
+  for i = 0 to nc - 1 do
+    write_debug_names_entry buf sec.abbreviation_table sec.entry_pool.(i);
+    write_u8 buf (Unsigned.UInt8.of_int 0)
+  done
+
 let write_debug_str_offsets buf (t : Dwarf.DebugStrOffsets.t) =
   let h = t.header in
   let off_sz = Dwarf.offset_size_for_format h.format in

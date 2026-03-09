@@ -157,3 +157,10 @@ val write_aranges_set : Buffer.t -> Dwarf.DebugAranges.aranges_set -> unit
 
 val write_debug_addr : Buffer.t -> Dwarf.DebugAddr.t -> unit
 val write_debug_str_offsets : Buffer.t -> Dwarf.DebugStrOffsets.t -> unit
+
+(** {2 Stage 15: .debug_names Writer} *)
+
+val write_debug_names_abbrev_table :
+  Buffer.t -> Dwarf.DebugNames.debug_names_abbrev list -> unit
+
+val write_debug_names : Buffer.t -> Dwarf.DebugNames.debug_names_section -> unit

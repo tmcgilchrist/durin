@@ -730,6 +730,7 @@ type name_index_attribute =
   | DW_IDX_lo_user
   | DW_IDX_hi_user
 
+val int_of_name_index_attribute : name_index_attribute -> int
 val string_of_name_index_attribute : name_index_attribute -> string
 
 (** Defaulted attribute. The encodings of the constants used in the

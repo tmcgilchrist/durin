@@ -434,6 +434,16 @@ let name_index_attribute = function
 let name_index_attribute_of_u64 code =
   name_index_attribute (Unsigned.UInt64.to_int code)
 
+let int_of_name_index_attribute = function
+  | DW_IDX_null -> 0
+  | DW_IDX_compile_unit -> 1
+  | DW_IDX_type_unit -> 2
+  | DW_IDX_die_offset -> 3
+  | DW_IDX_parent -> 4
+  | DW_IDX_type_hash -> 5
+  | DW_IDX_lo_user -> 0x2000
+  | DW_IDX_hi_user -> 0x3fff
+
 let string_of_name_index_attribute = function
   | DW_IDX_null -> "DW_IDX_null"
   | DW_IDX_compile_unit -> "DW_IDX_compile_unit"
