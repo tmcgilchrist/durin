@@ -2467,6 +2467,84 @@ let test_write_pubtypes_set () =
   check int "e1 offset" 0x40 (Unsigned.UInt64.to_int e1.offset);
   check string "e1 name" "char" e1.name
 
+(* Stage 19: .debug_types tests *)
+
+let test_write_type_unit_header () =
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_structure_type;
+      attributes = [ { attr = DW_AT_name; value = String "my_struct" } ];
+      children = Seq.empty;
+      offset = 0;
+    }
+  in
+  let enc : Dwarf.encoding =
+    {
+      format = DWARF32;
+      address_size = Unsigned.UInt8.of_int 8;
+      version = Unsigned.UInt16.of_int 4;
+    }
+  in
+  let _, lookup = Dwarf_write.assign_abbreviations [ die ] in
+  let type_sig = Unsigned.UInt64.of_string "0xDEADBEEFCAFEBABE" in
+  let type_off = u64 0x20 in
+  let abbrev_off = u64 0 in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_type_unit buf enc die lookup type_sig type_off abbrev_off;
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let _span, hdr = Dwarf.DebugTypes.parse_type_unit_header cur in
+  check int "version" 4 (Unsigned.UInt16.to_int hdr.version);
+  check int "address_size" 8 (Unsigned.UInt8.to_int hdr.address_size);
+  check int "type_signature"
+    (Unsigned.UInt64.to_int type_sig)
+    (Unsigned.UInt64.to_int hdr.type_signature);
+  check int "type_offset"
+    (Unsigned.UInt64.to_int type_off)
+    (Unsigned.UInt64.to_int hdr.type_offset);
+  check int "debug_abbrev_offset" 0
+    (Unsigned.UInt64.to_int hdr.debug_abbrev_offset)
+
+let test_write_type_unit_with_die () =
+  let child : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_member;
+      attributes = [ { attr = DW_AT_name; value = String "x" } ];
+      children = Seq.empty;
+      offset = 0;
+    }
+  in
+  let die : Dwarf.DIE.t =
+    {
+      tag = DW_TAG_structure_type;
+      attributes = [ { attr = DW_AT_name; value = String "point" } ];
+      children = List.to_seq [ child ];
+      offset = 0;
+    }
+  in
+  let enc : Dwarf.encoding =
+    {
+      format = DWARF32;
+      address_size = Unsigned.UInt8.of_int 8;
+      version = Unsigned.UInt16.of_int 4;
+    }
+  in
+  let _, lookup = Dwarf_write.assign_abbreviations [ die ] in
+  let type_sig = Unsigned.UInt64.of_string "0x1234567890ABCDEF" in
+  let type_off = u64 0x17 in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_type_unit buf enc die lookup type_sig type_off (u64 0);
+  let total = Buffer.length buf in
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let _span, hdr = Dwarf.DebugTypes.parse_type_unit_header cur in
+  let unit_length = Unsigned.UInt64.to_int hdr.unit_length in
+  check int "unit_length + 4 = total" total (unit_length + 4);
+  check int "type_signature"
+    (Unsigned.UInt64.to_int type_sig)
+    (Unsigned.UInt64.to_int hdr.type_signature);
+  check int "type_offset" 0x17 (Unsigned.UInt64.to_int hdr.type_offset)
+
 let () =
   run "Dwarf_write"
     [
@@ -2653,4 +2731,9 @@ let () =
         [ test_case "pubnames set" `Quick test_write_pubnames_set ] );
       ( "debug-pubtypes",
         [ test_case "pubtypes set" `Quick test_write_pubtypes_set ] );
+      ( "debug-types",
+        [
+          test_case "type unit header" `Quick test_write_type_unit_header;
+          test_case "type unit with die" `Quick test_write_type_unit_with_die;
+        ] );
     ]

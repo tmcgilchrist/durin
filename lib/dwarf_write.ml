@@ -1477,3 +1477,20 @@ let write_pubtypes_set buf (h : Dwarf.DebugPubtypes.header)
       write_null_terminated_string buf e.name)
     entries;
   write_offset buf fmt Unsigned.UInt64.zero
+
+(* Stage 19: .debug_types Writer *)
+
+let write_type_unit buf (enc : Dwarf.encoding) (die : Dwarf.DIE.t)
+    (lookup : int -> u64) (type_signature : u64) (type_offset : u64)
+    (debug_abbrev_offset : u64) =
+  let die_bytes = die_size die enc lookup in
+  let off_sz = Dwarf.offset_size_for_format enc.format in
+  let header_content_size = 2 + off_sz + 1 + 8 + off_sz in
+  let unit_length = header_content_size + die_bytes in
+  write_initial_length buf enc.format unit_length;
+  write_u16_le buf (Unsigned.UInt16.of_int 4);
+  write_offset buf enc.format debug_abbrev_offset;
+  write_u8 buf enc.address_size;
+  write_u64_le buf type_signature;
+  write_offset buf enc.format type_offset;
+  write_die buf die enc lookup

@@ -190,3 +190,15 @@ val write_pubtypes_set :
   Dwarf.DebugPubtypes.header ->
   Dwarf.DebugPubtypes.entry list ->
   unit
+
+(** {2 Stage 19: .debug_types Writer} *)
+
+val write_type_unit :
+  Buffer.t ->
+  Dwarf.encoding ->
+  Dwarf.DIE.t ->
+  (int -> Types.u64) ->
+  Types.u64 ->
+  Types.u64 ->
+  Types.u64 ->
+  unit
