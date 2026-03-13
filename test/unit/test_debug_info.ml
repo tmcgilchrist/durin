@@ -22,12 +22,11 @@ let test_dwarf5_cu_header_still_works () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "version is 5" (Unsigned.UInt16.to_int header.version) 5;
-  check int "address_size is 8" (Unsigned.UInt8.to_int header.address_size) 8;
-  check int "unit_type is 0x01" (Unsigned.UInt8.to_int header.unit_type) 0x01;
-  check int64 "abbrev_offset is 0"
+  check int "version is 5" 5 (Unsigned.UInt16.to_int header.version);
+  check int "address_size is 8" 8 (Unsigned.UInt8.to_int header.address_size);
+  check int "unit_type is 0x01" 0x01 (Unsigned.UInt8.to_int header.unit_type);
+  check int64 "abbrev_offset is 0" 0L
     (Unsigned.UInt64.to_int64 header.debug_abbrev_offset)
-    0L
 
 let test_dwarf4_cu_header () =
   let bytes =
@@ -36,14 +35,12 @@ let test_dwarf4_cu_header () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "version is 4" (Unsigned.UInt16.to_int header.version) 4;
-  check int "address_size is 8" (Unsigned.UInt8.to_int header.address_size) 8;
-  check int "unit_type is 0x01 (synthetic DW_UT_compile)"
-    (Unsigned.UInt8.to_int header.unit_type)
-    0x01;
-  check int64 "abbrev_offset is 0x20"
+  check int "version is 4" 4 (Unsigned.UInt16.to_int header.version);
+  check int "address_size is 8" 8 (Unsigned.UInt8.to_int header.address_size);
+  check int "unit_type is 0x01 (synthetic DW_UT_compile)" 0x01
+    (Unsigned.UInt8.to_int header.unit_type);
+  check int64 "abbrev_offset is 0x20" 0x20L
     (Unsigned.UInt64.to_int64 header.debug_abbrev_offset)
-    0x20L
 
 let test_dwarf4_cu_header_32bit () =
   let bytes =
@@ -52,7 +49,7 @@ let test_dwarf4_cu_header_32bit () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "address_size is 4" (Unsigned.UInt8.to_int header.address_size) 4
+  check int "address_size is 4" 4 (Unsigned.UInt8.to_int header.address_size)
 
 let test_unsupported_version_rejected () =
   let bytes =
@@ -98,17 +95,17 @@ let test_dwarf5_type_unit_header () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "unit_type is 0x02" (Unsigned.UInt8.to_int header.unit_type) 0x02;
-  check int "version is 5" (Unsigned.UInt16.to_int header.version) 5;
+  check int "unit_type is 0x02" 0x02 (Unsigned.UInt8.to_int header.unit_type);
+  check int "version is 5" 5 (Unsigned.UInt16.to_int header.version);
   (match header.type_signature with
   | Some sig8 ->
       check int64 "type_signature"
-        (Unsigned.UInt64.to_int64 sig8)
         (Int64.of_string "-0x2152411035014542")
+        (Unsigned.UInt64.to_int64 sig8)
   | None -> fail "expected type_signature");
   (match header.type_offset with
   | Some toff ->
-      check int64 "type_offset 0x20" (Unsigned.UInt64.to_int64 toff) 0x20L
+      check int64 "type_offset 0x20" 0x20L (Unsigned.UInt64.to_int64 toff)
   | None -> fail "expected type_offset");
   check bool "no dwo_id" true (header.dwo_id = None)
 
@@ -119,7 +116,7 @@ let test_dwarf5_partial_unit_header () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "unit_type is 0x03" (Unsigned.UInt8.to_int header.unit_type) 0x03;
+  check int "unit_type is 0x03" 0x03 (Unsigned.UInt8.to_int header.unit_type);
   check bool "no type_signature" true (header.type_signature = None);
   check bool "no dwo_id" true (header.dwo_id = None)
 
@@ -151,12 +148,12 @@ let test_dwarf5_skeleton_unit_header () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "unit_type is 0x04" (Unsigned.UInt8.to_int header.unit_type) 0x04;
+  check int "unit_type is 0x04" 0x04 (Unsigned.UInt8.to_int header.unit_type);
   (match header.dwo_id with
   | Some id ->
       check int64 "dwo_id"
-        (Unsigned.UInt64.to_int64 id)
         (Int64.of_string "0x0102030405060708")
+        (Unsigned.UInt64.to_int64 id)
   | None -> fail "expected dwo_id");
   check bool "no type_signature" true (header.type_signature = None)
 
@@ -188,16 +185,15 @@ let test_dwarf5_split_compile_unit_header () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "unit_type is 0x05" (Unsigned.UInt8.to_int header.unit_type) 0x05;
-  check int "address_size is 4" (Unsigned.UInt8.to_int header.address_size) 4;
-  check int64 "abbrev_offset 0x10"
-    (Unsigned.UInt64.to_int64 header.debug_abbrev_offset)
-    0x10L;
+  check int "unit_type is 0x05" 0x05 (Unsigned.UInt8.to_int header.unit_type);
+  check int "address_size is 4" 4 (Unsigned.UInt8.to_int header.address_size);
+  check int64 "abbrev_offset 0x10" 0x10L
+    (Unsigned.UInt64.to_int64 header.debug_abbrev_offset);
   match header.dwo_id with
   | Some id ->
       check int64 "dwo_id"
-        (Unsigned.UInt64.to_int64 id)
         (Int64.of_string "0x1100FFEEDDCCBBAA")
+        (Unsigned.UInt64.to_int64 id)
   | None -> fail "expected dwo_id"
 
 (* ---- Section type tests ---- *)
@@ -231,9 +227,8 @@ let test_dw_form_ref_addr () =
   in
   match value with
   | Dwarf.DIE.Reference offset ->
-      check int64 "ref_addr offset"
+      check int64 "ref_addr offset" 0x12345678L
         (Unsigned.UInt64.to_int64 offset)
-        0x12345678L
   | _ -> fail "expected Reference"
 
 let test_dw_form_indirect () =
@@ -249,7 +244,7 @@ let test_dw_form_indirect () =
   in
   match value with
   | Dwarf.DIE.UData v ->
-      check int64 "indirect data1 value" (Unsigned.UInt64.to_int64 v) 0x42L
+      check int64 "indirect data1 value" 0x42L (Unsigned.UInt64.to_int64 v)
   | _ -> fail "expected UData"
 
 (* ---- DWARF 4 line table header test ---- *)
@@ -286,14 +281,13 @@ let test_dwarf4_line_table_header () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let header = Dwarf.DebugLine.parse_line_program_header cursor buffer in
-  check int "version is 4" (Unsigned.UInt16.to_int header.version) 4;
-  check int "min_inst_length is 1"
-    (Unsigned.UInt8.to_int header.minimum_instruction_length)
-    1;
+  check int "version is 4" 4 (Unsigned.UInt16.to_int header.version);
+  check int "min_inst_length is 1" 1
+    (Unsigned.UInt8.to_int header.minimum_instruction_length);
   check bool "default_is_stmt" true header.default_is_stmt;
   check int "line_base is -5" (-5) header.line_base;
-  check int "line_range is 14" (Unsigned.UInt8.to_int header.line_range) 14;
-  check int "opcode_base is 13" (Unsigned.UInt8.to_int header.opcode_base) 13;
+  check int "line_range is 14" 14 (Unsigned.UInt8.to_int header.line_range);
+  check int "opcode_base is 13" 13 (Unsigned.UInt8.to_int header.opcode_base);
   check int "1 directory" 1 (Array.length header.directories);
   check string "directory is mydir" "mydir" header.directories.(0);
   check int "1 file" 1 (Array.length header.file_names);
@@ -314,7 +308,7 @@ let test_dw_form_addr_4byte () =
   in
   match value with
   | Dwarf.DIE.Address addr ->
-      check int64 "addr 0x12345678" (Unsigned.UInt64.to_int64 addr) 0x12345678L
+      check int64 "addr 0x12345678" 0x12345678L (Unsigned.UInt64.to_int64 addr)
   | _ -> fail "expected Address"
 
 let test_dw_form_addr_8byte () =
@@ -330,15 +324,14 @@ let test_dw_form_addr_8byte () =
   match value with
   | Dwarf.DIE.Address addr ->
       check int64 "addr 8-byte"
-        (Unsigned.UInt64.to_int64 addr)
         (Int64.of_string "0x123456789abcdef0")
+        (Unsigned.UInt64.to_int64 addr)
   | _ -> fail "expected Address"
 
 (* ---- DW_FORM_implicit_const test ---- *)
 
 let test_dw_form_implicit_const () =
-  let bytes = [] in
-  let buffer = buffer_of_bytes (0x00 :: bytes) in
+  let buffer = buffer_of_bytes [ 0x00 ] in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let encoding : Dwarf.encoding =
     { format = Dwarf.DWARF32; address_size = u8 8; version = u16 5 }
@@ -349,7 +342,7 @@ let test_dw_form_implicit_const () =
   in
   match value with
   | Dwarf.DIE.SData v ->
-      check int64 "implicit_const value" (Signed.Int64.to_int64 v) 42L
+      check int64 "implicit_const value" 42L (Signed.Int64.to_int64 v)
   | _ -> fail "expected SData"
 
 let test_dw_form_implicit_const_negative () =
@@ -364,7 +357,7 @@ let test_dw_form_implicit_const_negative () =
   in
   match value with
   | Dwarf.DIE.SData v ->
-      check int64 "negative implicit_const" (Signed.Int64.to_int64 v) (-5L)
+      check int64 "negative implicit_const" (-5L) (Signed.Int64.to_int64 v)
   | _ -> fail "expected SData"
 
 (* ---- DW_FORM_loclistx / rnglistx / ref_udata / ref_sig8 ---- *)
@@ -382,7 +375,7 @@ let test_dw_form_loclistx () =
   in
   match value with
   | Dwarf.DIE.UData v ->
-      check int64 "loclistx index 3" (Unsigned.UInt64.to_int64 v) 3L
+      check int64 "loclistx index 3" 3L (Unsigned.UInt64.to_int64 v)
   | _ -> fail "expected UData"
 
 let test_dw_form_rnglistx () =
@@ -398,7 +391,7 @@ let test_dw_form_rnglistx () =
   in
   match value with
   | Dwarf.DIE.UData v ->
-      check int64 "rnglistx index 7" (Unsigned.UInt64.to_int64 v) 7L
+      check int64 "rnglistx index 7" 7L (Unsigned.UInt64.to_int64 v)
   | _ -> fail "expected UData"
 
 let test_dw_form_ref_udata () =
@@ -414,7 +407,7 @@ let test_dw_form_ref_udata () =
   in
   match value with
   | Dwarf.DIE.Reference v ->
-      check int64 "ref_udata 128" (Unsigned.UInt64.to_int64 v) 128L
+      check int64 "ref_udata 128" 128L (Unsigned.UInt64.to_int64 v)
   | _ -> fail "expected Reference"
 
 let test_dw_form_ref_sig8 () =
@@ -431,8 +424,8 @@ let test_dw_form_ref_sig8 () =
   match value with
   | Dwarf.DIE.Reference v ->
       check int64 "ref_sig8"
-        (Unsigned.UInt64.to_int64 v)
         (Int64.of_string "-0x2152411035014542")
+        (Unsigned.UInt64.to_int64 v)
   | _ -> fail "expected Reference"
 
 let test_resolve_functions_exist () =

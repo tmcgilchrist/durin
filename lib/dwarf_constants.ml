@@ -136,6 +136,20 @@ let decimal_sign = function
   | 0x05 -> DW_DS_trailing_separate
   | n -> failwith (Printf.sprintf "Unknown decimal_sign: 0x%02x" n)
 
+let int_of_decimal_sign = function
+  | DW_DS_unsigned -> 0x01
+  | DW_DS_leading_overpunch -> 0x02
+  | DW_DS_trailing_overpunch -> 0x03
+  | DW_DS_leading_separate -> 0x04
+  | DW_DS_trailing_separate -> 0x05
+
+let string_of_decimal_sign = function
+  | DW_DS_unsigned -> "DW_DS_unsigned"
+  | DW_DS_leading_overpunch -> "DW_DS_leading_overpunch"
+  | DW_DS_trailing_overpunch -> "DW_DS_trailing_overpunch"
+  | DW_DS_leading_separate -> "DW_DS_leading_separate"
+  | DW_DS_trailing_separate -> "DW_DS_trailing_separate"
+
 type endianity =
   | DW_END_default
   | DW_END_big
@@ -151,6 +165,20 @@ let endianity = function
   | 0xff -> DW_END_hi_user
   | n -> failwith (Printf.sprintf "Unknown endianity: 0x%02x" n)
 
+let int_of_endianity = function
+  | DW_END_default -> 0x00
+  | DW_END_big -> 0x01
+  | DW_END_little -> 0x02
+  | DW_END_lo_user -> 0x40
+  | DW_END_hi_user -> 0xff
+
+let string_of_endianity = function
+  | DW_END_default -> "DW_END_default"
+  | DW_END_big -> "DW_END_big"
+  | DW_END_little -> "DW_END_little"
+  | DW_END_lo_user -> "DW_END_lo_user"
+  | DW_END_hi_user -> "DW_END_hi_user"
+
 type accessibility =
   | DW_ACCESS_public
   | DW_ACCESS_protected
@@ -162,6 +190,16 @@ let accessibility = function
   | 0x03 -> DW_ACCESS_private
   | n -> failwith (Printf.sprintf "Unknown accessibility: 0x%02x" n)
 
+let int_of_accessibility = function
+  | DW_ACCESS_public -> 0x01
+  | DW_ACCESS_protected -> 0x02
+  | DW_ACCESS_private -> 0x03
+
+let string_of_accessibility = function
+  | DW_ACCESS_public -> "DW_ACCESS_public"
+  | DW_ACCESS_protected -> "DW_ACCESS_protected"
+  | DW_ACCESS_private -> "DW_ACCESS_private"
+
 type visibility = DW_VIS_local | DW_VIS_exported | DW_VIS_qualified
 
 let visibility = function
@@ -169,6 +207,16 @@ let visibility = function
   | 0x02 -> DW_VIS_exported
   | 0x03 -> DW_VIS_qualified
   | n -> failwith (Printf.sprintf "Unknown visibility: 0x%02x" n)
+
+let int_of_visibility = function
+  | DW_VIS_local -> 0x01
+  | DW_VIS_exported -> 0x02
+  | DW_VIS_qualified -> 0x03
+
+let string_of_visibility = function
+  | DW_VIS_local -> "DW_VIS_local"
+  | DW_VIS_exported -> "DW_VIS_exported"
+  | DW_VIS_qualified -> "DW_VIS_qualified"
 
 type virtuality =
   | DW_VIRTUALITY_none
@@ -180,6 +228,16 @@ let virtuality = function
   | 0x01 -> DW_VIRTUALITY_virtual
   | 0x02 -> DW_VIRTUALITY_pure_virtual
   | n -> failwith (Printf.sprintf "Unknown virtuality: 0x%02x" n)
+
+let int_of_virtuality = function
+  | DW_VIRTUALITY_none -> 0x00
+  | DW_VIRTUALITY_virtual -> 0x01
+  | DW_VIRTUALITY_pure_virtual -> 0x02
+
+let string_of_virtuality = function
+  | DW_VIRTUALITY_none -> "DW_VIRTUALITY_none"
+  | DW_VIRTUALITY_virtual -> "DW_VIRTUALITY_virtual"
+  | DW_VIRTUALITY_pure_virtual -> "DW_VIRTUALITY_pure_virtual"
 
 type dwarf_language =
   | DW_LANG_C89
@@ -359,6 +417,18 @@ let identifier = function
   | 0x03 -> DW_ID_case_insensitive
   | n -> failwith (Printf.sprintf "Unknown identifier: 0x%02x" n)
 
+let int_of_identifier = function
+  | DW_ID_case_sensitive -> 0x00
+  | DW_ID_up_case -> 0x01
+  | DW_ID_down_case -> 0x02
+  | DW_ID_case_insensitive -> 0x03
+
+let string_of_identifier = function
+  | DW_ID_case_sensitive -> "DW_ID_case_sensitive"
+  | DW_ID_up_case -> "DW_ID_up_case"
+  | DW_ID_down_case -> "DW_ID_down_case"
+  | DW_ID_case_insensitive -> "DW_ID_case_insensitive"
+
 type calling_convention =
   | DW_CC_normal
   | DW_CC_program
@@ -377,6 +447,15 @@ let calling_convention = function
   | 0x40 -> DW_CC_lo_user
   | 0xff -> DW_CC_hi_user
   | n -> failwith (Printf.sprintf "Unknown calling_convention: 0x%02x" n)
+
+let int_of_calling_convention = function
+  | DW_CC_normal -> 0x01
+  | DW_CC_program -> 0x02
+  | DW_CC_nocall -> 0x03
+  | DW_CC_pass_by_reference -> 0x04
+  | DW_CC_pass_by_value -> 0x05
+  | DW_CC_lo_user -> 0x40
+  | DW_CC_hi_user -> 0xff
 
 let string_of_calling_convention = function
   | DW_CC_normal -> "DW_CC_normal"
@@ -400,15 +479,41 @@ let inlined = function
   | 0x03 -> DW_INL_declared_inlined
   | n -> failwith (Printf.sprintf "Unknown inlined: 0x%02x" n)
 
+let int_of_inlined = function
+  | DW_INL_not_inlined -> 0x00
+  | DW_INL_inlined -> 0x01
+  | DW_INL_declared_not_inlined -> 0x02
+  | DW_INL_declared_inlined -> 0x03
+
+let string_of_inlined = function
+  | DW_INL_not_inlined -> "DW_INL_not_inlined"
+  | DW_INL_inlined -> "DW_INL_inlined"
+  | DW_INL_declared_not_inlined -> "DW_INL_declared_not_inlined"
+  | DW_INL_declared_inlined -> "DW_INL_declared_inlined"
+
 type array_ordering = DW_ORD_row_major | DW_ORD_col_major
 
 let array_ordering = function
   | 0x00 -> DW_ORD_row_major
   | 0x01 -> DW_ORD_col_major
+  | n -> failwith (Printf.sprintf "Unknown array_ordering: 0x%02x" n)
+
+let int_of_array_ordering = function
+  | DW_ORD_row_major -> 0x00
+  | DW_ORD_col_major -> 0x01
+
+let string_of_array_ordering = function
+  | DW_ORD_row_major -> "DW_ORD_row_major"
+  | DW_ORD_col_major -> "DW_ORD_col_major"
 
 type discriminant = DW_DSC_label | DW_DSC_range
 
-let discriminant = function 0x00 -> DW_DSC_label | 0x01 -> DW_DSC_range
+let discriminant = function
+  | 0x00 -> DW_DSC_label
+  | 0x01 -> DW_DSC_range
+  | n -> failwith (Printf.sprintf "Unknown discriminant: 0x%02x" n)
+
+let int_of_discriminant = function DW_DSC_label -> 0x00 | DW_DSC_range -> 0x01
 
 type name_index_attribute =
   | DW_IDX_null
@@ -464,6 +569,16 @@ let defaulted_attribute = function
   | 0x01 -> DW_DEFAULTED_in_class
   | 0x02 -> DW_DEFAULTED_out_of_class
   | n -> failwith (Printf.sprintf "Unknown defaulted_attribute: 0x%02x" n)
+
+let int_of_defaulted_attribute = function
+  | DW_DEFAULTED_no -> 0x00
+  | DW_DEFAULTED_in_class -> 0x01
+  | DW_DEFAULTED_out_of_class -> 0x02
+
+let string_of_defaulted_attribute = function
+  | DW_DEFAULTED_no -> "DW_DEFAULTED_no"
+  | DW_DEFAULTED_in_class -> "DW_DEFAULTED_in_class"
+  | DW_DEFAULTED_out_of_class -> "DW_DEFAULTED_out_of_class"
 
 type range_list_entry =
   | DW_RLE_end_of_list

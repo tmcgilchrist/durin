@@ -20,6 +20,8 @@ type unit_type =
 val unit_type_of_u8 : Unsigned.UInt8.t -> unit_type
 (** Convert a u8 value to a unit_type *)
 
+val int_of_unit_type : unit_type -> int
+
 val string_of_unit_type : unit_type -> string
 (** Convert a unit_type to its string representation *)
 
@@ -139,6 +141,8 @@ type abbreviation_tag =
   | DW_TAG_lo_user
   | DW_TAG_hi_user
 
+val abbreviation_tag_of_int : u64 -> abbreviation_tag
+
 val uint64_of_abbreviation_tag : abbreviation_tag -> u64
 (** Convert a DWARF [abbreviation_tag] tag to a string *)
 
@@ -152,6 +156,9 @@ val string_of_abbreviation_tag_direct : abbreviation_tag -> string
 (** The encodings for the child determination byte. Table 7.4: Child
     determination encodings *)
 type children_determination = DW_CHILDREN_no | DW_CHILDREN_yes
+
+val children_determination : int -> children_determination
+val int_of_children_determination : children_determination -> int
 
 (** The encodings for the attribute names.
 
@@ -291,6 +298,8 @@ type attribute_encoding =
 val string_of_attribute_encoding : attribute_encoding -> string
 (** Convert an attribute_encoding type to its string representation *)
 
+val attribute_encoding : u64 -> attribute_encoding
+
 val u64_of_attribute_encoding : attribute_encoding -> u64
 (** Convert an attribute_encoding to its numeric DWARF code *)
 
@@ -349,6 +358,8 @@ type attribute_form_encoding =
 
 val string_of_attribute_form_encoding_variant :
   attribute_form_encoding -> string
+
+val attribute_form_encoding : u64 -> attribute_form_encoding
 
 val u64_of_attribute_form_encoding : attribute_form_encoding -> u64
 (** Convert an attribute_form_encoding to its numeric DWARF code *)
@@ -557,6 +568,7 @@ type location_list_entry =
   | DW_LLE_start_end
   | DW_LLE_start_length
 
+val location_list_entry : int -> location_list_entry
 val int_of_location_list_entry : location_list_entry -> int
 
 (* Base type encoding.
@@ -589,6 +601,7 @@ type base_type =
   | DW_ATE_lo_user
   | DW_ATE_hi_user
 
+val base_type : int -> base_type
 val int_of_base_type : base_type -> int
 
 val string_of_base_type : base_type -> string
@@ -604,6 +617,10 @@ type decimal_sign =
   | DW_DS_leading_separate
   | DW_DS_trailing_separate
 
+val decimal_sign : int -> decimal_sign
+val int_of_decimal_sign : decimal_sign -> int
+val string_of_decimal_sign : decimal_sign -> string
+
 (** Endianity encoding. The encodings of the constants used in the
     [DW_AT_endianity] attribute. Table 7.13: Endianity encodings *)
 type endianity =
@@ -613,6 +630,10 @@ type endianity =
   | DW_END_lo_user
   | DW_END_hi_user
 
+val endianity : int -> endianity
+val int_of_endianity : endianity -> int
+val string_of_endianity : endianity -> string
+
 (** Accessibility encoding. The encodings of the constants used in the
     [DW_AT_accessibility] attribute. Table 7.14: Accessibility encodings *)
 type accessibility =
@@ -620,11 +641,19 @@ type accessibility =
   | DW_ACCESS_protected
   | DW_ACCESS_private
 
+val accessibility : int -> accessibility
+val int_of_accessibility : accessibility -> int
+val string_of_accessibility : accessibility -> string
+
 (** Visibility encoding. The encodings of the constants used in the
     DW_AT_visibility attribute.
 
     Table 7.15: Visibility encodings *)
 type visibility = DW_VIS_local | DW_VIS_exported | DW_VIS_qualified
+
+val visibility : int -> visibility
+val int_of_visibility : visibility -> int
+val string_of_visibility : visibility -> string
 
 (** Virtuality encoding. The encodings of the constants used in the
     [DW_AT_virtuality] attribute Table 7.16: Virtuality encodings *)
@@ -632,6 +661,10 @@ type virtuality =
   | DW_VIRTUALITY_none
   | DW_VIRTUALITY_virtual
   | DW_VIRTUALITY_pure_virtual
+
+val virtuality : int -> virtuality
+val int_of_virtuality : virtuality -> int
+val string_of_virtuality : virtuality -> string
 
 (** Language encoding. The encodings of the constants used in the
     [DW_AT_language] attribute Table 7.17: Language encodings *)
@@ -676,6 +709,7 @@ type dwarf_language =
   | DW_LANG_lo_user
   | DW_LANG_hi_user
 
+val dwarf_language : int -> dwarf_language
 val int_of_dwarf_language : dwarf_language -> int
 
 val string_of_dwarf_language : dwarf_language -> string
@@ -688,6 +722,10 @@ type identifier =
   | DW_ID_up_case
   | DW_ID_down_case
   | DW_ID_case_insensitive
+
+val identifier : int -> identifier
+val int_of_identifier : identifier -> int
+val string_of_identifier : identifier -> string
 
 (** Calling convention. The encodings of the constants used in the
     [DW_AT_calling_convention] attribute. Table 7.19: Calling convention
@@ -702,6 +740,7 @@ type calling_convention =
   | DW_CC_hi_user
 
 val calling_convention : int -> calling_convention
+val int_of_calling_convention : calling_convention -> int
 val string_of_calling_convention : calling_convention -> string
 
 (** Inlined encoding. The encodings of the constants used in the DW_AT_inline
@@ -712,14 +751,25 @@ type inlined =
   | DW_INL_declared_not_inlined
   | DW_INL_declared_inlined
 
+val inlined : int -> inlined
+val int_of_inlined : inlined -> int
+val string_of_inlined : inlined -> string
+
 (** Array ordering. The encodings of the constants used in the DW_AT_ordering
     attribute. Table 7.21: Ordering encodings *)
 type array_ordering = DW_ORD_row_major | DW_ORD_col_major
+
+val array_ordering : int -> array_ordering
+val int_of_array_ordering : array_ordering -> int
+val string_of_array_ordering : array_ordering -> string
 
 (** Discriminant. The descriptors used in the [DW_AT_discr_list] attribute are
     encoded as 1-byte constants. Table 7.22: Discriminant descriptor encodings
 *)
 type discriminant = DW_DSC_label | DW_DSC_range
+
+val discriminant : int -> discriminant
+val int_of_discriminant : discriminant -> int
 
 (** Name index attribute Table 7.23: Name index attribute encodings
 
@@ -735,6 +785,7 @@ type name_index_attribute =
   | DW_IDX_lo_user
   | DW_IDX_hi_user
 
+val name_index_attribute : int -> name_index_attribute
 val int_of_name_index_attribute : name_index_attribute -> int
 val string_of_name_index_attribute : name_index_attribute -> string
 
@@ -746,6 +797,10 @@ type defaulted_attribute =
   | DW_DEFAULTED_no
   | DW_DEFAULTED_in_class
   | DW_DEFAULTED_out_of_class
+
+val defaulted_attribute : int -> defaulted_attribute
+val int_of_defaulted_attribute : defaulted_attribute -> int
+val string_of_defaulted_attribute : defaulted_attribute -> string
 
 (** Line number opcodes. The encodings for the standard opcodes. Table 7.25:
     Line number standard opcode encodings *)
@@ -764,6 +819,7 @@ type line_number_opcode =
   | DW_LNS_set_isa
 
 val line_number_opcode : int -> line_number_opcode
+val int_of_line_number_opcode : line_number_opcode -> int
 val string_of_line_number_opcode : line_number_opcode -> string
 
 (** Line number extended opcodes. The encodings for the extended opcodes. Table
@@ -774,6 +830,9 @@ type line_number_extended_opcode =
   | DW_LNE_set_discriminator
   | DW_LNE_lo_user
   | DW_LNE_hi_user
+
+val line_number_extended_opcode : int -> line_number_extended_opcode
+val int_of_line_number_extended_opcode : line_number_extended_opcode -> int
 
 val string_of_line_number_extended_opcode :
   line_number_extended_opcode -> string
@@ -790,6 +849,8 @@ type line_number_header_entry =
   | DW_LNCT_lo_user
   | DW_LNCT_hi_user
 
+val line_number_header_entry : int -> line_number_header_entry
+val int_of_line_number_header_entry : line_number_header_entry -> int
 val string_of_line_number_header_entry : line_number_header_entry -> string
 
 (** The macro information entry type is encoded as a single unsigned byte. Table
@@ -810,6 +871,7 @@ type macro_info_entry_type =
   | DW_MACRO_lo_user
   | DW_MACRO_hi_user
 
+val macro_info_entry_type : int -> macro_info_entry_type
 val macro_info_entry_type_of_u8 : Types.u8 -> macro_info_entry_type
 val int_of_macro_info_entry_type : macro_info_entry_type -> int
 val string_of_macro_info_entry_type : macro_info_entry_type -> string
@@ -964,6 +1026,7 @@ type range_list_entry =
           of entry that follows. The encodings for these constants are given in
           Table 7.30: Range list entry encoding values *)
 
+val range_list_entry : int -> range_list_entry
 val int_of_range_list_entry : range_list_entry -> int
 
 type t
@@ -1033,6 +1096,24 @@ module DIE : sig
     | Language of dwarf_language  (** Language from DW_AT_language attribute *)
     | Encoding of base_type
         (** Data type encoding from DW_AT_encoding attribute *)
+    | Ordering of array_ordering
+        (** Array ordering from DW_AT_ordering attribute *)
+    | DecimalSign of decimal_sign
+        (** Decimal sign from DW_AT_decimal_sign attribute *)
+    | Endianity of endianity  (** Byte order from DW_AT_endianity attribute *)
+    | Accessibility of accessibility
+        (** Access control from DW_AT_accessibility attribute *)
+    | Visibility of visibility
+        (** Visibility from DW_AT_visibility attribute *)
+    | Virtuality of virtuality
+        (** Virtuality from DW_AT_virtuality attribute *)
+    | IdentifierCase of identifier
+        (** Identifier case from DW_AT_identifier_case attribute *)
+    | CallingConvention of calling_convention
+        (** Calling convention from DW_AT_calling_convention attribute *)
+    | Inline of inlined  (** Inline status from DW_AT_inline attribute *)
+    | Defaulted of defaulted_attribute
+        (** Defaulted status from DW_AT_defaulted attribute *)
 
   type attribute = { attr : attribute_encoding; value : attribute_value }
   (** A DWARF attribute consisting of name and value *)

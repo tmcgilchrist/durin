@@ -100,6 +100,16 @@ let form_for_attribute_value :
   | Block _ -> DW_FORM_block
   | Language _ -> DW_FORM_udata
   | Encoding _ -> DW_FORM_udata
+  | Ordering _ -> DW_FORM_udata
+  | DecimalSign _ -> DW_FORM_udata
+  | Endianity _ -> DW_FORM_udata
+  | Accessibility _ -> DW_FORM_udata
+  | Visibility _ -> DW_FORM_udata
+  | Virtuality _ -> DW_FORM_udata
+  | IdentifierCase _ -> DW_FORM_udata
+  | CallingConvention _ -> DW_FORM_udata
+  | Inline _ -> DW_FORM_udata
+  | Defaulted _ -> DW_FORM_udata
 
 type die_shape = {
   tag : Dwarf.abbreviation_tag;
@@ -250,6 +260,28 @@ let write_attribute_value buf (value : Dwarf.DIE.attribute_value)
       write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_dwarf_language l))
   | DW_FORM_udata, Encoding e ->
       write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_base_type e))
+  | DW_FORM_udata, Ordering v ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_array_ordering v))
+  | DW_FORM_udata, DecimalSign v ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_decimal_sign v))
+  | DW_FORM_udata, Endianity v ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_endianity v))
+  | DW_FORM_udata, Accessibility v ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_accessibility v))
+  | DW_FORM_udata, Visibility v ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_visibility v))
+  | DW_FORM_udata, Virtuality v ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_virtuality v))
+  | DW_FORM_udata, IdentifierCase v ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_identifier v))
+  | DW_FORM_udata, CallingConvention v ->
+      write_uleb128 buf
+        (Unsigned.UInt64.of_int (Dwarf.int_of_calling_convention v))
+  | DW_FORM_udata, Inline v ->
+      write_uleb128 buf (Unsigned.UInt64.of_int (Dwarf.int_of_inlined v))
+  | DW_FORM_udata, Defaulted v ->
+      write_uleb128 buf
+        (Unsigned.UInt64.of_int (Dwarf.int_of_defaulted_attribute v))
   | DW_FORM_sdata, SData v -> write_sleb128 buf v
   | DW_FORM_addr, Address a ->
       write_address buf (Unsigned.UInt8.to_int enc.address_size) a
@@ -276,6 +308,26 @@ let attribute_value_size (value : Dwarf.DIE.attribute_value)
       uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_dwarf_language l))
   | DW_FORM_udata, Encoding e ->
       uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_base_type e))
+  | DW_FORM_udata, Ordering v ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_array_ordering v))
+  | DW_FORM_udata, DecimalSign v ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_decimal_sign v))
+  | DW_FORM_udata, Endianity v ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_endianity v))
+  | DW_FORM_udata, Accessibility v ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_accessibility v))
+  | DW_FORM_udata, Visibility v ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_visibility v))
+  | DW_FORM_udata, Virtuality v ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_virtuality v))
+  | DW_FORM_udata, IdentifierCase v ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_identifier v))
+  | DW_FORM_udata, CallingConvention v ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_calling_convention v))
+  | DW_FORM_udata, Inline v ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_inlined v))
+  | DW_FORM_udata, Defaulted v ->
+      uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_defaulted_attribute v))
   | DW_FORM_sdata, SData v -> sleb128_size v
   | DW_FORM_addr, Address _ -> Unsigned.UInt8.to_int enc.address_size
   | DW_FORM_addrx, IndexedAddress (idx, _) ->

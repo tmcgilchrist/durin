@@ -43,6 +43,28 @@ let emit_attribute_value fmt (value : Dwarf.DIE.attribute_value)
       emit_uleb128 fmt (Unsigned.UInt64.of_int (Dwarf.int_of_dwarf_language l))
   | DW_FORM_udata, Encoding e ->
       emit_uleb128 fmt (Unsigned.UInt64.of_int (Dwarf.int_of_base_type e))
+  | DW_FORM_udata, Ordering v ->
+      emit_uleb128 fmt (Unsigned.UInt64.of_int (Dwarf.int_of_array_ordering v))
+  | DW_FORM_udata, DecimalSign v ->
+      emit_uleb128 fmt (Unsigned.UInt64.of_int (Dwarf.int_of_decimal_sign v))
+  | DW_FORM_udata, Endianity v ->
+      emit_uleb128 fmt (Unsigned.UInt64.of_int (Dwarf.int_of_endianity v))
+  | DW_FORM_udata, Accessibility v ->
+      emit_uleb128 fmt (Unsigned.UInt64.of_int (Dwarf.int_of_accessibility v))
+  | DW_FORM_udata, Visibility v ->
+      emit_uleb128 fmt (Unsigned.UInt64.of_int (Dwarf.int_of_visibility v))
+  | DW_FORM_udata, Virtuality v ->
+      emit_uleb128 fmt (Unsigned.UInt64.of_int (Dwarf.int_of_virtuality v))
+  | DW_FORM_udata, IdentifierCase v ->
+      emit_uleb128 fmt (Unsigned.UInt64.of_int (Dwarf.int_of_identifier v))
+  | DW_FORM_udata, CallingConvention v ->
+      emit_uleb128 fmt
+        (Unsigned.UInt64.of_int (Dwarf.int_of_calling_convention v))
+  | DW_FORM_udata, Inline v ->
+      emit_uleb128 fmt (Unsigned.UInt64.of_int (Dwarf.int_of_inlined v))
+  | DW_FORM_udata, Defaulted v ->
+      emit_uleb128 fmt
+        (Unsigned.UInt64.of_int (Dwarf.int_of_defaulted_attribute v))
   | DW_FORM_sdata, SData v -> emit_sleb128 fmt v
   | DW_FORM_addr, Address a -> (
       match Unsigned.UInt8.to_int enc.address_size with

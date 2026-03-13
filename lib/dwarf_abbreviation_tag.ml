@@ -215,14 +215,25 @@ let uint64_of_abbreviation_tag tag =
     | DW_TAG_type_unit -> 0x41
     | DW_TAG_rvalue_reference_type -> 0x42
     | DW_TAG_template_alias -> 0x43
+    (* New in DWARF 5 *)
+    | DW_TAG_coarray_type -> 0x44
+    | DW_TAG_generic_subrange -> 0x45
+    | DW_TAG_dynamic_type -> 0x46
+    | DW_TAG_atomic_type -> 0x47
+    | DW_TAG_call_site -> 0x48
+    | DW_TAG_call_site_parameter -> 0x49
+    | DW_TAG_skeleton_unit -> 0x4a
+    | DW_TAG_immutable_type -> 0x4b
     (* GNU extensions *)
     | DW_TAG_GNU_template_parameter_pack -> 0x4107
-    | _ -> 0 (* Unknown tag *)
+    | DW_TAG_lo_user -> 0x4080
+    | DW_TAG_hi_user -> 0xffff
   in
   Unsigned.UInt64.of_int code
 
 let string_of_abbreviation_tag tag_code =
   match Unsigned.UInt64.to_int tag_code with
+  | 0x00 -> "DW_TAG_null"
   | 0x01 -> "DW_TAG_array_type"
   | 0x02 -> "DW_TAG_class_type"
   | 0x03 -> "DW_TAG_entry_point"
@@ -283,6 +294,14 @@ let string_of_abbreviation_tag tag_code =
   | 0x41 -> "DW_TAG_type_unit"
   | 0x42 -> "DW_TAG_rvalue_reference_type"
   | 0x43 -> "DW_TAG_template_alias"
+  | 0x44 -> "DW_TAG_coarray_type"
+  | 0x45 -> "DW_TAG_generic_subrange"
+  | 0x46 -> "DW_TAG_dynamic_type"
+  | 0x47 -> "DW_TAG_atomic_type"
+  | 0x48 -> "DW_TAG_call_site"
+  | 0x49 -> "DW_TAG_call_site_parameter"
+  | 0x4a -> "DW_TAG_skeleton_unit"
+  | 0x4b -> "DW_TAG_immutable_type"
   | 0x4107 -> "DW_TAG_GNU_template_parameter_pack"
   | code -> Printf.sprintf "DW_TAG_<0x%02x>" code
 
@@ -295,3 +314,8 @@ type children_determination = DW_CHILDREN_no | DW_CHILDREN_yes
 let children_determination = function
   | 0x00 -> DW_CHILDREN_no
   | 0x01 -> DW_CHILDREN_yes
+  | n -> failwith (Printf.sprintf "Unknown children_determination: 0x%02x" n)
+
+let int_of_children_determination = function
+  | DW_CHILDREN_no -> 0x00
+  | DW_CHILDREN_yes -> 0x01

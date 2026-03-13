@@ -69,9 +69,11 @@ let test_dwarf5_tags () =
   check string "DW_TAG_GNU_template_parameter_pack"
     "DW_TAG_GNU_template_parameter_pack"
     (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x4107));
-  (* Tags not yet in the string table produce fallback *)
-  check string "unknown tag fallback" "DW_TAG_<0x48>"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x48))
+  check string "DW_TAG_call_site" "DW_TAG_call_site"
+    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x48));
+  (* Unknown tags produce fallback *)
+  check string "unknown tag fallback" "DW_TAG_<0x99>"
+    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x99))
 
 (* ---- Attribute code string conversion ---- *)
 

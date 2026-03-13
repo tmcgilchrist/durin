@@ -439,6 +439,26 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
             Printf.sprintf "(%s)" (Dwarf.string_of_dwarf_language lang)
         | Dwarf.DIE.Encoding enc ->
             Printf.sprintf "(%s)" (Dwarf.string_of_base_type enc)
+        | Dwarf.DIE.Ordering v ->
+            Printf.sprintf "(%s)" (Dwarf.string_of_array_ordering v)
+        | Dwarf.DIE.DecimalSign v ->
+            Printf.sprintf "(%s)" (Dwarf.string_of_decimal_sign v)
+        | Dwarf.DIE.Endianity v ->
+            Printf.sprintf "(%s)" (Dwarf.string_of_endianity v)
+        | Dwarf.DIE.Accessibility v ->
+            Printf.sprintf "(%s)" (Dwarf.string_of_accessibility v)
+        | Dwarf.DIE.Visibility v ->
+            Printf.sprintf "(%s)" (Dwarf.string_of_visibility v)
+        | Dwarf.DIE.Virtuality v ->
+            Printf.sprintf "(%s)" (Dwarf.string_of_virtuality v)
+        | Dwarf.DIE.IdentifierCase v ->
+            Printf.sprintf "(%s)" (Dwarf.string_of_identifier v)
+        | Dwarf.DIE.CallingConvention v ->
+            Printf.sprintf "(%s)" (Dwarf.string_of_calling_convention v)
+        | Dwarf.DIE.Inline v ->
+            Printf.sprintf "(%s)" (Dwarf.string_of_inlined v)
+        | Dwarf.DIE.Defaulted v ->
+            Printf.sprintf "(%s)" (Dwarf.string_of_defaulted_attribute v)
       in
       Printf.printf "%s%s\t%s\n" attr_spaces attr_name attr_value)
     die.Dwarf.DIE.attributes;

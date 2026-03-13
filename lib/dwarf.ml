@@ -108,6 +108,16 @@ let unit_type_of_u8 u =
   | 0xff -> DW_UT_hi_user
   | n -> failwith (Printf.sprintf "Unknown unit type: 0x%02x" n)
 
+let int_of_unit_type = function
+  | DW_UT_compile -> 0x01
+  | DW_UT_type -> 0x02
+  | DW_UT_partial -> 0x03
+  | DW_UT_skeleton -> 0x04
+  | DW_UT_split_compile -> 0x05
+  | DW_UT_split_type -> 0x06
+  | DW_UT_lo_user -> 0x80
+  | DW_UT_hi_user -> 0xff
+
 let string_of_unit_type = function
   | DW_UT_compile -> "DW_UT_compile"
   | DW_UT_type -> "DW_UT_type"
@@ -256,6 +266,20 @@ let line_number_opcode = function
   | 0x0c -> DW_LNS_set_isa
   | n -> failwith (Printf.sprintf "Unknown line_number_opcode: 0x%02x" n)
 
+let int_of_line_number_opcode = function
+  | DW_LNS_copy -> 0x01
+  | DW_LNS_advance_pc -> 0x02
+  | DW_LNS_advance_line -> 0x03
+  | DW_LNS_set_file -> 0x04
+  | DW_LNS_set_column -> 0x05
+  | DW_LNS_negate_stmt -> 0x06
+  | DW_LNS_set_basic_block -> 0x07
+  | DW_LNS_const_add_pc -> 0x08
+  | DW_LNS_fixed_advance_pc -> 0x09
+  | DW_LNS_set_prologue_end -> 0x0a
+  | DW_LNS_set_epilogue_begin -> 0x0b
+  | DW_LNS_set_isa -> 0x0c
+
 let string_of_line_number_opcode = function
   | DW_LNS_copy -> "DW_LNS_copy"
   | DW_LNS_advance_pc -> "DW_LNS_advance_pc"
@@ -286,6 +310,13 @@ let line_number_extended_opcode = function
   | n ->
       failwith (Printf.sprintf "Unknown line_number_extended_opcode: 0x%02x" n)
 
+let int_of_line_number_extended_opcode = function
+  | DW_LNE_end_sequence -> 0x01
+  | DW_LNE_set_address -> 0x02
+  | DW_LNE_set_discriminator -> 0x04
+  | DW_LNE_lo_user -> 0x80
+  | DW_LNE_hi_user -> 0xff
+
 let string_of_line_number_extended_opcode = function
   | DW_LNE_end_sequence -> "DW_LNE_end_sequence"
   | DW_LNE_set_address -> "DW_LNE_set_address"
@@ -311,6 +342,15 @@ let line_number_header_entry = function
   | 0x2000 -> DW_LNCT_lo_user
   | 0x3fff -> DW_LNCT_hi_user
   | n -> failwith (Printf.sprintf "Unknown line_number_header_entry: 0x%04x" n)
+
+let int_of_line_number_header_entry = function
+  | DW_LNCT_path -> 0x1
+  | DW_LNCT_directory_index -> 0x2
+  | DW_LNCT_timestamp -> 0x3
+  | DW_LNCT_size -> 0x4
+  | DW_LNCT_MD5 -> 0x5
+  | DW_LNCT_lo_user -> 0x2000
+  | DW_LNCT_hi_user -> 0x3fff
 
 let string_of_line_number_header_entry = function
   | DW_LNCT_path -> "DW_LNCT_path"
@@ -1940,6 +1980,16 @@ module DIE = struct
     | Block of string
     | Language of dwarf_language
     | Encoding of base_type
+    | Ordering of array_ordering
+    | DecimalSign of decimal_sign
+    | Endianity of endianity
+    | Accessibility of accessibility
+    | Visibility of visibility
+    | Virtuality of virtuality
+    | IdentifierCase of identifier
+    | CallingConvention of calling_convention
+    | Inline of inlined
+    | Defaulted of defaulted_attribute
 
   type attribute = { attr : attribute_encoding; value : attribute_value }
 
@@ -2196,23 +2246,50 @@ module DIE = struct
         | None -> String (Printf.sprintf "<gnu_strp_alt_offset:%d>" offset_int))
     | _ -> String "<unsupported_form>"
 
-  let process_language_attribute (raw_value : attribute_value) : attribute_value
-      =
+  let process_constant_attribute (decode : int -> 'a)
+      (wrap : 'a -> attribute_value) (raw_value : attribute_value) :
+      attribute_value =
     match raw_value with
-    | UData lang_code -> (
-        let lang_int = Unsigned.UInt64.to_int lang_code in
-        (* Language codes are parsed correctly by Object.Buffer based on file endianness *)
-        try Language (dwarf_language lang_int) with _ -> raw_value)
+    | UData code -> (
+        let code_int = Unsigned.UInt64.to_int code in
+        try wrap (decode code_int) with _ -> raw_value)
     | _ -> raw_value
 
-  let process_encoding_attribute (raw_value : attribute_value) : attribute_value
-      =
-    match raw_value with
-    | UData encoding_code -> (
-        let encoding_int = Unsigned.UInt64.to_int encoding_code in
-        (* Encoding codes are parsed correctly by Object.Buffer based on file endianness *)
-        try Encoding (base_type encoding_int) with _ -> raw_value)
-    | _ -> raw_value
+  let process_language_attribute =
+    process_constant_attribute dwarf_language (fun l -> Language l)
+
+  let process_encoding_attribute =
+    process_constant_attribute base_type (fun e -> Encoding e)
+
+  let process_ordering_attribute =
+    process_constant_attribute array_ordering (fun v -> Ordering v)
+
+  let process_decimal_sign_attribute =
+    process_constant_attribute decimal_sign (fun v -> DecimalSign v)
+
+  let process_endianity_attribute =
+    process_constant_attribute endianity (fun v -> Endianity v)
+
+  let process_accessibility_attribute =
+    process_constant_attribute accessibility (fun v -> Accessibility v)
+
+  let process_visibility_attribute =
+    process_constant_attribute visibility (fun v -> Visibility v)
+
+  let process_virtuality_attribute =
+    process_constant_attribute virtuality (fun v -> Virtuality v)
+
+  let process_identifier_case_attribute =
+    process_constant_attribute identifier (fun v -> IdentifierCase v)
+
+  let process_calling_convention_attribute =
+    process_constant_attribute calling_convention (fun v -> CallingConvention v)
+
+  let process_inline_attribute =
+    process_constant_attribute inlined (fun v -> Inline v)
+
+  let process_defaulted_attribute =
+    process_constant_attribute defaulted_attribute (fun v -> Defaulted v)
 
   let rec parse_children_seq (cur : Object.Buffer.cursor)
       (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
@@ -2250,12 +2327,24 @@ module DIE = struct
                       ?implicit_const:spec.implicit_const ()
                   in
                   let value =
-                    (* Process special attributes that need conversion *)
-                    if attr_encoding = DW_AT_language then
-                      process_language_attribute raw_value
-                    else if attr_encoding = DW_AT_encoding then
-                      process_encoding_attribute raw_value
-                    else raw_value
+                    match attr_encoding with
+                    | DW_AT_language -> process_language_attribute raw_value
+                    | DW_AT_encoding -> process_encoding_attribute raw_value
+                    | DW_AT_ordering -> process_ordering_attribute raw_value
+                    | DW_AT_decimal_sign ->
+                        process_decimal_sign_attribute raw_value
+                    | DW_AT_endianity -> process_endianity_attribute raw_value
+                    | DW_AT_accessibility ->
+                        process_accessibility_attribute raw_value
+                    | DW_AT_visibility -> process_visibility_attribute raw_value
+                    | DW_AT_virtuality -> process_virtuality_attribute raw_value
+                    | DW_AT_identifier_case ->
+                        process_identifier_case_attribute raw_value
+                    | DW_AT_calling_convention ->
+                        process_calling_convention_attribute raw_value
+                    | DW_AT_inline -> process_inline_attribute raw_value
+                    | DW_AT_defaulted -> process_defaulted_attribute raw_value
+                    | _ -> raw_value
                   in
                   { attr = attr_encoding; value })
                 abbrev.attr_specs
@@ -2737,7 +2826,7 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
      For DWARF32 there is a 4-byte value, while for
      DWARF64 there is a 4-byte marker (0xffffffff) + 8-byte length value. *)
   let length_field_size = match format with DWARF32 -> 4 | DWARF64 -> 12 in
-  let total_size = start + length_field_size in
+  let total_size = length_field_size + Unsigned.UInt64.to_int unit_length in
   let span =
     {
       start = Unsigned.UInt64.of_int start;
@@ -3637,7 +3726,7 @@ module DebugTypes = struct
       }
     in
     let length_field_size = match format with DWARF32 -> 4 | DWARF64 -> 12 in
-    let total_size = start + length_field_size in
+    let total_size = length_field_size + Unsigned.UInt64.to_int unit_length in
     let span =
       {
         start = Unsigned.UInt64.of_int start;

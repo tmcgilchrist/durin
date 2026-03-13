@@ -95,6 +95,12 @@
   (run %{exe:test_debug_abbrev.exe})))
 
 (test
+ (name test_dwarf_constants_roundtrip)
+ (libraries durin alcotest qcheck-core qcheck-alcotest)
+ (preprocess
+  (staged_pps ppx_import ppx_deriving_qcheck)))
+
+(test
  (name test_dwarf_write)
  (libraries durin object alcotest)
  (action

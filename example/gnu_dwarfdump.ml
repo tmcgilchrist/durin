@@ -353,13 +353,6 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
               Printf.sprintf "%d" (Unsigned.UInt64.to_int u)
             else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_stmt_list then
               Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u)
-            else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_calling_convention then
-              (* Decode calling convention constant to name *)
-              let cc_val = Unsigned.UInt64.to_int u in
-              try
-                let cc = Dwarf.calling_convention cc_val in
-                Dwarf.string_of_calling_convention cc
-              with _ -> Printf.sprintf "0x%08x" cc_val
             else if attr.Dwarf.DIE.attr = Dwarf.DW_AT_data_member_location then
               (* Format as decimal for simple constant offsets *)
               Printf.sprintf "%d" (Unsigned.UInt64.to_int u)
@@ -398,6 +391,16 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
             else base
         | Dwarf.DIE.Language lang -> Dwarf.string_of_dwarf_language lang
         | Dwarf.DIE.Encoding enc -> Dwarf.string_of_base_type enc
+        | Dwarf.DIE.Ordering v -> Dwarf.string_of_array_ordering v
+        | Dwarf.DIE.DecimalSign v -> Dwarf.string_of_decimal_sign v
+        | Dwarf.DIE.Endianity v -> Dwarf.string_of_endianity v
+        | Dwarf.DIE.Accessibility v -> Dwarf.string_of_accessibility v
+        | Dwarf.DIE.Visibility v -> Dwarf.string_of_visibility v
+        | Dwarf.DIE.Virtuality v -> Dwarf.string_of_virtuality v
+        | Dwarf.DIE.IdentifierCase v -> Dwarf.string_of_identifier v
+        | Dwarf.DIE.CallingConvention v -> Dwarf.string_of_calling_convention v
+        | Dwarf.DIE.Inline v -> Dwarf.string_of_inlined v
+        | Dwarf.DIE.Defaulted v -> Dwarf.string_of_defaulted_attribute v
         | Dwarf.DIE.Block b ->
             (* Special handling for DW_AT_frame_base *)
             if attr.Dwarf.DIE.attr = Dwarf.DW_AT_frame_base then
