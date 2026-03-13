@@ -52,3 +52,15 @@ And add `durin` to your project's `dune-project` or `*.opam` files.
 
  * Vendor extensions from GCC
    https://sourceware.org/elfutils/DwarfExtensions
+
+### Future work / Known limitations
+
+**Big-endian is unsupported.** Both read and write paths assume
+  little-endian throughout. The `Object.Buffer.Read` functions are
+  hardcoded LE, and all `dwarf_write` primitives are LE-only. This
+  affects PowerPC 64, s390x, and big-endian MIPS targets. Fixing
+  this requires coordinated changes: making `Object.Buffer.Read`
+  endianness-aware, threading byte order through the `encoding`
+  type, and adding `_be` write variants. All current targets
+  (x86-64, ARM64 on Linux/macOS) are little-endian so this is
+  low priority.
