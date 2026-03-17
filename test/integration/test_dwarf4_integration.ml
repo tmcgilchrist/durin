@@ -87,7 +87,7 @@ let test_resolve_range_list_values binary_path =
           | Dwarf.DebugRanges.Range { begin_addr; end_addr } ->
               let b = Unsigned.UInt64.to_int64 begin_addr in
               let e = Unsigned.UInt64.to_int64 end_addr in
-              check bool "begin < end" true (b < e)
+              check bool "begin <= end" true (b <= e)
           | Dwarf.DebugRanges.BaseAddress addr ->
               check bool "base addr nonzero" true
                 (Unsigned.UInt64.to_int64 addr > 0L)

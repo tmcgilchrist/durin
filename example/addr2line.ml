@@ -46,8 +46,8 @@ let find_line_entry entries target_addr =
       else Some entry
     (* Last entry *)
   in
-  if List.length entries = 0 then None
-  else binary_search 0 (List.length entries - 1)
+  let length = List.length entries in
+  if length = 0 then None else binary_search 0 (length - 1)
 
 (* Get section offset helper *)
 let get_section_offset buffer section_type =
