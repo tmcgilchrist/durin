@@ -227,17 +227,11 @@ let dump_unwind_info filename =
       | None -> Printf.printf "No unwind information found\n"
       | Some (unwind_info, _arch) ->
           Printf.printf "Contents of __unwind_info section:\n";
-
           print_header unwind_info.header;
-
           print_common_encodings unwind_info.header unwind_info.common_encodings;
-
           print_personalities unwind_info.header unwind_info.personalities;
-
           print_index_entries unwind_info.header unwind_info.index_entries;
-
           print_lsda_descriptors unwind_info.lsda_descriptors;
-
           print_second_level_pages unwind_info.pages unwind_info.index_entries
             unwind_info.common_encodings)
 

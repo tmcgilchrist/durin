@@ -31,7 +31,7 @@ let find_line_entry entries target_addr =
     else
       let mid = (low + high) / 2 in
       let entry = List.nth entries mid in
-      let addr = entry.Dwarf.LineTable.address in
+      let addr = entry.Dwarf.DebugLine.address in
       if Unsigned.UInt64.equal addr target_addr then Some entry
       else if Unsigned.UInt64.compare target_addr addr < 0 then
         binary_search low (mid - 1)
@@ -40,14 +40,14 @@ let find_line_entry entries target_addr =
         mid < List.length entries - 1
       then
         let next_entry = List.nth entries (mid + 1) in
-        let next_addr = next_entry.Dwarf.LineTable.address in
+        let next_addr = next_entry.Dwarf.DebugLine.address in
         if Unsigned.UInt64.compare target_addr next_addr < 0 then Some entry
         else binary_search (mid + 1) high
       else Some entry
     (* Last entry *)
   in
-  if List.length entries = 0 then None
-  else binary_search 0 (List.length entries - 1)
+  let length = List.length entries in
+  if length = 0 then None else binary_search 0 (length - 1)
 
 (* Get section offset helper *)
 let get_section_offset buffer section_type =
@@ -102,8 +102,8 @@ let parse_line_table buffer =
       let cursor =
         Object.Buffer.cursor buffer ~at:(Unsigned.UInt64.to_int offset)
       in
-      let header = Dwarf.LineTable.parse_line_program_header cursor buffer in
-      let entries = Dwarf.LineTable.parse_line_program cursor header in
+      let header = Dwarf.DebugLine.parse_line_program_header cursor buffer in
+      let entries = Dwarf.DebugLine.parse_line_program cursor header in
       Some (header, entries)
 
 (* Resolve address to source location *)
@@ -112,15 +112,15 @@ let addr_to_location _buffer header entries addr =
   | None -> ("??", 0)
   | Some entry ->
       let file_index =
-        Unsigned.UInt32.to_int entry.Dwarf.LineTable.file_index
+        Unsigned.UInt32.to_int entry.Dwarf.DebugLine.file_index
       in
-      if file_index < Array.length header.Dwarf.LineTable.file_names then
-        let file_entry = header.Dwarf.LineTable.file_names.(file_index) in
+      if file_index < Array.length header.Dwarf.DebugLine.file_names then
+        let file_entry = header.Dwarf.DebugLine.file_names.(file_index) in
         let filename =
           if file_entry.directory = "" then file_entry.name
           else file_entry.directory ^ "/" ^ file_entry.name
         in
-        let line = Unsigned.UInt32.to_int entry.Dwarf.LineTable.line in
+        let line = Unsigned.UInt32.to_int entry.Dwarf.DebugLine.line in
         (filename, line)
       else ("??", 0)
 
@@ -155,53 +155,43 @@ let find_function_name buffer addr =
                 | Some (Dwarf.DIE.UData base) -> Some base
                 | _ -> None
               in
+              let resolve_attr_address = function
+                | Dwarf.DIE.Address a -> Some a
+                | Dwarf.DIE.IndexedAddress (_, idx) ->
+                    Some (resolve_die_address buffer addr_base idx)
+                | _ -> None
+              in
+              let get_die_name die =
+                match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
+                | Some (Dwarf.DIE.String name) -> Some name
+                | Some (Dwarf.DIE.IndexedString (_, name)) -> Some name
+                | _ -> None
+              in
               let rec search_die die =
                 (* Check if this DIE is a subprogram containing the address *)
                 (match die.Dwarf.DIE.tag with
                 | Dwarf.DW_TAG_subprogram | Dwarf.DW_TAG_inlined_subroutine -> (
-                    (* Get low_pc and high_pc *)
                     let low_pc_opt =
                       Dwarf.DIE.find_attribute die Dwarf.DW_AT_low_pc
+                      |> Option.map (fun v -> resolve_attr_address v)
+                      |> Option.join
                     in
                     let high_pc_opt =
-                      Dwarf.DIE.find_attribute die Dwarf.DW_AT_high_pc
+                      match
+                        ( low_pc_opt,
+                          Dwarf.DIE.find_attribute die Dwarf.DW_AT_high_pc )
+                      with
+                      | Some lpc, Some (Dwarf.DIE.UData offset) ->
+                          Some (Unsigned.UInt64.add lpc offset)
+                      | _, Some v -> resolve_attr_address v
+                      | _ -> None
                     in
                     match (low_pc_opt, high_pc_opt) with
-                    | ( Some (Dwarf.DIE.Address low_pc_raw),
-                        Some (Dwarf.DIE.Address high_pc_raw) ) ->
-                        (* Both are addresses - resolve them *)
-                        let low_pc =
-                          resolve_die_address buffer addr_base low_pc_raw
-                        in
-                        let high_pc =
-                          resolve_die_address buffer addr_base high_pc_raw
-                        in
+                    | Some low_pc, Some high_pc ->
                         if
                           Unsigned.UInt64.compare addr low_pc >= 0
                           && Unsigned.UInt64.compare addr high_pc < 0
-                        then
-                          match
-                            Dwarf.DIE.find_attribute die Dwarf.DW_AT_name
-                          with
-                          | Some (Dwarf.DIE.String name) -> Some name
-                          | _ -> None
-                        else None
-                    | ( Some (Dwarf.DIE.Address low_pc_raw),
-                        Some (Dwarf.DIE.UData offset) ) ->
-                        (* high_pc is offset from low_pc *)
-                        let low_pc =
-                          resolve_die_address buffer addr_base low_pc_raw
-                        in
-                        let high_pc = Unsigned.UInt64.add low_pc offset in
-                        if
-                          Unsigned.UInt64.compare addr low_pc >= 0
-                          && Unsigned.UInt64.compare addr high_pc < 0
-                        then
-                          match
-                            Dwarf.DIE.find_attribute die Dwarf.DW_AT_name
-                          with
-                          | Some (Dwarf.DIE.String name) -> Some name
-                          | _ -> None
+                        then get_die_name die
                         else None
                     | _ -> None)
                 | _ -> None)

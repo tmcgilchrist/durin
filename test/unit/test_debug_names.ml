@@ -1,7 +1,7 @@
 open Durin
 
 (* TODO Add more examples here of parsing debug names. Look at C++ binaries
-   for more interesting names. *)
+   for more interesting names. Can this also be unified with the per_section / dwarf version organisation of tests *)
 
 let test_debug_str_entry_creation () =
   let entry =
@@ -99,8 +99,24 @@ let test_address_calculator_edge_cases () =
   in
   Alcotest.(check int) "both zero" 0 (Unsigned.UInt32.to_int result3)
 
+let test_djb2_empty_string () =
+  let result = Dwarf.DebugNames.djb2_hash "" |> Unsigned.UInt32.to_int in
+  Alcotest.(check int) "empty string hash" 5381 result
+
+let test_djb2_single_char () =
+  let result = Dwarf.DebugNames.djb2_hash "a" |> Unsigned.UInt32.to_int in
+  Alcotest.(check int) "single char 'a' hash" 177670 result
+
+let test_djb2_two_chars () =
+  let result = Dwarf.DebugNames.djb2_hash "ab" |> Unsigned.UInt32.to_int in
+  Alcotest.(check int) "two chars 'ab' hash" 5863208 result
+
+let test_djb2_main_function () =
+  let result = Dwarf.DebugNames.djb2_hash "main" |> Unsigned.UInt32.to_int in
+  Alcotest.(check int) "function name 'main' hash" 2090499946 result
+
 let () =
-  let tests =
+  let parsing_tests =
     [
       ("debug_str_entry_creation", `Quick, test_debug_str_entry_creation);
       ("calculate_entry_address", `Quick, test_calculate_entry_address);
@@ -111,4 +127,13 @@ let () =
         test_address_calculator_edge_cases );
     ]
   in
-  Alcotest.run "DebugNames_Parsing" [ ("parsing", tests) ]
+  let djb2_tests =
+    [
+      ("djb2_empty_string", `Quick, test_djb2_empty_string);
+      ("djb2_single_char", `Quick, test_djb2_single_char);
+      ("djb2_two_chars", `Quick, test_djb2_two_chars);
+      ("djb2_main_function", `Quick, test_djb2_main_function);
+    ]
+  in
+  Alcotest.run ".debug_names"
+    [ ("parsing", parsing_tests); ("djb2", djb2_tests) ]

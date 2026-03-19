@@ -1,96 +1,7 @@
-; =============================================================================
-; UNIT TESTS
-; =============================================================================
-
-(test
- (name test_line_program_header)
- (deps hello_world)
- (libraries durin object alcotest cmdliner)
- (build_if
-  (and
-   (= %{system} "macosx")
-   (= %{architecture} "arm64")))
- (action
-  (run %{exe:test_line_program_header.exe} --binary %{dep:hello_world})))
-
-(test
- (name test_debug_str_offsets)
- (libraries durin object alcotest cmdliner)
- (action
-  (run %{exe:test_debug_str_offsets.exe})))
-
-(test
- (name test_djb2)
- (libraries durin alcotest)
- (action
-  (run %{exe:test_djb2.exe})))
-
-(test
- (name test_debug_names_parsing)
- (libraries durin alcotest)
- (action
-  (run %{exe:test_debug_names_parsing.exe})))
-
-(test
- (name test_dwarf_expression)
- (libraries durin alcotest)
- (action
-  (run %{exe:test_dwarf_expression.exe})))
-
-(test
- (name test_expression_evaluator)
- (libraries durin alcotest)
- (action
-  (run %{exe:test_expression_evaluator.exe})))
-
-(test
- (name test_dwarf64_parsing)
- (libraries durin object alcotest)
- (action
-  (run %{exe:test_dwarf64_parsing.exe})))
-
-; =============================================================================
-; MACOS PLATFORM TESTS
-; =============================================================================
-
-; macOS Binary Compilation Rules
-
-(rule
- (alias runtest)
- (deps hello_world.c)
- (targets hello_world hello_world.dSYM)
- (enabled_if
-  (and
-   (= %{system} "macosx")
-   (= %{architecture} "arm64")))
- (action
-  (system "cc -gdwarf-5 %{deps} -o hello_world")))
-
-(rule
- (alias runtest)
- (deps hello_world.cpp)
- (targets hello_world_cpp hello_world_cpp.dSYM)
- (enabled_if
-  (and
-   (= %{system} "macosx")
-   (= %{architecture} "arm64")))
- (action
-  (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp")))
-
-(rule
- (alias runtest)
- (deps test_macros.c test_macros_header.h)
- (targets test_macros test_macros.dSYM)
- (enabled_if
-  (and
-   (= %{system} "macosx")
-   (= %{architecture} "arm64")))
- (action
-  (system "cc -gdwarf-5 test_macros.c -o test_macros")))
-
 ; macOS Cram Tests
 
 (cram
+ (applies_to test_dwarfdump_cram)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -98,19 +9,20 @@
  (deps %{bin:dwarfdump}))
 
 (cram
- (deps %{bin:objdump} hello_world)
+ (applies_to test_objdump_cram)
+ (deps %{bin:objdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
    (= %{architecture} "arm64"))))
 
-; TODO Replace these with better scripted version, our addresses change
-; (cram
-;  (deps %{bin:addr2line} hello_world hello_world.dSYM)
-;  (enabled_if
-;   (and
-;    (= %{system} "macosx")
-;    (= %{architecture} "arm64"))))
+(cram
+ (applies_to test_addr2line)
+ (deps %{bin:addr2line} ../fixtures/hello_world ../fixtures/hello_world.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64"))))
 
 ; =============================================================================
 ; DWARFDUMP COMPARISON TESTS - MACOS
@@ -121,7 +33,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_str.out)
- (deps %{bin:dwarfdump} hello_world)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -132,12 +44,12 @@
    (run
     %{bin:dwarfdump}
     --debug-str
-    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_debug_str.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -146,7 +58,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-str hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-str ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
@@ -163,7 +75,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_str_offsets.out)
- (deps %{bin:dwarfdump} hello_world)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -174,12 +86,12 @@
    (run
     %{bin:dwarfdump}
     --debug-str-offsets
-    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_debug_str_offsets.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -188,7 +100,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-str-offsets hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-str-offsets ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
@@ -205,7 +117,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_abbrev.out)
- (deps %{bin:dwarfdump} hello_world)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -216,12 +128,12 @@
    (run
     %{bin:dwarfdump}
     --debug-abbrev
-    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_debug_abbrev.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -230,7 +142,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-abbrev hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-abbrev ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
@@ -247,7 +159,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_info.out)
- (deps %{bin:dwarfdump} hello_world)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -258,12 +170,12 @@
    (run
     %{bin:dwarfdump}
     --debug-info
-    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_debug_info.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -272,7 +184,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-info hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-info ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
@@ -289,7 +201,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_addr.out)
- (deps %{bin:dwarfdump} hello_world)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -300,12 +212,12 @@
    (run
     %{bin:dwarfdump}
     --debug-addr
-    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_debug_addr.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -314,7 +226,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-addr hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-addr ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
@@ -331,7 +243,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_line.out)
- (deps %{bin:dwarfdump} hello_world)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -342,12 +254,12 @@
    (run
     %{bin:dwarfdump}
     --debug-line
-    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_debug_line.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -356,7 +268,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-line hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-line ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
@@ -373,7 +285,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_names.out)
- (deps %{bin:dwarfdump} hello_world)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -384,12 +296,12 @@
    (run
     %{bin:dwarfdump}
     --debug-names
-    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_debug_names.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -398,7 +310,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-names hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-names ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
@@ -415,7 +327,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_names_cpp.out)
- (deps %{bin:dwarfdump} hello_world_cpp)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world_cpp)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -426,12 +338,12 @@
    (run
     %{bin:dwarfdump}
     --debug-names
-    "hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
+    "../fixtures/hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
 
 (rule
  (alias runtest)
  (target system_debug_names_cpp.out)
- (deps hello_world_cpp)
+ (deps ../fixtures/hello_world_cpp)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -440,7 +352,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-names hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
+    "dwarfdump --debug-names ../fixtures/hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
 
 (rule
  (alias runtest)
@@ -457,7 +369,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_macro.out)
- (deps %{bin:dwarfdump} hello_world_cpp)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world_cpp)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -468,12 +380,12 @@
    (run
     %{bin:dwarfdump}
     --debug-macro
-    "hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
+    "../fixtures/hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp"))))
 
 (rule
  (alias runtest)
  (target system_debug_macro.out)
- (deps hello_world_cpp)
+ (deps ../fixtures/hello_world_cpp)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -483,7 +395,7 @@
    %{target}
    ; TODO Trim output, we don't support split DWO files yet.
    (system
-    "dwarfdump --debug-macro hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp | head -n 3"))))
+    "dwarfdump --debug-macro ../fixtures/hello_world_cpp.dSYM/Contents/Resources/DWARF/hello_world_cpp | head -n 3"))))
 
 (rule
  (alias runtest)
@@ -504,7 +416,7 @@
 (rule
  (alias runtest)
  (target ocaml_unwind_info.out)
- (deps %{bin:objdump} hello_world)
+ (deps %{bin:objdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -512,12 +424,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:objdump} --unwind-info "hello_world"))))
+   (run %{bin:objdump} --unwind-info "../fixtures/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_unwind_info.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -525,14 +437,14 @@
  (action
   (with-stdout-to
    %{target}
-   (system "objdump --unwind-info hello_world"))))
+   (system "objdump --unwind-info ../fixtures/hello_world"))))
 
 ; --unwind-info comparison (hello_world_cpp)
 
 (rule
  (alias runtest)
  (target ocaml_unwind_info_cpp.out)
- (deps %{bin:objdump} hello_world_cpp)
+ (deps %{bin:objdump} ../fixtures/hello_world_cpp)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -540,12 +452,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:objdump} --unwind-info "hello_world_cpp"))))
+   (run %{bin:objdump} --unwind-info "../fixtures/hello_world_cpp"))))
 
 (rule
  (alias runtest)
  (target system_unwind_info_cpp.out)
- (deps hello_world_cpp)
+ (deps ../fixtures/hello_world_cpp)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -553,7 +465,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "objdump --unwind-info hello_world_cpp"))))
+   (system "objdump --unwind-info ../fixtures/hello_world_cpp"))))
 
 ; Diff comparisons for unwind-info
 
@@ -582,7 +494,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_line_str.out)
- (deps %{bin:dwarfdump} hello_world)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -593,12 +505,12 @@
    (run
     %{bin:dwarfdump}
     --debug-line-str
-    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_debug_line_str.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -607,7 +519,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-line-str hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-line-str ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
@@ -624,7 +536,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_aranges.out)
- (deps %{bin:dwarfdump} hello_world)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -635,12 +547,12 @@
    (run
     %{bin:dwarfdump}
     --debug-aranges
-    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_debug_aranges.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -649,7 +561,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-aranges hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-aranges ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
@@ -666,7 +578,7 @@
 (rule
  (alias runtest)
  (target ocaml_debug_loclists.out)
- (deps %{bin:dwarfdump} hello_world)
+ (deps %{bin:dwarfdump} ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -677,12 +589,12 @@
    (run
     %{bin:dwarfdump}
     --debug-loclists
-    "hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
  (target system_debug_loclists.out)
- (deps hello_world)
+ (deps ../fixtures/hello_world)
  (enabled_if
   (and
    (= %{system} "macosx")
@@ -691,7 +603,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-loclists hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-loclists ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
 (rule
  (alias runtest)
@@ -719,59 +631,6 @@
    (system "%{bin:dwarfdump} --debug-loclists . || true"))))
 
 ; =============================================================================
-; LINUX PLATFORM TESTS
-; =============================================================================
-
-; Linux Binary Compilation
-
-(rule
- (alias runtest)
- (deps hello_world.c)
- (targets hello_world_linux)
- (enabled_if
-  (and
-   (= %{system} "linux")
-   (= %{architecture} "amd64")))
- (action
-  (system "gcc -gdwarf-5 %{deps} -o hello_world_linux")))
-
-(rule
- (alias runtest)
- (deps hello_world.cpp)
- (targets hello_world_cpp_linux)
- (enabled_if
-  (and
-   (= %{system} "linux")
-   (= %{architecture} "amd64")))
- (action
-  (system "clang++ -std=c++17 -gdwarf-5 %{deps} -o hello_world_cpp_linux")))
-
-; DWARF64 binary compilation for testing
-
-(rule
- (alias runtest)
- (deps hello_world.cpp)
- (targets hello_world_dwarf64_cpp)
- (enabled_if
-  (and
-   (= %{system} "linux")
-   (= %{architecture} "amd64")))
- (action
-  (system
-   "clang++ -std=c++17 -gdwarf64 -gdwarf-5 %{deps} -o hello_world_dwarf64_cpp")))
-
-(rule
- (alias runtest)
- (deps test_macros.c test_macros_header.h)
- (targets test_macros_linux)
- (enabled_if
-  (and
-   (= %{system} "linux")
-   (= %{architecture} "amd64")))
- (action
-  (system "gcc -gdwarf-5 test_macros.c -o test_macros_linux")))
-
-; =============================================================================
 ; GNU-DWARFDUMP COMPARISON TESTS - LINUX
 ; =============================================================================
 
@@ -780,7 +639,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_line.out)
- (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -788,12 +647,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-line hello_world_linux))))
+   (run %{bin:gnu-dwarfdump} --debug-line ../fixtures/hello_world_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_line.out)
- (deps hello_world_linux)
+ (deps ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -801,7 +660,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump --print-lines hello_world_linux"))))
+   (system "dwarfdump --print-lines ../fixtures/hello_world_linux"))))
 
 (rule
  (alias runtest)
@@ -818,7 +677,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_info.out)
- (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -826,12 +685,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-info hello_world_linux))))
+   (run %{bin:gnu-dwarfdump} --debug-info ../fixtures/hello_world_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_info.out)
- (deps hello_world_linux)
+ (deps ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -839,7 +698,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump --print-info hello_world_linux"))))
+   (system "dwarfdump --print-info ../fixtures/hello_world_linux"))))
 
 (rule
  (alias runtest)
@@ -856,7 +715,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_str.out)
- (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -864,12 +723,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-str hello_world_linux))))
+   (run %{bin:gnu-dwarfdump} --debug-str ../fixtures/hello_world_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_str.out)
- (deps hello_world_linux)
+ (deps ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -877,7 +736,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump --print-strings hello_world_linux"))))
+   (system "dwarfdump --print-strings ../fixtures/hello_world_linux"))))
 
 (rule
  (alias runtest)
@@ -894,7 +753,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_str_cpp.out)
- (deps %{bin:gnu-dwarfdump} hello_world_cpp_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -902,12 +761,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-str hello_world_cpp_linux))))
+   (run %{bin:gnu-dwarfdump} --debug-str ../fixtures/hello_world_cpp_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_str_cpp.out)
- (deps hello_world_cpp_linux)
+ (deps ../fixtures/hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -915,7 +774,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump --print-strings hello_world_cpp_linux"))))
+   (system "dwarfdump --print-strings ../fixtures/hello_world_cpp_linux"))))
 
 (rule
  (alias runtest)
@@ -932,7 +791,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_str_offsets.out)
- (deps %{bin:gnu-dwarfdump} hello_world_cpp_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -940,12 +799,15 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-str-offsets hello_world_cpp_linux))))
+   (run
+    %{bin:gnu-dwarfdump}
+    --debug-str-offsets
+    ../fixtures/hello_world_cpp_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_str_offsets.out)
- (deps hello_world_cpp_linux)
+ (deps ../fixtures/hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -953,7 +815,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump --print-str-offsets hello_world_cpp_linux"))))
+   (system "dwarfdump --print-str-offsets ../fixtures/hello_world_cpp_linux"))))
 
 (rule
  (alias runtest)
@@ -970,7 +832,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_abbrev.out)
- (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -978,12 +840,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-abbrev hello_world_linux))))
+   (run %{bin:gnu-dwarfdump} --debug-abbrev ../fixtures/hello_world_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_abbrev.out)
- (deps hello_world_linux)
+ (deps ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -991,7 +853,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump -b hello_world_linux"))))
+   (system "dwarfdump -b ../fixtures/hello_world_linux"))))
 
 (rule
  (alias runtest)
@@ -1005,15 +867,11 @@
 
 ; --debug-names comparison
 ; TODO: Find or create a program that generates .debug_names section
-; .debug_names is a DWARF 5 accelerated name lookup table that requires
-; specific compiler flags and optimization levels to be generated.
-; Need example program with: complex symbol table, multiple compilation units,
-; or built with -gdwarf-5 -O2 and linker that generates name acceleration.
 
 ; (rule
 ;  (alias runtest)
 ;  (target ocaml_dwarfdump_names.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
+;  (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1021,12 +879,15 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-names hello_world_linux))))
+;    (run
+;     %{bin:gnu-dwarfdump}
+;     --debug-names
+;     ../fixtures/hello_world_linux))))
 
 ; (rule
 ;  (alias runtest)
 ;  (target system_dwarfdump_names.out)
-;  (deps hello_world_linux)
+;  (deps ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1034,7 +895,8 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (system "dwarfdump --print-debug-names hello_world_linux"))))
+;    (system
+;     "dwarfdump --print-debug-names ../fixtures/hello_world_linux"))))
 
 ; (rule
 ;  (alias runtest)
@@ -1052,7 +914,7 @@
 ; (rule
 ;  (alias runtest)
 ;  (target ocaml_dwarfdump_names_cpp.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_cpp_linux)
+;  (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_cpp_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1060,12 +922,15 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-names hello_world_cpp_linux))))
+;    (run
+;     %{bin:gnu-dwarfdump}
+;     --debug-names
+;     ../fixtures/hello_world_cpp_linux))))
 
 ; (rule
 ;  (alias runtest)
 ;  (target system_dwarfdump_names_cpp.out)
-;  (deps hello_world_cpp_linux)
+;  (deps ../fixtures/hello_world_cpp_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1073,28 +938,30 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (system "dwarfdump --print-debug-names hello_world_cpp_linux"))))
+;    (system
+;     "dwarfdump --print-debug-names ../fixtures/hello_world_cpp_linux"))))
 
 ; (rule
 ;  (alias runtest)
-;  (deps ocaml_dwarfdump_names_cpp.out system_dwarfdump_names_cpp.out)
+;  (deps
+;   ocaml_dwarfdump_names_cpp.out
+;   system_dwarfdump_names_cpp.out)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
 ;    (= %{architecture} "amd64")))
 ;  (action
-;   (diff system_dwarfdump_names_cpp.out ocaml_dwarfdump_names_cpp.out)))
+;   (diff
+;    system_dwarfdump_names_cpp.out
+;    ocaml_dwarfdump_names_cpp.out)))
 
 ; --debug-macro comparison
 ; TODO: Find or create a program that generates .debug_macro section
-; .debug_macro contains macro definition information from preprocessor.
-; Need example program with: #define macros, #include with macro usage,
-; built with -gdwarf-5 -g3 to include macro information.
 
 ; (rule
 ;  (alias runtest)
 ;  (target ocaml_dwarfdump_macro.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
+;  (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1102,12 +969,15 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-macro hello_world_linux))))
+;    (run
+;     %{bin:gnu-dwarfdump}
+;     --debug-macro
+;     ../fixtures/hello_world_linux))))
 
 ; (rule
 ;  (alias runtest)
 ;  (target system_dwarfdump_macro.out)
-;  (deps hello_world_linux)
+;  (deps ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1115,7 +985,8 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (system "dwarfdump -m hello_world_linux"))))
+;    (system
+;     "dwarfdump -m ../fixtures/hello_world_linux"))))
 
 ; (rule
 ;  (alias runtest)
@@ -1128,13 +999,13 @@
 ;   (diff system_dwarfdump_macro.out ocaml_dwarfdump_macro.out)))
 
 ; --debug-line-str comparison
-; NOTE: System dwarfdump does not have a specific flag for .debug_line_str section
-; The -l flag outputs .debug_line (line number program), not .debug_line_str (line string table)
+; NOTE: System dwarfdump does not have a specific flag for
+; .debug_line_str section
 
 ; (rule
 ;  (alias runtest)
 ;  (target ocaml_dwarfdump_line_str.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
+;  (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1142,12 +1013,15 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-line-str hello_world_linux))))
+;    (run
+;     %{bin:gnu-dwarfdump}
+;     --debug-line-str
+;     ../fixtures/hello_world_linux))))
 
 ; (rule
 ;  (alias runtest)
 ;  (target system_dwarfdump_line_str.out)
-;  (deps hello_world_linux)
+;  (deps ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1155,24 +1029,29 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (system "dwarfdump -l hello_world_linux"))))
+;    (system
+;     "dwarfdump -l ../fixtures/hello_world_linux"))))
 
 ; (rule
 ;  (alias runtest)
-;  (deps ocaml_dwarfdump_line_str.out system_dwarfdump_line_str.out)
+;  (deps
+;   ocaml_dwarfdump_line_str.out
+;   system_dwarfdump_line_str.out)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
 ;    (= %{architecture} "amd64")))
 ;  (action
-;   (diff system_dwarfdump_line_str.out ocaml_dwarfdump_line_str.out)))
+;   (diff
+;    system_dwarfdump_line_str.out
+;    ocaml_dwarfdump_line_str.out)))
 
 ; --debug-aranges comparison
 
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_aranges.out)
- (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1180,12 +1059,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-aranges hello_world_linux))))
+   (run %{bin:gnu-dwarfdump} --debug-aranges ../fixtures/hello_world_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_aranges.out)
- (deps hello_world_linux)
+ (deps ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1193,7 +1072,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump -r hello_world_linux"))))
+   (system "dwarfdump -r ../fixtures/hello_world_linux"))))
 
 (rule
  (alias runtest)
@@ -1206,15 +1085,12 @@
   (diff system_dwarfdump_aranges.out ocaml_dwarfdump_aranges.out)))
 
 ; --debug-loclists comparison
-; TODO: Find or create a program that generates .debug_loclists section
-; .debug_loclists contains location list information for variables with
-; complex lifetime/scope. Need example program with: optimized code,
-; variables that move between registers/memory, built with -gdwarf-5 -O2.
+; TODO: Find or create a program that generates .debug_loclists
 
 ; (rule
 ;  (alias runtest)
 ;  (target ocaml_dwarfdump_loclists.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
+;  (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1222,12 +1098,15 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-loclists hello_world_linux))))
+;    (run
+;     %{bin:gnu-dwarfdump}
+;     --debug-loclists
+;     ../fixtures/hello_world_linux))))
 
 ; (rule
 ;  (alias runtest)
 ;  (target system_dwarfdump_loclists.out)
-;  (deps hello_world_linux)
+;  (deps ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1235,24 +1114,29 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (system "dwarfdump -c hello_world_linux"))))
+;    (system
+;     "dwarfdump -c ../fixtures/hello_world_linux"))))
 
 ; (rule
 ;  (alias runtest)
-;  (deps ocaml_dwarfdump_loclists.out system_dwarfdump_loclists.out)
+;  (deps
+;   ocaml_dwarfdump_loclists.out
+;   system_dwarfdump_loclists.out)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
 ;    (= %{architecture} "amd64")))
 ;  (action
-;   (diff system_dwarfdump_loclists.out ocaml_dwarfdump_loclists.out)))
+;   (diff
+;    system_dwarfdump_loclists.out
+;    ocaml_dwarfdump_loclists.out)))
 
 ; --debug-addr comparison
 
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_addr.out)
- (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1260,12 +1144,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-addr hello_world_linux))))
+   (run %{bin:gnu-dwarfdump} --debug-addr ../fixtures/hello_world_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_addr.out)
- (deps hello_world_linux)
+ (deps ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1273,7 +1157,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "llvm-dwarfdump --debug-addr hello_world_linux"))))
+   (system "llvm-dwarfdump --debug-addr ../fixtures/hello_world_linux"))))
 
 (rule
  (alias runtest)
@@ -1290,7 +1174,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_addr_cpp.out)
- (deps %{bin:gnu-dwarfdump} hello_world_cpp_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1298,12 +1182,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-addr hello_world_cpp_linux))))
+   (run %{bin:gnu-dwarfdump} --debug-addr ../fixtures/hello_world_cpp_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_addr_cpp.out)
- (deps hello_world_cpp_linux)
+ (deps ../fixtures/hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1311,7 +1195,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "llvm-dwarfdump --debug-addr hello_world_cpp_linux"))))
+   (system "llvm-dwarfdump --debug-addr ../fixtures/hello_world_cpp_linux"))))
 
 (rule
  (alias runtest)
@@ -1332,7 +1216,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_info_dwarf64.out)
- (deps %{bin:gnu-dwarfdump} hello_world_dwarf64_cpp)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1340,12 +1224,15 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-info hello_world_dwarf64_cpp))))
+   (run
+    %{bin:gnu-dwarfdump}
+    --debug-info
+    ../fixtures/hello_world_dwarf64_cpp))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_info_dwarf64.out)
- (deps hello_world_dwarf64_cpp)
+ (deps ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1353,7 +1240,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump --print-info hello_world_dwarf64_cpp"))))
+   (system "dwarfdump --print-info ../fixtures/hello_world_dwarf64_cpp"))))
 
 (rule
  (alias runtest)
@@ -1370,7 +1257,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_line_dwarf64.out)
- (deps %{bin:gnu-dwarfdump} hello_world_dwarf64_cpp)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1378,12 +1265,15 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-line hello_world_dwarf64_cpp))))
+   (run
+    %{bin:gnu-dwarfdump}
+    --debug-line
+    ../fixtures/hello_world_dwarf64_cpp))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_line_dwarf64.out)
- (deps hello_world_dwarf64_cpp)
+ (deps ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1391,7 +1281,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump --print-lines hello_world_dwarf64_cpp"))))
+   (system "dwarfdump --print-lines ../fixtures/hello_world_dwarf64_cpp"))))
 
 (rule
  (alias runtest)
@@ -1408,7 +1298,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_str_offsets_dwarf64.out)
- (deps %{bin:gnu-dwarfdump} hello_world_dwarf64_cpp)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1416,12 +1306,15 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-str-offsets hello_world_dwarf64_cpp))))
+   (run
+    %{bin:gnu-dwarfdump}
+    --debug-str-offsets
+    ../fixtures/hello_world_dwarf64_cpp))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_str_offsets_dwarf64.out)
- (deps hello_world_dwarf64_cpp)
+ (deps ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1429,7 +1322,8 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump --print-str-offsets hello_world_dwarf64_cpp"))))
+   (system
+    "dwarfdump --print-str-offsets ../fixtures/hello_world_dwarf64_cpp"))))
 
 (rule
  (alias runtest)
@@ -1450,7 +1344,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_aranges_dwarf64.out)
- (deps %{bin:gnu-dwarfdump} hello_world_dwarf64_cpp)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1458,12 +1352,15 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-aranges hello_world_dwarf64_cpp))))
+   (run
+    %{bin:gnu-dwarfdump}
+    --debug-aranges
+    ../fixtures/hello_world_dwarf64_cpp))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_aranges_dwarf64.out)
- (deps hello_world_dwarf64_cpp)
+ (deps ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1471,7 +1368,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump -r hello_world_dwarf64_cpp"))))
+   (system "dwarfdump -r ../fixtures/hello_world_dwarf64_cpp"))))
 
 (rule
  (alias runtest)
@@ -1488,12 +1385,11 @@
    ocaml_dwarfdump_aranges_dwarf64.out)))
 
 ; --debug-addr comparison (DWARF64)
-; Linux dwarfdump doesn't have a flag for this so we use llvm-dwarfdump instead
 
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_addr_dwarf64.out)
- (deps %{bin:gnu-dwarfdump} hello_world_dwarf64_cpp)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1501,12 +1397,15 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-addr hello_world_dwarf64_cpp))))
+   (run
+    %{bin:gnu-dwarfdump}
+    --debug-addr
+    ../fixtures/hello_world_dwarf64_cpp))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_addr_dwarf64.out)
- (deps hello_world_dwarf64_cpp)
+ (deps ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1514,7 +1413,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "llvm-dwarfdump --debug-addr hello_world_dwarf64_cpp"))))
+   (system "llvm-dwarfdump --debug-addr ../fixtures/hello_world_dwarf64_cpp"))))
 
 (rule
  (alias runtest)
@@ -1532,7 +1431,7 @@
 ; (rule
 ;  (alias runtest)
 ;  (target ocaml_dwarfdump_macro_dwarf64.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_dwarf64_cpp)
+;  (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_dwarf64_cpp)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1540,12 +1439,15 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (run %{bin:gnu-dwarfdump} --debug-macro hello_world_dwarf64_cpp))))
+;    (run
+;     %{bin:gnu-dwarfdump}
+;     --debug-macro
+;     ../fixtures/hello_world_dwarf64_cpp))))
 
 ; (rule
 ;  (alias runtest)
 ;  (target system_dwarfdump_macro_dwarf64.out)
-;  (deps hello_world_dwarf64_cpp)
+;  (deps ../fixtures/hello_world_dwarf64_cpp)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1553,24 +1455,29 @@
 ;  (action
 ;   (with-stdout-to
 ;    %{target}
-;    (system "dwarfdump --print-macro hello_world_dwarf64_cpp"))))
+;    (system
+;     "dwarfdump --print-macro ../fixtures/hello_world_dwarf64_cpp"))))
 
 ; (rule
 ;  (alias runtest)
-;  (deps ocaml_dwarfdump_macro_dwarf64.out system_dwarfdump_macro_dwarf64.out)
+;  (deps
+;   ocaml_dwarfdump_macro_dwarf64.out
+;   system_dwarfdump_macro_dwarf64.out)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
 ;    (= %{architecture} "amd64")))
 ;  (action
-;   (diff system_dwarfdump_macro_dwarf64.out ocaml_dwarfdump_macro_dwarf64.out)))
+;   (diff
+;    system_dwarfdump_macro_dwarf64.out
+;    ocaml_dwarfdump_macro_dwarf64.out)))
 
 ; --debug-frame comparison (DWARF64)
 
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_frame_dwarf64.out)
- (deps %{bin:gnu-dwarfdump} hello_world_dwarf64_cpp)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1578,12 +1485,15 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --debug-frame hello_world_dwarf64_cpp))))
+   (run
+    %{bin:gnu-dwarfdump}
+    --debug-frame
+    ../fixtures/hello_world_dwarf64_cpp))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_frame_dwarf64.out)
- (deps hello_world_dwarf64_cpp)
+ (deps ../fixtures/hello_world_dwarf64_cpp)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1591,7 +1501,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump --print-frame hello_world_dwarf64_cpp"))))
+   (system "dwarfdump --print-frame ../fixtures/hello_world_dwarf64_cpp"))))
 
 (rule
  (alias runtest)
@@ -1612,7 +1522,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_eh_frame.out)
- (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1620,12 +1530,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --eh-frame hello_world_linux))))
+   (run %{bin:gnu-dwarfdump} --eh-frame ../fixtures/hello_world_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_eh_frame.out)
- (deps hello_world_linux)
+ (deps ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1633,7 +1543,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump -F hello_world_linux"))))
+   (system "dwarfdump -F ../fixtures/hello_world_linux"))))
 
 (rule
  (alias runtest)
@@ -1654,7 +1564,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_eh_frame_cpp.out)
- (deps %{bin:gnu-dwarfdump} hello_world_cpp_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1662,12 +1572,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --eh-frame hello_world_cpp_linux))))
+   (run %{bin:gnu-dwarfdump} --eh-frame ../fixtures/hello_world_cpp_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_eh_frame_cpp.out)
- (deps hello_world_cpp_linux)
+ (deps ../fixtures/hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1675,7 +1585,7 @@
  (action
   (with-stdout-to
    %{target}
-   (system "dwarfdump -F hello_world_cpp_linux"))))
+   (system "dwarfdump -F ../fixtures/hello_world_cpp_linux"))))
 
 (rule
  (alias runtest)
@@ -1699,7 +1609,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_eh_frame_hdr.out)
- (deps %{bin:gnu-dwarfdump} hello_world_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1707,12 +1617,12 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --eh-frame-hdr hello_world_linux))))
+   (run %{bin:gnu-dwarfdump} --eh-frame-hdr ../fixtures/hello_world_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_eh_frame_hdr.out)
- (deps hello_world_linux)
+ (deps ../fixtures/hello_world_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1721,7 +1631,7 @@
   (with-stdout-to
    %{target}
    (system
-    "echo '.eh_frame_hdr'; echo; echo 'Reference: hex dump from readelf -x .eh_frame_hdr'; readelf -x .eh_frame_hdr hello_world_linux 2>/dev/null | tail -n +3 || echo 'No .eh_frame_hdr section found'"))))
+    "echo '.eh_frame_hdr'; echo; echo 'Reference: hex dump from readelf -x .eh_frame_hdr'; readelf -x .eh_frame_hdr ../fixtures/hello_world_linux 2>/dev/null | tail -n +3 || echo 'No .eh_frame_hdr section found'"))))
 
 (rule
  (alias runtest)
@@ -1743,7 +1653,7 @@
 (rule
  (alias runtest)
  (target ocaml_dwarfdump_eh_frame_hdr_cpp.out)
- (deps %{bin:gnu-dwarfdump} hello_world_cpp_linux)
+ (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1751,12 +1661,15 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:gnu-dwarfdump} --eh-frame-hdr hello_world_cpp_linux))))
+   (run
+    %{bin:gnu-dwarfdump}
+    --eh-frame-hdr
+    ../fixtures/hello_world_cpp_linux))))
 
 (rule
  (alias runtest)
  (target system_dwarfdump_eh_frame_hdr_cpp.out)
- (deps hello_world_cpp_linux)
+ (deps ../fixtures/hello_world_cpp_linux)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -1765,7 +1678,7 @@
   (with-stdout-to
    %{target}
    (system
-    "echo '.eh_frame_hdr'; echo; echo 'Reference: hex dump from readelf -x .eh_frame_hdr'; readelf -x .eh_frame_hdr hello_world_cpp_linux 2>/dev/null | tail -n +3 || echo 'No .eh_frame_hdr section found'"))))
+    "echo '.eh_frame_hdr'; echo; echo 'Reference: hex dump from readelf -x .eh_frame_hdr'; readelf -x .eh_frame_hdr ../fixtures/hello_world_cpp_linux 2>/dev/null | tail -n +3 || echo 'No .eh_frame_hdr section found'"))))
 
 (rule
  (alias runtest)
@@ -1784,14 +1697,12 @@
     "grep -q '.eh_frame_hdr' ocaml_dwarfdump_eh_frame_hdr_cpp.out || exit 1")
    (run bash -c "test -s ocaml_dwarfdump_eh_frame_hdr_cpp.out || exit 1"))))
 
-; Enhanced CFI tests completed successfully
-; ; GNU-DWARFDUMP UNSUPPORTED SECTION TESTS - LINUX
-; ; =============================================================================
-
+; GNU-DWARFDUMP UNSUPPORTED SECTION TESTS - LINUX
+; TODO Why are these tests commented out
 ; (rule
 ;  (alias runtest)
 ;  (target test_dwarfdump_abbrev_unsupported.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
+;  (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1803,12 +1714,15 @@
 ;     %{target}
 ;     (with-stderr-to
 ;      %{target}
-;      (run %{bin:gnu-dwarfdump} --debug-abbrev hello_world_linux))))))
+;      (run
+;       %{bin:gnu-dwarfdump}
+;       --debug-abbrev
+;       ../fixtures/hello_world_linux))))))
 
 ; (rule
 ;  (alias runtest)
 ;  (target test_dwarfdump_str_unsupported.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
+;  (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1820,12 +1734,15 @@
 ;     %{target}
 ;     (with-stderr-to
 ;      %{target}
-;      (run %{bin:gnu-dwarfdump} --debug-str hello_world_linux))))))
+;      (run
+;       %{bin:gnu-dwarfdump}
+;       --debug-str
+;       ../fixtures/hello_world_linux))))))
 
 ; (rule
 ;  (alias runtest)
 ;  (target test_dwarfdump_str_offsets_unsupported.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
+;  (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1837,12 +1754,15 @@
 ;     %{target}
 ;     (with-stderr-to
 ;      %{target}
-;      (run %{bin:gnu-dwarfdump} --debug-str-offsets hello_world_linux))))))
+;      (run
+;       %{bin:gnu-dwarfdump}
+;       --debug-str-offsets
+;       ../fixtures/hello_world_linux))))))
 
 ; (rule
 ;  (alias runtest)
 ;  (target test_dwarfdump_addr_unsupported.out)
-;  (deps %{bin:gnu-dwarfdump} hello_world_linux)
+;  (deps %{bin:gnu-dwarfdump} ../fixtures/hello_world_linux)
 ;  (enabled_if
 ;   (and
 ;    (= %{system} "linux")
@@ -1854,4 +1774,7 @@
 ;     %{target}
 ;     (with-stderr-to
 ;      %{target}
-;      (run %{bin:gnu-dwarfdump} --debug-addr hello_world_linux))))))
+;      (run
+;       %{bin:gnu-dwarfdump}
+;       --debug-addr
+;       ../fixtures/hello_world_linux))))))
