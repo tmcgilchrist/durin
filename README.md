@@ -2,21 +2,47 @@
 
 Durin is a library for reading and writing the [Dwarf debugging format](https://dwarfstd.org/).
 
-It aims to support:
- * Reading DWARF 5 encoded information from ELF and MachO object files.
- * Writing DWARF 5 information into ELF and MachO object files.
- * Writing DWARF 5 information into assembly files.
+It supports:
+ * Reading and writing DWARF 4 and DWARF 5 from ELF and MachO object files.
+ * Writing DWARF 5 into GNU assembler-compatible assembly files.
+ * Split DWARF (`.dwo` files, `.dwp` package files, skeleton units).
+ * DWARF32 and DWARF64 formats.
 
-In future it could support DWARF 4 or newer versions of the DWARF standard.
+It provides:
 
-It should provide:
-
- * Cross-platform: `durin` makes no assumptions about what kind of object file
-   you're working with. Provide your own Buffer or use the `object` library.
+ * Cross-platform: `durin` supports both ELF (Linux) and MachO (macOS) object
+   files via the [`object`](https://github.com/mbarbin/object) library.
  * Lazy: you can iterate compilation units without parsing their contents.
    Parse only as many debugging information entry (DIE) trees as you iterate
    over. `durin` also uses `DW_AT_sibling` references to avoid parsing a DIE's
-   children to find it's next sibling where possible.
+   children to find its next sibling where possible.
+
+### Section Support
+
+| Section              | Read | Write | DWARF Version |
+|----------------------|------|-------|---------------|
+| `.debug_info`        | Yes  | Yes   | 4, 5          |
+| `.debug_abbrev`      | Yes  | Yes   | 4, 5          |
+| `.debug_line`        | Yes  | Yes   | 4, 5          |
+| `.debug_line_str`    | Yes  | --    | 5             |
+| `.debug_str`         | Yes  | Yes   | 4, 5          |
+| `.debug_str_offsets` | Yes  | Yes   | 5             |
+| `.debug_addr`        | Yes  | Yes   | 5             |
+| `.debug_frame`       | Yes  | Yes   | 4, 5          |
+| `.eh_frame`          | Yes  | Yes   | 4, 5          |
+| `.debug_aranges`     | Yes  | Yes   | 4, 5          |
+| `.debug_loc`         | Yes  | Yes   | 4             |
+| `.debug_loclists`    | Yes  | Yes   | 5             |
+| `.debug_ranges`      | Yes  | Yes   | 4             |
+| `.debug_rnglists`    | Yes  | Yes   | 5             |
+| `.debug_names`       | Yes  | Yes   | 5             |
+| `.debug_pubnames`    | Yes  | Yes   | 4             |
+| `.debug_pubtypes`    | Yes  | Yes   | 4             |
+| `.debug_macro`       | Yes  | Yes   | 5             |
+| `.debug_macinfo`     | Yes  | Yes   | 4             |
+| `.debug_types`       | Yes  | Yes   | 4             |
+| `.debug_cu_index`    | Yes  | Yes   | 5             |
+| `.debug_tu_index`    | Yes  | Yes   | 5             |
 
 ## Install
 
