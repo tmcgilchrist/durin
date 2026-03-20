@@ -428,6 +428,8 @@ let write_string_table buf table =
   Buffer.add_string buf (Buffer.contents table.buf)
 
 let string_table_size table = Buffer.length table.buf
+let write_debug_str buf table = write_string_table buf table
+let write_debug_line_str buf table = write_string_table buf table
 
 (* Stage 7: Expression Encoding *)
 
@@ -680,22 +682,29 @@ let write_format_descs buf descs =
       write_uleb128 buf (Dwarf.u64_of_attribute_form_encoding form))
     descs
 
-let write_line_dir_entry buf (h : Dwarf.DebugLine.line_program_header) dir =
+let write_line_dir_entry buf fmt (h : Dwarf.DebugLine.line_program_header)
+    line_str_table dir =
   Array.iter
     (fun (ct, form) ->
       match (ct, form) with
       | Dwarf.DW_LNCT_path, Dwarf.DW_FORM_string ->
           write_null_terminated_string buf dir
+      | Dwarf.DW_LNCT_path, Dwarf.DW_FORM_line_strp ->
+          let offset = add_string line_str_table dir in
+          write_offset buf fmt (Unsigned.UInt64.of_int offset)
       | _ -> failwith "Unsupported directory format")
     h.directory_entry_formats
 
-let write_line_file_entry buf (h : Dwarf.DebugLine.line_program_header)
-    (file : Dwarf.DebugLine.file_entry) =
+let write_line_file_entry buf fmt (h : Dwarf.DebugLine.line_program_header)
+    line_str_table (file : Dwarf.DebugLine.file_entry) =
   Array.iter
     (fun (ct, form) ->
       match (ct, form) with
       | Dwarf.DW_LNCT_path, Dwarf.DW_FORM_string ->
           write_null_terminated_string buf file.name
+      | Dwarf.DW_LNCT_path, Dwarf.DW_FORM_line_strp ->
+          let offset = add_string line_str_table file.name in
+          write_offset buf fmt (Unsigned.UInt64.of_int offset)
       | Dwarf.DW_LNCT_directory_index, Dwarf.DW_FORM_udata ->
           let idx = find_dir_index h.directories file.directory in
           write_uleb128 buf (Unsigned.UInt64.of_int idx)
@@ -716,7 +725,8 @@ let write_line_file_entry buf (h : Dwarf.DebugLine.line_program_header)
       | _ -> failwith "Unsupported file entry format")
     h.file_name_entry_formats
 
-let write_line_header_body buf (h : Dwarf.DebugLine.line_program_header) =
+let write_line_header_body buf fmt (h : Dwarf.DebugLine.line_program_header)
+    line_str_table =
   write_u8 buf h.minimum_instruction_length;
   write_u8 buf h.maximum_operations_per_instruction;
   write_u8 buf (Unsigned.UInt8.of_int (if h.default_is_stmt then 1 else 0));
@@ -729,12 +739,16 @@ let write_line_header_body buf (h : Dwarf.DebugLine.line_program_header) =
   write_format_descs buf h.directory_entry_formats;
   write_uleb128 buf
     (Unsigned.UInt64.of_int (Unsigned.UInt32.to_int h.directories_count));
-  Array.iter (fun dir -> write_line_dir_entry buf h dir) h.directories;
+  Array.iter
+    (fun dir -> write_line_dir_entry buf fmt h line_str_table dir)
+    h.directories;
   write_u8 buf h.file_name_entry_format_count;
   write_format_descs buf h.file_name_entry_formats;
   write_uleb128 buf
     (Unsigned.UInt64.of_int (Unsigned.UInt32.to_int h.file_names_count));
-  Array.iter (fun file -> write_line_file_entry buf h file) h.file_names
+  Array.iter
+    (fun file -> write_line_file_entry buf fmt h line_str_table file)
+    h.file_names
 
 let write_lne buf opcode_byte operands_writer =
   let op_buf = Buffer.create 16 in
@@ -835,12 +849,28 @@ let encode_line_entries buf (h : Dwarf.DebugLine.line_program_header)
         write_u8 buf (Unsigned.UInt8.of_int 0x01)))
     entries
 
-let write_debug_line buf (header : Dwarf.DebugLine.line_program_header)
+let header_uses_line_strp (header : Dwarf.DebugLine.line_program_header) =
+  let has_strp arr =
+    Array.exists (fun (_, form) -> form = Dwarf.DW_FORM_line_strp) arr
+  in
+  has_strp header.directory_entry_formats
+  || has_strp header.file_name_entry_formats
+
+let write_debug_line buf ?line_str_table
+    (header : Dwarf.DebugLine.line_program_header)
     (entries : Dwarf.DebugLine.line_table_entry list) =
+  let needs_table = header_uses_line_strp header in
+  if needs_table && line_str_table = None then
+    invalid_arg
+      "write_debug_line: header uses DW_FORM_line_strp but no ~line_str_table \
+       was provided";
+  let table =
+    match line_str_table with Some t -> t | None -> create_string_table ()
+  in
   let fmt = header.format in
   let ver = Unsigned.UInt16.to_int header.version in
   let hdr_buf = Buffer.create 256 in
-  write_line_header_body hdr_buf header;
+  write_line_header_body hdr_buf fmt header table;
   let hdr_len = Buffer.length hdr_buf in
   let prog_buf = Buffer.create 256 in
   encode_line_entries prog_buf header entries;

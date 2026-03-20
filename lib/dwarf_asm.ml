@@ -144,8 +144,9 @@ let emit_debug_info fmt (enc : Dwarf.encoding) (dies : Dwarf.DIE.t list)
         ~unit_id:i)
     dies
 
-let emit_debug_str fmt (table : Dwarf_write.string_table) =
-  emit_section fmt ".debug_str";
+let emit_string_table_section fmt section_name
+    (table : Dwarf_write.string_table) =
+  emit_section fmt section_name;
   let buf = Buffer.create 64 in
   Dwarf_write.write_string_table buf table;
   let contents = Buffer.contents buf in
@@ -160,6 +161,11 @@ let emit_debug_str fmt (table : Dwarf_write.string_table) =
     emit_asciz fmt s;
     if !i < len then incr i
   done
+
+let emit_debug_str fmt table = emit_string_table_section fmt ".debug_str" table
+
+let emit_debug_line_str fmt table =
+  emit_string_table_section fmt ".debug_line_str" table
 
 let emit_all fmt (enc : Dwarf.encoding) (dies : Dwarf.DIE.t list) =
   let abbrevs, lookup = Dwarf_write.assign_abbreviations dies in

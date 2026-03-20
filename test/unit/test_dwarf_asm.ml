@@ -297,6 +297,23 @@ let test_assemble_debug_str () =
   let s2 = Object.Buffer.Read.zero_string cur6 () in
   check (option string) "second string" (Some "world") s2
 
+let test_assemble_debug_line_str () =
+  let table = Dwarf_write.create_string_table () in
+  let _off1 = Dwarf_write.add_string table "foo" in
+  let _off2 = Dwarf_write.add_string table "bar" in
+  let asm =
+    emit_to_string (fun fmt -> Dwarf_asm.emit_debug_line_str fmt table)
+  in
+  let obj_buf = assemble_and_read asm in
+  let str_sec = find_elf_section obj_buf ".debug_line_str" in
+  let base = Unsigned.UInt64.to_int str_sec.Object.Elf.sh_offset in
+  let cur0 = Object.Buffer.cursor obj_buf ~at:base in
+  let s1 = Object.Buffer.Read.zero_string cur0 () in
+  check (option string) "first string" (Some "foo") s1;
+  let cur4 = Object.Buffer.cursor obj_buf ~at:(base + 4) in
+  let s2 = Object.Buffer.Read.zero_string cur4 () in
+  check (option string) "second string" (Some "bar") s2
+
 let () =
   run "Dwarf_asm"
     [
@@ -318,5 +335,7 @@ let () =
             test_assemble_debug_info_with_children;
           test_case "emit_all roundtrip" `Quick test_assemble_emit_all;
           test_case "debug_str roundtrip" `Quick test_assemble_debug_str;
+          test_case "debug_line_str roundtrip" `Quick
+            test_assemble_debug_line_str;
         ] );
     ]

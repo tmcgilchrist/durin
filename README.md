@@ -24,25 +24,25 @@ It provides:
 | `.debug_info`        | Yes  | Yes   | 4, 5          |
 | `.debug_abbrev`      | Yes  | Yes   | 4, 5          |
 | `.debug_line`        | Yes  | Yes   | 4, 5          |
-| `.debug_line_str`    | Yes  | --    | 5             |
+| `.debug_line_str`    | Yes  | Yes   | 5             |
 | `.debug_str`         | Yes  | Yes   | 4, 5          |
 | `.debug_str_offsets` | Yes  | Yes   | 5             |
 | `.debug_addr`        | Yes  | Yes   | 5             |
 | `.debug_frame`       | Yes  | Yes   | 4, 5          |
 | `.eh_frame`          | Yes  | Yes   | 4, 5          |
 | `.debug_aranges`     | Yes  | Yes   | 4, 5          |
-| `.debug_loc`         | Yes  | Yes   | 4             |
 | `.debug_loclists`    | Yes  | Yes   | 5             |
-| `.debug_ranges`      | Yes  | Yes   | 4             |
 | `.debug_rnglists`    | Yes  | Yes   | 5             |
 | `.debug_names`       | Yes  | Yes   | 5             |
-| `.debug_pubnames`    | Yes  | Yes   | 4             |
-| `.debug_pubtypes`    | Yes  | Yes   | 4             |
 | `.debug_macro`       | Yes  | Yes   | 5             |
-| `.debug_macinfo`     | Yes  | Yes   | 4             |
-| `.debug_types`       | Yes  | Yes   | 4             |
 | `.debug_cu_index`    | Yes  | Yes   | 5             |
 | `.debug_tu_index`    | Yes  | Yes   | 5             |
+| `.debug_loc`         | Yes  | Yes   | 4             |
+| `.debug_ranges`      | Yes  | Yes   | 4             |
+| `.debug_pubnames`    | Yes  | Yes   | 4             |
+| `.debug_pubtypes`    | Yes  | Yes   | 4             |
+| `.debug_macinfo`     | Yes  | Yes   | 4             |
+| `.debug_types`       | Yes  | Yes   | 4             |
 
 ## Install
 

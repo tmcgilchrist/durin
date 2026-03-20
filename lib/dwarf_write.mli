@@ -71,6 +71,8 @@ val create_string_table : unit -> string_table
 val add_string : string_table -> string -> int
 val write_string_table : Buffer.t -> string_table -> unit
 val string_table_size : string_table -> int
+val write_debug_str : Buffer.t -> string_table -> unit
+val write_debug_line_str : Buffer.t -> string_table -> unit
 
 (** {2 Stage 7: Expression Encoding} *)
 
@@ -98,6 +100,7 @@ val write_debug_ranges : Buffer.t -> Dwarf.DebugRanges.entry list -> int -> unit
 
 val write_debug_line :
   Buffer.t ->
+  ?line_str_table:string_table ->
   Dwarf.DebugLine.line_program_header ->
   Dwarf.DebugLine.line_table_entry list ->
   unit

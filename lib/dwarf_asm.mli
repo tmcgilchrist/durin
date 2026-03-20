@@ -44,4 +44,5 @@ val emit_debug_info :
   Format.formatter -> Dwarf.encoding -> Dwarf.DIE.t list -> (int -> u64) -> unit
 
 val emit_debug_str : Format.formatter -> Dwarf_write.string_table -> unit
+val emit_debug_line_str : Format.formatter -> Dwarf_write.string_table -> unit
 val emit_all : Format.formatter -> Dwarf.encoding -> Dwarf.DIE.t list -> unit

@@ -1530,6 +1530,108 @@ let test_write_debug_line_discriminator () =
   check int "e1.disc" 2
     (Unsigned.UInt32.to_int (List.nth parsed 1).discriminator)
 
+let line_strp_line_header () : Dwarf.DebugLine.line_program_header =
+  {
+    format = DWARF32;
+    unit_length = Unsigned.UInt64.zero;
+    version = Unsigned.UInt16.of_int 5;
+    address_size = Unsigned.UInt8.of_int 8;
+    segment_selector_size = Unsigned.UInt8.of_int 0;
+    header_length = Unsigned.UInt64.zero;
+    minimum_instruction_length = Unsigned.UInt8.of_int 1;
+    maximum_operations_per_instruction = Unsigned.UInt8.of_int 1;
+    default_is_stmt = true;
+    line_base = -5;
+    line_range = Unsigned.UInt8.of_int 14;
+    opcode_base = Unsigned.UInt8.of_int 13;
+    standard_opcode_lengths =
+      Array.map Unsigned.UInt8.of_int [| 0; 1; 1; 1; 1; 0; 0; 0; 1; 0; 0; 1 |];
+    directory_entry_format_count = Unsigned.UInt8.of_int 1;
+    directory_entry_formats =
+      [| (Dwarf.DW_LNCT_path, Dwarf.DW_FORM_line_strp) |];
+    directories_count = Unsigned.UInt32.of_int 1;
+    directories = [| "/src" |];
+    file_name_entry_format_count = Unsigned.UInt8.of_int 2;
+    file_name_entry_formats =
+      [|
+        (Dwarf.DW_LNCT_path, Dwarf.DW_FORM_line_strp);
+        (Dwarf.DW_LNCT_directory_index, Dwarf.DW_FORM_udata);
+      |];
+    file_names_count = Unsigned.UInt32.of_int 1;
+    file_names =
+      [|
+        {
+          name = "main.c";
+          timestamp = Unsigned.UInt64.zero;
+          size = Unsigned.UInt64.zero;
+          directory = "/src";
+          md5_checksum = None;
+        };
+      |];
+  }
+
+let test_write_debug_line_line_strp () =
+  let header = line_strp_line_header () in
+  let line_str_table = Dwarf_write.create_string_table () in
+  let entries =
+    [
+      line_entry ~addr:0x1000 ~ln:1 ();
+      line_entry ~addr:0x1010 ~ln:5 ~es:true ();
+    ]
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_line buf ~line_str_table header entries;
+  let obj_buf = object_buffer_of_buffer buf in
+  (* Verify strings were added to line_str_table *)
+  check bool "table non-empty"
+    (Dwarf_write.string_table_size line_str_table > 0)
+    true;
+  (* Verify we can read the strings from the table *)
+  let str_buf = Buffer.create 64 in
+  Dwarf_write.write_debug_line_str str_buf line_str_table;
+  let str_obj = object_buffer_of_buffer str_buf in
+  let str_cur = Object.Buffer.cursor str_obj ~at:0 in
+  let s1 = Object.Buffer.Read.zero_string str_cur () in
+  check (option string) "first string in line_str" (Some "/src") s1;
+  (* Parse the line program header back *)
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
+  check int "version" 5 (Unsigned.UInt16.to_int ph.version);
+  (* Verify the directory format uses line_strp *)
+  let _dir_ct, dir_form = ph.directory_entry_formats.(0) in
+  check string "dir form" "DW_FORM_line_strp"
+    (Dwarf.string_of_attribute_form_encoding_variant dir_form)
+
+let test_write_debug_line_missing_table () =
+  let header = line_strp_line_header () in
+  let raised =
+    try
+      let buf = Buffer.create 256 in
+      Dwarf_write.write_debug_line buf header [];
+      false
+    with Invalid_argument _ -> true
+  in
+  check bool "raises Invalid_argument" true raised
+
+let test_write_debug_line_str_dedup () =
+  let table = Dwarf_write.create_string_table () in
+  let off1 = Dwarf_write.add_string table "hello" in
+  let off2 = Dwarf_write.add_string table "hello" in
+  check int "dedup same offset" off1 off2;
+  let buf = Buffer.create 64 in
+  Dwarf_write.write_debug_line_str buf table;
+  check int "size = 6 (hello + null)" 6 (Buffer.length buf)
+
+let test_write_debug_str_alias () =
+  let table = Dwarf_write.create_string_table () in
+  let _ = Dwarf_write.add_string table "abc" in
+  let buf1 = Buffer.create 16 in
+  Dwarf_write.write_debug_str buf1 table;
+  let buf2 = Buffer.create 16 in
+  Dwarf_write.write_string_table buf2 table;
+  check string "write_debug_str = write_string_table" (Buffer.contents buf1)
+    (Buffer.contents buf2)
+
 let test_write_cie_roundtrip () =
   let cie = Dwarf.CallFrame.create_default_cie () in
   let buf = Buffer.create 64 in
@@ -3151,6 +3253,11 @@ let () =
           test_case "stmt toggle" `Quick test_write_debug_line_stmt_toggle;
           test_case "multi sequence" `Quick test_write_debug_line_multi_seq;
           test_case "discriminator" `Quick test_write_debug_line_discriminator;
+          test_case "line_strp roundtrip" `Quick test_write_debug_line_line_strp;
+          test_case "missing table raises" `Quick
+            test_write_debug_line_missing_table;
+          test_case "line_str dedup" `Quick test_write_debug_line_str_dedup;
+          test_case "debug_str alias" `Quick test_write_debug_str_alias;
         ] );
       ( "cfi",
         [
