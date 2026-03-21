@@ -12,29 +12,24 @@ let buffer_of_bytes bytes =
 
 let make_test_abbrev_table () =
   let tbl = Hashtbl.create 4 in
-  let spec name_attr form =
-    Dwarf.
-      {
-        attr = Unsigned.UInt64.of_int name_attr;
-        form = Unsigned.UInt64.of_int form;
-        implicit_const = None;
-      }
+  let spec attr form : Dwarf.attr_spec =
+    { attr; form; implicit_const = None }
   in
   Hashtbl.add tbl (Unsigned.UInt64.of_int 1)
     Dwarf.
       {
         code = Unsigned.UInt64.of_int 1;
-        tag = Unsigned.UInt64.of_int 0x11;
+        tag = DW_TAG_compile_unit;
         has_children = true;
-        attr_specs = [ spec 0x03 0x08 ];
+        attr_specs = [ spec DW_AT_name DW_FORM_string ];
       };
   Hashtbl.add tbl (Unsigned.UInt64.of_int 2)
     Dwarf.
       {
         code = Unsigned.UInt64.of_int 2;
-        tag = Unsigned.UInt64.of_int 0x34;
+        tag = DW_TAG_variable;
         has_children = false;
-        attr_specs = [ spec 0x03 0x08 ];
+        attr_specs = [ spec DW_AT_name DW_FORM_string ];
       };
   tbl
 

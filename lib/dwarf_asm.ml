@@ -102,12 +102,12 @@ let emit_abbrev_table fmt (abbrevs : Dwarf.abbrev array) =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       emit_uleb128 fmt a.code;
-      emit_uleb128 fmt a.tag;
+      emit_uleb128 fmt (Dwarf.uint64_of_abbreviation_tag a.tag);
       emit_byte fmt (if a.has_children then 1 else 0);
       List.iter
         (fun (spec : Dwarf.attr_spec) ->
-          emit_uleb128 fmt spec.attr;
-          emit_uleb128 fmt spec.form;
+          emit_uleb128 fmt (Dwarf.u64_of_attribute_encoding spec.attr);
+          emit_uleb128 fmt (Dwarf.u64_of_attribute_form_encoding spec.form);
           match spec.implicit_const with
           | Some v -> emit_sleb128 fmt (Signed.Int64.of_int64 v)
           | None -> ())

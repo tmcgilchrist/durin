@@ -24,7 +24,8 @@ let test_dwarf5_cu_header_still_works () =
   let _span, header = Dwarf.parse_compile_unit_header cursor in
   check int "version is 5" 5 (Unsigned.UInt16.to_int header.version);
   check int "address_size is 8" 8 (Unsigned.UInt8.to_int header.address_size);
-  check int "unit_type is 0x01" 0x01 (Unsigned.UInt8.to_int header.unit_type);
+  check string "unit_type is DW_UT_compile" "DW_UT_compile"
+    (Dwarf.string_of_unit_type header.unit_type);
   check int64 "abbrev_offset is 0" 0L
     (Unsigned.UInt64.to_int64 header.debug_abbrev_offset)
 
@@ -37,8 +38,8 @@ let test_dwarf4_cu_header () =
   let _span, header = Dwarf.parse_compile_unit_header cursor in
   check int "version is 4" 4 (Unsigned.UInt16.to_int header.version);
   check int "address_size is 8" 8 (Unsigned.UInt8.to_int header.address_size);
-  check int "unit_type is 0x01 (synthetic DW_UT_compile)" 0x01
-    (Unsigned.UInt8.to_int header.unit_type);
+  check string "unit_type is DW_UT_compile (synthetic)" "DW_UT_compile"
+    (Dwarf.string_of_unit_type header.unit_type);
   check int64 "abbrev_offset is 0x20" 0x20L
     (Unsigned.UInt64.to_int64 header.debug_abbrev_offset)
 
@@ -95,7 +96,8 @@ let test_dwarf5_type_unit_header () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "unit_type is 0x02" 0x02 (Unsigned.UInt8.to_int header.unit_type);
+  check string "unit_type is DW_UT_type" "DW_UT_type"
+    (Dwarf.string_of_unit_type header.unit_type);
   check int "version is 5" 5 (Unsigned.UInt16.to_int header.version);
   (match header.type_signature with
   | Some sig8 ->
@@ -116,7 +118,8 @@ let test_dwarf5_partial_unit_header () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "unit_type is 0x03" 0x03 (Unsigned.UInt8.to_int header.unit_type);
+  check string "unit_type is DW_UT_partial" "DW_UT_partial"
+    (Dwarf.string_of_unit_type header.unit_type);
   check bool "no type_signature" true (header.type_signature = None);
   check bool "no dwo_id" true (header.dwo_id = None)
 
@@ -148,7 +151,8 @@ let test_dwarf5_skeleton_unit_header () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "unit_type is 0x04" 0x04 (Unsigned.UInt8.to_int header.unit_type);
+  check string "unit_type is DW_UT_skeleton" "DW_UT_skeleton"
+    (Dwarf.string_of_unit_type header.unit_type);
   (match header.dwo_id with
   | Some id ->
       check int64 "dwo_id"
@@ -185,7 +189,8 @@ let test_dwarf5_split_compile_unit_header () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cursor in
-  check int "unit_type is 0x05" 0x05 (Unsigned.UInt8.to_int header.unit_type);
+  check string "unit_type is DW_UT_split_compile" "DW_UT_split_compile"
+    (Dwarf.string_of_unit_type header.unit_type);
   check int "address_size is 4" 4 (Unsigned.UInt8.to_int header.address_size);
   check int64 "abbrev_offset 0x10" 0x10L
     (Unsigned.UInt64.to_int64 header.debug_abbrev_offset);

@@ -30,10 +30,7 @@ let test_has_compile_unit_tag binary_path =
       let has_cu =
         Hashtbl.fold
           (fun _code (abbrev : Dwarf.abbrev) acc ->
-            acc
-            || Unsigned.UInt64.to_int abbrev.tag
-               = Unsigned.UInt64.to_int
-                   (Dwarf.uint64_of_abbreviation_tag Dwarf.DW_TAG_compile_unit))
+            acc || abbrev.tag = Dwarf.DW_TAG_compile_unit)
           table false
       in
       check bool "has DW_TAG_compile_unit" true has_cu

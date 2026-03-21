@@ -1037,28 +1037,32 @@ let dump_debug_abbrev filename =
               if abbrev.Dwarf.has_children then "DW_children_yes"
               else "DW_children_no"
             in
-            let tag_str = Dwarf.string_of_abbreviation_tag abbrev.Dwarf.tag in
+            let tag_u64 = Dwarf.uint64_of_abbreviation_tag abbrev.Dwarf.tag in
+            let tag_str = Dwarf.string_of_abbreviation_tag tag_u64 in
 
-            (* Use Format module for table formatting *)
             Format.printf "<%5d><0x%08x><code:%4d> @[<h>%-27s@] %s@." code_int
               !current_offset code_int tag_str children_str;
 
-            (* uleb128 code + uleb128 tag + has_children byte *)
-            let tag_int = Unsigned.UInt64.to_int abbrev.Dwarf.tag in
+            let tag_int = Unsigned.UInt64.to_int tag_u64 in
             current_offset :=
               !current_offset
               + uleb128_encoded_size code_int
               + uleb128_encoded_size tag_int
               + 1;
 
-            (* Print attributes with offset tracking *)
             List.iter
               (fun attr_spec ->
-                let attr_code = Unsigned.UInt64.to_int attr_spec.Dwarf.attr in
-                let form_code = Unsigned.UInt64.to_int attr_spec.Dwarf.form in
-                let attr_str = format_attr_name_for_code attr_spec.Dwarf.attr in
+                let attr_u64 =
+                  Dwarf.u64_of_attribute_encoding attr_spec.Dwarf.attr
+                in
+                let form_u64 =
+                  Dwarf.u64_of_attribute_form_encoding attr_spec.Dwarf.form
+                in
+                let attr_code = Unsigned.UInt64.to_int attr_u64 in
+                let form_code = Unsigned.UInt64.to_int form_u64 in
+                let attr_str = format_attr_name_for_code attr_u64 in
                 let form_str =
-                  Dwarf.string_of_attribute_form_encoding attr_spec.Dwarf.form
+                  Dwarf.string_of_attribute_form_encoding form_u64
                 in
                 Format.printf "@[<h>       <0x%08x>              %-27s@] %s@."
                   !current_offset attr_str form_str;

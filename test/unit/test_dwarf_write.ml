@@ -182,25 +182,30 @@ let parse_abbrev_from_cursor cur =
     let code = Object.Buffer.Read.uleb128 cur in
     if code = 0 then ()
     else
-      let tag = Object.Buffer.Read.uleb128 cur in
+      let tag_raw = Object.Buffer.Read.uleb128 cur in
       let has_children =
         Unsigned.UInt8.to_int (Object.Buffer.Read.u8 cur) <> 0
       in
       let rec parse_specs acc =
-        let attr = Object.Buffer.Read.uleb128 cur in
-        let form = Object.Buffer.Read.uleb128 cur in
-        if attr = 0 && form = 0 then List.rev acc
+        let attr_raw = Object.Buffer.Read.uleb128 cur in
+        let form_raw = Object.Buffer.Read.uleb128 cur in
+        if attr_raw = 0 && form_raw = 0 then List.rev acc
         else
+          let form =
+            Dwarf.attribute_form_encoding (Unsigned.UInt64.of_int form_raw)
+          in
           let implicit_const =
-            if form = 0x21 then
-              Some (Int64.of_int (Object.Buffer.Read.sleb128 cur))
-            else None
+            match form with
+            | Dwarf.DW_FORM_implicit_const ->
+                Some (Int64.of_int (Object.Buffer.Read.sleb128 cur))
+            | _ -> None
           in
           parse_specs
             (Dwarf.
                {
-                 attr = Unsigned.UInt64.of_int attr;
-                 form = Unsigned.UInt64.of_int form;
+                 attr =
+                   Dwarf.attribute_encoding (Unsigned.UInt64.of_int attr_raw);
+                 form;
                  implicit_const;
                }
             :: acc)
@@ -210,7 +215,7 @@ let parse_abbrev_from_cursor cur =
         Dwarf.
           {
             code = Unsigned.UInt64.of_int code;
-            tag = Unsigned.UInt64.of_int tag;
+            tag = Dwarf.abbreviation_tag_of_int (Unsigned.UInt64.of_int tag_raw);
             has_children;
             attr_specs;
           }
@@ -222,18 +227,18 @@ let parse_abbrev_from_cursor cur =
   table
 
 let u64 n = Unsigned.UInt64.of_int n
+let spec attr form : Dwarf.attr_spec = { attr; form; implicit_const = None }
 
 let test_write_abbrev_table_single () =
   let abbrev =
     Dwarf.
       {
         code = u64 1;
-        tag = u64 0x11;
+        tag = DW_TAG_compile_unit;
         has_children = true;
         attr_specs =
           [
-            { attr = u64 0x25; form = u64 0x0e; implicit_const = None };
-            { attr = u64 0x13; form = u64 0x0f; implicit_const = None };
+            spec DW_AT_producer DW_FORM_strp; spec DW_AT_language DW_FORM_udata;
           ];
       }
   in
@@ -244,12 +249,12 @@ let test_write_abbrev_table_single () =
   let table = parse_abbrev_from_cursor cur in
   check int "table has 1 entry" 1 (Hashtbl.length table);
   let parsed = Hashtbl.find table (u64 1) in
-  check int "tag matches" 0x11 (Unsigned.UInt64.to_int parsed.tag);
+  check bool "tag matches" true (parsed.tag = Dwarf.DW_TAG_compile_unit);
   check bool "has_children matches" true parsed.has_children;
   check int "attr_specs length" 2 (List.length parsed.attr_specs);
   let spec0 = List.nth parsed.attr_specs 0 in
-  check int "first attr" 0x25 (Unsigned.UInt64.to_int spec0.attr);
-  check int "first form" 0x0e (Unsigned.UInt64.to_int spec0.form)
+  check bool "first attr" true (spec0.attr = Dwarf.DW_AT_producer);
+  check bool "first form" true (spec0.form = Dwarf.DW_FORM_strp)
 
 let test_write_abbrev_table_multiple () =
   let abbrevs =
@@ -257,20 +262,18 @@ let test_write_abbrev_table_multiple () =
       Dwarf.
         {
           code = u64 1;
-          tag = u64 0x11;
+          tag = DW_TAG_compile_unit;
           has_children = true;
-          attr_specs =
-            [ { attr = u64 0x03; form = u64 0x08; implicit_const = None } ];
+          attr_specs = [ spec DW_AT_name DW_FORM_string ];
         };
       Dwarf.
         {
           code = u64 2;
-          tag = u64 0x24;
+          tag = DW_TAG_base_type;
           has_children = false;
           attr_specs =
             [
-              { attr = u64 0x03; form = u64 0x08; implicit_const = None };
-              { attr = u64 0x0b; form = u64 0x0f; implicit_const = None };
+              spec DW_AT_name DW_FORM_string; spec DW_AT_byte_size DW_FORM_udata;
             ];
         };
     |]
@@ -292,10 +295,16 @@ let test_write_abbrev_table_implicit_const () =
     Dwarf.
       {
         code = u64 1;
-        tag = u64 0x2e;
+        tag = DW_TAG_subprogram;
         has_children = false;
         attr_specs =
-          [ { attr = u64 0x3b; form = u64 0x21; implicit_const = Some 42L } ];
+          [
+            {
+              attr = DW_AT_decl_line;
+              form = DW_FORM_implicit_const;
+              implicit_const = Some 42L;
+            };
+          ];
       }
   in
   let buf = Buffer.create 64 in
@@ -304,19 +313,19 @@ let test_write_abbrev_table_implicit_const () =
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let table = parse_abbrev_from_cursor cur in
   let parsed = Hashtbl.find table (u64 1) in
-  let spec = List.hd parsed.attr_specs in
-  check int "form is implicit_const" 0x21 (Unsigned.UInt64.to_int spec.form);
-  check (option int64) "implicit_const value" (Some 42L) spec.implicit_const
+  let s = List.hd parsed.attr_specs in
+  check bool "form is implicit_const" true
+    (s.form = Dwarf.DW_FORM_implicit_const);
+  check (option int64) "implicit_const value" (Some 42L) s.implicit_const
 
 let test_abbrev_table_size () =
   let abbrev =
     Dwarf.
       {
         code = u64 1;
-        tag = u64 0x11;
+        tag = DW_TAG_compile_unit;
         has_children = true;
-        attr_specs =
-          [ { attr = u64 0x03; form = u64 0x08; implicit_const = None } ];
+        attr_specs = [ spec DW_AT_name DW_FORM_string ];
       }
   in
   let buf = Buffer.create 64 in
@@ -437,8 +446,8 @@ let test_assign_then_write_roundtrip () =
   let table = parse_abbrev_from_cursor cur in
   check int "roundtrip: 1 abbrev" 1 (Hashtbl.length table);
   let parsed = Hashtbl.find table (u64 1) in
-  check int "roundtrip: tag is compile_unit" 0x11
-    (Unsigned.UInt64.to_int parsed.tag);
+  check bool "roundtrip: tag is compile_unit" true
+    (parsed.tag = Dwarf.DW_TAG_compile_unit);
   check int "roundtrip: 2 attr_specs" 2 (List.length parsed.attr_specs)
 
 (* Stage 3: Attribute value tests *)
@@ -873,7 +882,8 @@ let test_write_compile_unit () =
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let _span, header = Dwarf.parse_compile_unit_header cur in
   check int "version" 5 (Unsigned.UInt16.to_int header.version);
-  check int "unit_type" 0x01 (Unsigned.UInt8.to_int header.unit_type);
+  check string "unit_type" "DW_UT_compile"
+    (Dwarf.string_of_unit_type header.unit_type);
   check int "address_size" 8 (Unsigned.UInt8.to_int header.address_size);
   check int64 "debug_abbrev_offset" 0L
     (Unsigned.UInt64.to_int64 header.debug_abbrev_offset);

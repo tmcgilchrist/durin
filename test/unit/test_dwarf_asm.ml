@@ -94,25 +94,30 @@ let parse_abbrev_from_cursor cur =
     let code = Object.Buffer.Read.uleb128 cur in
     if code = 0 then ()
     else
-      let tag = Object.Buffer.Read.uleb128 cur in
+      let tag_raw = Object.Buffer.Read.uleb128 cur in
       let has_children =
         Unsigned.UInt8.to_int (Object.Buffer.Read.u8 cur) <> 0
       in
       let rec parse_specs acc =
-        let attr = Object.Buffer.Read.uleb128 cur in
-        let form = Object.Buffer.Read.uleb128 cur in
-        if attr = 0 && form = 0 then List.rev acc
+        let attr_raw = Object.Buffer.Read.uleb128 cur in
+        let form_raw = Object.Buffer.Read.uleb128 cur in
+        if attr_raw = 0 && form_raw = 0 then List.rev acc
         else
+          let form =
+            Dwarf.attribute_form_encoding (Unsigned.UInt64.of_int form_raw)
+          in
           let implicit_const =
-            if form = 0x21 then
-              Some (Int64.of_int (Object.Buffer.Read.sleb128 cur))
-            else None
+            match form with
+            | Dwarf.DW_FORM_implicit_const ->
+                Some (Int64.of_int (Object.Buffer.Read.sleb128 cur))
+            | _ -> None
           in
           parse_specs
             (Dwarf.
                {
-                 attr = Unsigned.UInt64.of_int attr;
-                 form = Unsigned.UInt64.of_int form;
+                 attr =
+                   Dwarf.attribute_encoding (Unsigned.UInt64.of_int attr_raw);
+                 form;
                  implicit_const;
                }
             :: acc)
@@ -122,7 +127,7 @@ let parse_abbrev_from_cursor cur =
         Dwarf.
           {
             code = Unsigned.UInt64.of_int code;
-            tag = Unsigned.UInt64.of_int tag;
+            tag = Dwarf.abbreviation_tag_of_int (Unsigned.UInt64.of_int tag_raw);
             has_children;
             attr_specs;
           }
@@ -145,10 +150,16 @@ let test_assemble_abbrev_roundtrip () =
       Dwarf.
         {
           code = u64 1;
-          tag = u64 0x11;
+          tag = DW_TAG_compile_unit;
           has_children = true;
           attr_specs =
-            [ { attr = u64 0x03; form = u64 0x08; implicit_const = None } ];
+            [
+              {
+                attr = DW_AT_name;
+                form = DW_FORM_string;
+                implicit_const = None;
+              };
+            ];
         };
     |]
   in
@@ -158,12 +169,12 @@ let test_assemble_abbrev_roundtrip () =
   let obj_buf = assemble_and_read asm in
   let table = parse_abbrev_from_obj obj_buf in
   let abbrev = Hashtbl.find table (u64 1) in
-  check int64 "tag" 0x11L (Unsigned.UInt64.to_int64 abbrev.Dwarf.tag);
+  check bool "tag" true (abbrev.Dwarf.tag = Dwarf.DW_TAG_compile_unit);
   check bool "has_children" true abbrev.has_children;
   check int "attr_specs" 1 (List.length abbrev.attr_specs);
   let spec = List.hd abbrev.attr_specs in
-  check int64 "attr" 0x03L (Unsigned.UInt64.to_int64 spec.attr);
-  check int64 "form" 0x08L (Unsigned.UInt64.to_int64 spec.form)
+  check bool "attr" true (spec.attr = Dwarf.DW_AT_name);
+  check bool "form" true (spec.form = Dwarf.DW_FORM_string)
 
 let test_assemble_debug_info_roundtrip () =
   let die : Dwarf.DIE.t =

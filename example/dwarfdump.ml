@@ -497,7 +497,7 @@ let dump_debug_info filename =
               in
 
               let unit_length = Unsigned.UInt64.to_int header.unit_length in
-              let unit_type = Dwarf.unit_type_of_u8 header.unit_type in
+              let unit_type = header.unit_type in
               let length_field_size =
                 match header.format with
                 | Dwarf.DWARF32 -> 4

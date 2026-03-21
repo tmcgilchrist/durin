@@ -1035,13 +1035,15 @@ type t
    to provide a lazy way to parse out the values on demand. *)
 type span = { start : size_t; size : size_t }
 
-(* TODO Improve this to use variant types? *)
-type attr_spec = { attr : u64; form : u64; implicit_const : int64 option }
+type attr_spec = {
+  attr : attribute_encoding;
+  form : attribute_form_encoding;
+  implicit_const : int64 option;
+}
 
-(* TODO Improve this to use variant types? *)
 type abbrev = {
   code : u64;
-  tag : u64;
+  tag : abbreviation_tag;
   has_children : bool;
   attr_specs : attr_spec list;
 }
@@ -1174,10 +1176,9 @@ module CompileUnit : sig
     format : dwarf_format;  (** DWARF32 or DWARF64 format *)
     unit_length : u64;  (** Length of this unit excluding the length field *)
     version : u16;  (** DWARF version (4 or 5) *)
-    unit_type : u8;
-        (** Unit type byte (0x01=compile, 0x02=type, 0x03=partial,
-            0x04=skeleton, 0x05=split_compile, 0x06=split_type). Synthesized as
-            0x01 for DWARF 4. *)
+    unit_type : unit_type;
+        (** Unit type (compile, type, partial, skeleton, split_compile,
+            split_type). Synthesized as DW_UT_compile for DWARF 4. *)
     debug_abbrev_offset : u64;  (** Offset into debug abbreviation table *)
     address_size : u8;  (** Size of addresses in bytes (4 or 8) *)
     header_span : span;  (** Span indicating the header's position and size *)
@@ -1225,7 +1226,11 @@ module CompileUnit : sig
 end
 
 val skip_attribute_value :
-  Object.Buffer.cursor -> u64 -> encoding -> Object.Buffer.t -> unit
+  Object.Buffer.cursor ->
+  attribute_form_encoding ->
+  encoding ->
+  Object.Buffer.t ->
+  unit
 (** Skip past a single attribute value in the buffer without allocating. *)
 
 val skip_die :

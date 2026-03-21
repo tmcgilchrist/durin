@@ -13,7 +13,7 @@ val write_offset : Buffer.t -> Dwarf.dwarf_format -> u64 -> unit
 val write_address : Buffer.t -> int -> u64 -> unit
 val write_null_terminated_string : Buffer.t -> string -> unit
 
-(** {2 Stage 2: Abbreviation Table} *)
+(** {2 Abbreviation Table} *)
 
 val form_for_attribute_value :
   Dwarf.DIE.attribute_value -> Dwarf.attribute_form_encoding
@@ -31,7 +31,7 @@ val abbrev_table_size : Dwarf.abbrev array -> int
 val uleb128_size : u64 -> int
 val sleb128_size : i64 -> int
 
-(** {2 Stage 3: Attribute Value Serialisation} *)
+(** {2 Attribute Value Serialisation} *)
 
 val write_attribute_value :
   Buffer.t ->
@@ -46,7 +46,7 @@ val attribute_value_size :
   Dwarf.encoding ->
   int
 
-(** {2 Stage 4: DIE Tree Serialisation} *)
+(** {2 DIE Tree Serialisation} *)
 
 val write_die :
   Buffer.t -> Dwarf.DIE.t -> Dwarf.encoding -> (int -> u64) -> unit
@@ -56,14 +56,14 @@ val die_size : Dwarf.DIE.t -> Dwarf.encoding -> (int -> u64) -> int
 val write_die_forest :
   Buffer.t -> Dwarf.DIE.t list -> Dwarf.encoding -> (int -> u64) -> unit
 
-(** {2 Stage 5: Compilation Unit & Top-Level} *)
+(** {2 Compilation Unit & Top-Level} *)
 
 val write_compile_unit :
   Buffer.t -> Dwarf.encoding -> Dwarf.DIE.t -> (int -> u64) -> u64 -> unit
 
 val write_debug_info : Dwarf.encoding -> Dwarf.DIE.t list -> string * string
 
-(** {2 Stage 6: String Table} *)
+(** {2 String Table} *)
 
 type string_table
 
@@ -74,12 +74,12 @@ val string_table_size : string_table -> int
 val write_debug_str : Buffer.t -> string_table -> unit
 val write_debug_line_str : Buffer.t -> string_table -> unit
 
-(** {2 Stage 7: Expression Encoding} *)
+(** {2 Expression Encoding} *)
 
 val write_expression :
   Buffer.t -> Dwarf.dwarf_expression_operation list -> Dwarf.encoding -> unit
 
-(** {2 Stage 9: Location/Range Lists} *)
+(** {2 Location/Range Lists} *)
 
 val write_location_entry :
   Buffer.t -> Dwarf.DebugLoclists.location_entry -> int -> unit
@@ -96,7 +96,7 @@ val write_rnglists_header : Buffer.t -> Dwarf.encoding -> int -> int -> unit
 val write_debug_loc : Buffer.t -> Dwarf.DebugLoc.entry list -> int -> unit
 val write_debug_ranges : Buffer.t -> Dwarf.DebugRanges.entry list -> int -> unit
 
-(** {2 Stage 10: Line Program Writer} *)
+(** {2 Line Program Writer} *)
 
 val write_debug_line :
   Buffer.t ->
@@ -105,7 +105,7 @@ val write_debug_line :
   Dwarf.DebugLine.line_table_entry list ->
   unit
 
-(** {2 Stage 11: CFI Writer} *)
+(** {2 CFI Writer} *)
 
 type cfi_op =
   | CFA_advance_loc of int
@@ -143,7 +143,7 @@ val write_fde : Buffer.t -> Dwarf.CallFrame.frame_description_entry -> unit
 val write_debug_frame :
   Buffer.t -> Dwarf.CallFrame.debug_frame_entry list -> unit
 
-(** {2 Stage 12: .eh_frame Writer} *)
+(** {2 .eh_frame Writer} *)
 
 val write_eh_cie : Buffer.t -> Dwarf.CallFrame.common_information_entry -> unit
 
@@ -152,27 +152,27 @@ val write_eh_fde :
 
 val write_eh_frame : Buffer.t -> Dwarf.EHFrame.eh_frame_entry list -> unit
 
-(** {2 Stage 13: .debug_aranges Writer} *)
+(** {2 .debug_aranges Writer} *)
 
 val write_aranges_set : Buffer.t -> Dwarf.DebugAranges.aranges_set -> unit
 
-(** {2 Stage 14: .debug_addr and .debug_str_offsets Writers} *)
+(** {2 .debug_addr and .debug_str_offsets Writers} *)
 
 val write_debug_addr : Buffer.t -> Dwarf.DebugAddr.t -> unit
 val write_debug_str_offsets : Buffer.t -> Dwarf.DebugStrOffsets.t -> unit
 
-(** {2 Stage 15: .debug_names Writer} *)
+(** {2 .debug_names Writer} *)
 
 val write_debug_names_abbrev_table :
   Buffer.t -> Dwarf.DebugNames.debug_names_abbrev list -> unit
 
 val write_debug_names : Buffer.t -> Dwarf.DebugNames.debug_names_section -> unit
 
-(** {2 Stage 16: Split DWARF Index Writer} *)
+(** {2 Split DWARF Index Writer} *)
 
 val write_unit_index : Buffer.t -> Dwarf.SplitDwarf.unit_index -> unit
 
-(** {2 Stage 17: .debug_macro Writer} *)
+(** {2 .debug_macro Writer} *)
 
 val write_debug_macro_entry :
   Buffer.t -> Dwarf.dwarf_format -> Dwarf.debug_macro_entry -> unit
@@ -180,7 +180,7 @@ val write_debug_macro_entry :
 val write_debug_macro_unit : Buffer.t -> Dwarf.debug_macro_unit -> unit
 val write_debug_macro : Buffer.t -> Dwarf.debug_macro_section -> unit
 
-(** {2 Stage 18: .debug_pubnames/.debug_pubtypes Writers} *)
+(** {2 .debug_pubnames/.debug_pubtypes Writers} *)
 
 val write_pubnames_set :
   Buffer.t ->
@@ -194,7 +194,7 @@ val write_pubtypes_set :
   Dwarf.DebugPubtypes.entry list ->
   unit
 
-(** {2 Stage 19: .debug_types Writer} *)
+(** {2 .debug_types Writer} *)
 
 val write_type_unit :
   Buffer.t ->

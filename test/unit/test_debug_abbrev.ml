@@ -132,41 +132,41 @@ let test_form_encoding_strings () =
 let test_abbrev_record () =
   let spec : Dwarf.attr_spec =
     {
-      attr = Unsigned.UInt64.of_int 0x03;
-      form = Unsigned.UInt64.of_int 0x08;
+      attr = Dwarf.DW_AT_name;
+      form = Dwarf.DW_FORM_string;
       implicit_const = None;
     }
   in
   let abbrev : Dwarf.abbrev =
     {
       code = Unsigned.UInt64.of_int 1;
-      tag = Unsigned.UInt64.of_int 0x11;
+      tag = Dwarf.DW_TAG_compile_unit;
       has_children = true;
       attr_specs = [ spec ];
     }
   in
   check int "code is 1" (Unsigned.UInt64.to_int abbrev.code) 1;
   check string "tag is compile_unit" "DW_TAG_compile_unit"
-    (Dwarf.string_of_abbreviation_tag abbrev.tag);
+    (Dwarf.string_of_abbreviation_tag_direct abbrev.tag);
   check bool "has_children" true abbrev.has_children;
   check int "one attr spec" 1 (List.length abbrev.attr_specs);
   let s = List.hd abbrev.attr_specs in
   check string "attr is DW_AT_name" "DW_AT_name"
-    (Dwarf.string_of_attribute_code s.attr);
+    (Dwarf.string_of_attribute_encoding s.attr);
   check string "form is DW_FORM_string" "DW_FORM_string"
-    (Dwarf.string_of_attribute_form_encoding s.form);
+    (Dwarf.string_of_attribute_form_encoding_variant s.form);
   check bool "no implicit_const" true (s.implicit_const = None)
 
 let test_abbrev_with_implicit_const () =
   let spec : Dwarf.attr_spec =
     {
-      attr = Unsigned.UInt64.of_int 0x03;
-      form = Unsigned.UInt64.of_int 0x21;
+      attr = Dwarf.DW_AT_name;
+      form = Dwarf.DW_FORM_implicit_const;
       implicit_const = Some 42L;
     }
   in
   check string "form is DW_FORM_implicit_const" "DW_FORM_implicit_const"
-    (Dwarf.string_of_attribute_form_encoding spec.form);
+    (Dwarf.string_of_attribute_form_encoding_variant spec.form);
   match spec.implicit_const with
   | Some v -> check int64 "implicit_const is 42" v 42L
   | None -> fail "expected implicit_const"
@@ -175,18 +175,18 @@ let test_abbrev_multiple_attrs () =
   let specs : Dwarf.attr_spec list =
     [
       {
-        attr = Unsigned.UInt64.of_int 0x03;
-        form = Unsigned.UInt64.of_int 0x08;
+        attr = Dwarf.DW_AT_name;
+        form = Dwarf.DW_FORM_string;
         implicit_const = None;
       };
       {
-        attr = Unsigned.UInt64.of_int 0x11;
-        form = Unsigned.UInt64.of_int 0x01;
+        attr = Dwarf.DW_AT_low_pc;
+        form = Dwarf.DW_FORM_addr;
         implicit_const = None;
       };
       {
-        attr = Unsigned.UInt64.of_int 0x12;
-        form = Unsigned.UInt64.of_int 0x07;
+        attr = Dwarf.DW_AT_high_pc;
+        form = Dwarf.DW_FORM_data8;
         implicit_const = None;
       };
     ]
@@ -194,94 +194,94 @@ let test_abbrev_multiple_attrs () =
   let abbrev : Dwarf.abbrev =
     {
       code = Unsigned.UInt64.of_int 1;
-      tag = Unsigned.UInt64.of_int 0x2e;
+      tag = Dwarf.DW_TAG_subprogram;
       has_children = true;
       attr_specs = specs;
     }
   in
   check string "tag is subprogram" "DW_TAG_subprogram"
-    (Dwarf.string_of_abbreviation_tag abbrev.tag);
+    (Dwarf.string_of_abbreviation_tag_direct abbrev.tag);
   check int "three attr specs" 3 (List.length abbrev.attr_specs);
   let s0 = List.nth abbrev.attr_specs 0 in
   let s1 = List.nth abbrev.attr_specs 1 in
   let s2 = List.nth abbrev.attr_specs 2 in
   check string "attr 0 is DW_AT_name" "DW_AT_name"
-    (Dwarf.string_of_attribute_code s0.attr);
+    (Dwarf.string_of_attribute_encoding s0.attr);
   check string "attr 1 is DW_AT_low_pc" "DW_AT_low_pc"
-    (Dwarf.string_of_attribute_code s1.attr);
+    (Dwarf.string_of_attribute_encoding s1.attr);
   check string "attr 2 is DW_AT_high_pc" "DW_AT_high_pc"
-    (Dwarf.string_of_attribute_code s2.attr);
+    (Dwarf.string_of_attribute_encoding s2.attr);
   check string "form 0 is DW_FORM_string" "DW_FORM_string"
-    (Dwarf.string_of_attribute_form_encoding s0.form);
+    (Dwarf.string_of_attribute_form_encoding_variant s0.form);
   check string "form 1 is DW_FORM_addr" "DW_FORM_addr"
-    (Dwarf.string_of_attribute_form_encoding s1.form);
+    (Dwarf.string_of_attribute_form_encoding_variant s1.form);
   check string "form 2 is DW_FORM_data8" "DW_FORM_data8"
-    (Dwarf.string_of_attribute_form_encoding s2.form)
+    (Dwarf.string_of_attribute_form_encoding_variant s2.form)
 
 let test_abbrev_no_children () =
   let abbrev : Dwarf.abbrev =
     {
       code = Unsigned.UInt64.of_int 2;
-      tag = Unsigned.UInt64.of_int 0x34;
+      tag = Dwarf.DW_TAG_variable;
       has_children = false;
       attr_specs = [];
     }
   in
   check string "tag is variable" "DW_TAG_variable"
-    (Dwarf.string_of_abbreviation_tag abbrev.tag);
+    (Dwarf.string_of_abbreviation_tag_direct abbrev.tag);
   check bool "no children" false abbrev.has_children;
   check int "no attr specs" 0 (List.length abbrev.attr_specs)
 
 (* ---- Hashtbl-based abbreviation table ---- *)
 
+let spec attr form : Dwarf.attr_spec = { attr; form; implicit_const = None }
+
 let test_abbrev_table_lookup () =
   let tbl = Hashtbl.create 4 in
-  let spec name_attr form =
-    Dwarf.
-      {
-        attr = Unsigned.UInt64.of_int name_attr;
-        form = Unsigned.UInt64.of_int form;
-        implicit_const = None;
-      }
-  in
   Hashtbl.add tbl (Unsigned.UInt64.of_int 1)
     Dwarf.
       {
         code = Unsigned.UInt64.of_int 1;
-        tag = Unsigned.UInt64.of_int 0x11;
+        tag = DW_TAG_compile_unit;
         has_children = true;
-        attr_specs = [ spec 0x03 0x08; spec 0x25 0x0e ];
+        attr_specs =
+          [ spec DW_AT_name DW_FORM_string; spec DW_AT_producer DW_FORM_strp ];
       };
   Hashtbl.add tbl (Unsigned.UInt64.of_int 2)
     Dwarf.
       {
         code = Unsigned.UInt64.of_int 2;
-        tag = Unsigned.UInt64.of_int 0x2e;
+        tag = DW_TAG_subprogram;
         has_children = true;
-        attr_specs = [ spec 0x03 0x08; spec 0x11 0x01; spec 0x12 0x07 ];
+        attr_specs =
+          [
+            spec DW_AT_name DW_FORM_string;
+            spec DW_AT_low_pc DW_FORM_addr;
+            spec DW_AT_high_pc DW_FORM_data8;
+          ];
       };
   Hashtbl.add tbl (Unsigned.UInt64.of_int 3)
     Dwarf.
       {
         code = Unsigned.UInt64.of_int 3;
-        tag = Unsigned.UInt64.of_int 0x34;
+        tag = DW_TAG_variable;
         has_children = false;
-        attr_specs = [ spec 0x03 0x08 ];
+        attr_specs = [ spec DW_AT_name DW_FORM_string ];
       };
 
   let a1 = Hashtbl.find tbl (Unsigned.UInt64.of_int 1) in
   check string "code 1 is compile_unit" "DW_TAG_compile_unit"
-    (Dwarf.string_of_abbreviation_tag a1.tag);
+    (Dwarf.string_of_abbreviation_tag_direct a1.tag);
   check int "code 1 has 2 attrs" 2 (List.length a1.attr_specs);
 
   let a2 = Hashtbl.find tbl (Unsigned.UInt64.of_int 2) in
   check string "code 2 is subprogram" "DW_TAG_subprogram"
-    (Dwarf.string_of_abbreviation_tag a2.tag);
+    (Dwarf.string_of_abbreviation_tag_direct a2.tag);
   check int "code 2 has 3 attrs" 3 (List.length a2.attr_specs);
 
   let a3 = Hashtbl.find tbl (Unsigned.UInt64.of_int 3) in
   check string "code 3 is variable" "DW_TAG_variable"
-    (Dwarf.string_of_abbreviation_tag a3.tag);
+    (Dwarf.string_of_abbreviation_tag_direct a3.tag);
   check bool "code 3 no children" false a3.has_children;
 
   let missing = Hashtbl.find_opt tbl (Unsigned.UInt64.of_int 99) in

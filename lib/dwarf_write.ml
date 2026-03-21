@@ -85,7 +85,7 @@ let write_null_terminated_string buf s =
   Buffer.add_string buf s;
   Buffer.add_char buf '\x00'
 
-(* Stage 2: Abbreviation Table *)
+(* Abbreviation Table *)
 
 let form_for_attribute_value :
     Dwarf.DIE.attribute_value -> Dwarf.attribute_form_encoding = function
@@ -153,18 +153,14 @@ let assign_abbreviations (dies : Dwarf.DIE.t list) =
             List.map
               (fun (attr_enc, form_enc) ->
                 Dwarf.
-                  {
-                    attr = u64_of_attribute_encoding attr_enc;
-                    form = u64_of_attribute_form_encoding form_enc;
-                    implicit_const = None;
-                  })
+                  { attr = attr_enc; form = form_enc; implicit_const = None })
               shape.attr_forms
           in
           let abbrev =
             Dwarf.
               {
                 code;
-                tag = uint64_of_abbreviation_tag shape.tag;
+                tag = shape.tag;
                 has_children = shape.has_children;
                 attr_specs;
               }
@@ -190,12 +186,12 @@ let write_abbrev_table buf (abbrevs : Dwarf.abbrev array) =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       write_uleb128 buf a.code;
-      write_uleb128 buf a.tag;
+      write_uleb128 buf (Dwarf.uint64_of_abbreviation_tag a.tag);
       write_u8 buf (Unsigned.UInt8.of_int (if a.has_children then 1 else 0));
       List.iter
         (fun (spec : Dwarf.attr_spec) ->
-          write_uleb128 buf spec.attr;
-          write_uleb128 buf spec.form;
+          write_uleb128 buf (Dwarf.u64_of_attribute_encoding spec.attr);
+          write_uleb128 buf (Dwarf.u64_of_attribute_form_encoding spec.form);
           match spec.implicit_const with
           | Some v -> write_sleb128 buf (Signed.Int64.of_int64 v)
           | None -> ())
@@ -233,12 +229,15 @@ let abbrev_table_size (abbrevs : Dwarf.abbrev array) =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       size := !size + uleb128_size a.code;
-      size := !size + uleb128_size a.tag;
+      size := !size + uleb128_size (Dwarf.uint64_of_abbreviation_tag a.tag);
       size := !size + 1;
       List.iter
         (fun (spec : Dwarf.attr_spec) ->
-          size := !size + uleb128_size spec.attr;
-          size := !size + uleb128_size spec.form;
+          size :=
+            !size + uleb128_size (Dwarf.u64_of_attribute_encoding spec.attr);
+          size :=
+            !size
+            + uleb128_size (Dwarf.u64_of_attribute_form_encoding spec.form);
           match spec.implicit_const with
           | Some v -> size := !size + sleb128_size (Signed.Int64.of_int64 v)
           | None -> ())
@@ -247,7 +246,7 @@ let abbrev_table_size (abbrevs : Dwarf.abbrev array) =
     abbrevs;
   !size + 1
 
-(* Stage 3: Attribute Value Serialisation *)
+(* Attribute Value Serialisation *)
 
 let write_attribute_value buf (value : Dwarf.DIE.attribute_value)
     (form : Dwarf.attribute_form_encoding) (enc : Dwarf.encoding) =
@@ -340,7 +339,7 @@ let attribute_value_size (value : Dwarf.DIE.attribute_value)
       uleb128_size (Unsigned.UInt64.of_int len) + len
   | _ -> failwith "Unsupported form/value combination for size"
 
-(* Stage 4: DIE Tree Serialisation *)
+(* DIE Tree Serialisation *)
 
 let rec write_die buf (die : Dwarf.DIE.t) (enc : Dwarf.encoding)
     (lookup : int -> u64) =
@@ -381,7 +380,7 @@ let write_die_forest buf (dies : Dwarf.DIE.t list) (enc : Dwarf.encoding)
     (lookup : int -> u64) =
   List.iter (fun die -> write_die buf die enc lookup) dies
 
-(* Stage 5: Compilation Unit & Top-Level *)
+(* Compilation Unit & Top-Level *)
 
 let write_compile_unit buf (enc : Dwarf.encoding) (die : Dwarf.DIE.t)
     (lookup : int -> u64) (debug_abbrev_offset : u64) =
@@ -392,7 +391,8 @@ let write_compile_unit buf (enc : Dwarf.encoding) (die : Dwarf.DIE.t)
   let unit_length = header_content_size + die_bytes in
   write_initial_length buf enc.format unit_length;
   write_u16_le buf enc.version;
-  write_u8 buf (Unsigned.UInt8.of_int 0x01);
+  write_u8 buf
+    (Unsigned.UInt8.of_int (Dwarf.int_of_unit_type Dwarf.DW_UT_compile));
   write_u8 buf enc.address_size;
   write_offset buf enc.format debug_abbrev_offset;
   write_die buf die enc lookup
@@ -407,7 +407,7 @@ let write_debug_info (enc : Dwarf.encoding) (dies : Dwarf.DIE.t list) =
     dies;
   (Buffer.contents info_buf, Buffer.contents abbrev_buf)
 
-(* Stage 6: String Table *)
+(* String Table *)
 
 type string_table = { offsets : (string, int) Hashtbl.t; buf : Buffer.t }
 
@@ -431,7 +431,7 @@ let string_table_size table = Buffer.length table.buf
 let write_debug_str buf table = write_string_table buf table
 let write_debug_line_str buf table = write_string_table buf table
 
-(* Stage 7: Expression Encoding *)
+(* Expression Encoding *)
 
 let write_op_byte buf (opcode : Dwarf.operation_encoding) =
   Buffer.add_char buf (Char.chr (Dwarf.int_of_operation_encoding opcode))
@@ -505,7 +505,7 @@ let write_expression buf (ops : Dwarf.dwarf_expression_operation list)
       | _ -> failwith "Unsupported operation for write")
     ops
 
-(* Stage 9: Location/Range Lists *)
+(* Location/Range Lists *)
 
 let write_lle_byte buf kind =
   write_u8 buf (Unsigned.UInt8.of_int (Dwarf.int_of_location_list_entry kind))
@@ -656,7 +656,7 @@ let write_debug_ranges buf (entries : Dwarf.DebugRanges.entry list)
     (address_size : int) =
   List.iter (fun e -> write_debug_ranges_entry buf e address_size) entries
 
-(* Stage 10: Line Program Writer *)
+(* Line Program Writer *)
 
 let int_of_lnct = function
   | Dwarf.DW_LNCT_path -> 0x1
@@ -888,7 +888,7 @@ let write_debug_line buf ?line_str_table
   Buffer.add_string buf (Buffer.contents hdr_buf);
   Buffer.add_string buf (Buffer.contents prog_buf)
 
-(* Stage 11: CFI Writer *)
+(* CFI Writer *)
 
 type cfi_op =
   | CFA_advance_loc of int
@@ -1073,7 +1073,7 @@ let write_debug_frame buf entries =
           write_u32_le buf (Unsigned.UInt32.of_int 0))
     entries
 
-(* Stage 12: .eh_frame Writer *)
+(* .eh_frame Writer *)
 
 let write_eh_cie buf (cie : Dwarf.CallFrame.common_information_entry) =
   let ver = Unsigned.UInt8.to_int cie.version in
@@ -1139,7 +1139,7 @@ let write_eh_frame buf entries =
       | Dwarf.EHFrame.EH_FDE fde -> write_eh_fde buf fde 0)
     entries
 
-(* Stage 13: .debug_aranges Writer *)
+(* .debug_aranges Writer *)
 
 let write_aranges_set buf (aset : Dwarf.DebugAranges.aranges_set) =
   let h = aset.header in
@@ -1166,7 +1166,7 @@ let write_aranges_set buf (aset : Dwarf.DebugAranges.aranges_set) =
   write_address buf addr_sz Unsigned.UInt64.zero;
   write_address buf addr_sz Unsigned.UInt64.zero
 
-(* Stage 14: .debug_addr and .debug_str_offsets Writers *)
+(* .debug_addr and .debug_str_offsets Writers *)
 
 let write_debug_addr buf (t : Dwarf.DebugAddr.t) =
   let h = t.header in
@@ -1188,7 +1188,7 @@ let write_debug_addr buf (t : Dwarf.DebugAddr.t) =
       write_address buf addr_sz e.address)
     t.entries
 
-(* Stage 15: .debug_names Writer *)
+(* .debug_names Writer *)
 
 let write_debug_names_abbrev_table buf
     (abbrevs : Dwarf.DebugNames.debug_names_abbrev list) =
@@ -1379,7 +1379,7 @@ let write_debug_str_offsets buf (t : Dwarf.DebugStrOffsets.t) =
       write_offset buf h.format e.offset)
     t.offsets
 
-(* Stage 16: Split DWARF index writers *)
+(* Split DWARF index writers *)
 
 let write_unit_index buf (idx : Dwarf.SplitDwarf.unit_index) =
   let uc = idx.unit_count in
@@ -1464,7 +1464,7 @@ let write_unit_index buf (idx : Dwarf.SplitDwarf.unit_index) =
         columns)
     idx.entries
 
-(* Stage 17: .debug_macro Writer *)
+(* .debug_macro Writer *)
 
 let write_debug_macro_entry buf (fmt : Dwarf.dwarf_format)
     (e : Dwarf.debug_macro_entry) =
@@ -1514,7 +1514,7 @@ let write_debug_macro_unit buf (u : Dwarf.debug_macro_unit) =
 let write_debug_macro buf (sec : Dwarf.debug_macro_section) =
   List.iter (fun u -> write_debug_macro_unit buf u) sec.units
 
-(* Stage 18: .debug_pubnames/.debug_pubtypes Writers *)
+(* .debug_pubnames/.debug_pubtypes Writers *)
 
 let write_pubnames_set buf (h : Dwarf.DebugPubnames.header)
     (entries : Dwarf.DebugPubnames.entry list) =
@@ -1560,7 +1560,7 @@ let write_pubtypes_set buf (h : Dwarf.DebugPubtypes.header)
     entries;
   write_offset buf fmt Unsigned.UInt64.zero
 
-(* Stage 19: .debug_types Writer *)
+(* .debug_types Writer *)
 
 let write_type_unit buf (enc : Dwarf.encoding) (die : Dwarf.DIE.t)
     (lookup : int -> u64) (type_signature : u64) (type_offset : u64)
