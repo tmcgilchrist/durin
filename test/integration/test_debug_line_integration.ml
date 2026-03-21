@@ -59,7 +59,8 @@ let test_line_program_non_empty binary_path =
       let cur = Object.Buffer.cursor ~at:offset buffer in
       let header = Dwarf.DebugLine.parse_line_program_header cur buffer in
       let entries = Dwarf.DebugLine.parse_line_program cur header in
-      check bool "has line entries" true (List.length entries > 0)
+      let count = Seq.fold_left (fun n _ -> n + 1) 0 entries in
+      check bool "has line entries" true (count > 0)
 
 let test_line_entries_valid binary_path =
   match find_debug_line binary_path with
@@ -68,7 +69,7 @@ let test_line_entries_valid binary_path =
       let cur = Object.Buffer.cursor ~at:offset buffer in
       let header = Dwarf.DebugLine.parse_line_program_header cur buffer in
       let entries = Dwarf.DebugLine.parse_line_program cur header in
-      List.iter
+      Seq.iter
         (fun (e : Dwarf.DebugLine.line_table_entry) ->
           check bool "address > 0" true (Unsigned.UInt64.to_int64 e.address > 0L))
         entries
@@ -81,9 +82,10 @@ let test_has_end_sequence binary_path =
       let header = Dwarf.DebugLine.parse_line_program_header cur buffer in
       let entries = Dwarf.DebugLine.parse_line_program cur header in
       let has_end =
-        List.exists
-          (fun (e : Dwarf.DebugLine.line_table_entry) -> e.end_sequence)
-          entries
+        Seq.fold_left
+          (fun acc (e : Dwarf.DebugLine.line_table_entry) ->
+            acc || e.end_sequence)
+          false entries
       in
       check bool "has end_sequence" true has_end
 

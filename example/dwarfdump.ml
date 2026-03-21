@@ -212,7 +212,7 @@ let dump_debug_line filename =
              -------------\n";
 
           (* Display each entry *)
-          List.iter
+          Seq.iter
             (fun entry ->
               let flags =
                 let flags_list = [] in

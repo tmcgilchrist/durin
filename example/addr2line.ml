@@ -26,28 +26,23 @@ let init_context filename =
 
 (* Find line table entry for a given address using binary search *)
 let find_line_entry entries target_addr =
+  let len = Array.length entries in
   let rec binary_search low high =
     if low > high then None
     else
       let mid = (low + high) / 2 in
-      let entry = List.nth entries mid in
+      let entry = entries.(mid) in
       let addr = entry.Dwarf.DebugLine.address in
       if Unsigned.UInt64.equal addr target_addr then Some entry
       else if Unsigned.UInt64.compare target_addr addr < 0 then
         binary_search low (mid - 1)
-      else if
-        (* Check if target is between this entry and the next *)
-        mid < List.length entries - 1
-      then
-        let next_entry = List.nth entries (mid + 1) in
-        let next_addr = next_entry.Dwarf.DebugLine.address in
+      else if mid < len - 1 then
+        let next_addr = entries.(mid + 1).Dwarf.DebugLine.address in
         if Unsigned.UInt64.compare target_addr next_addr < 0 then Some entry
         else binary_search (mid + 1) high
       else Some entry
-    (* Last entry *)
   in
-  let length = List.length entries in
-  if length = 0 then None else binary_search 0 (length - 1)
+  if len = 0 then None else binary_search 0 (len - 1)
 
 (* Get section offset helper *)
 let get_section_offset buffer section_type =
@@ -103,7 +98,9 @@ let parse_line_table buffer =
         Object.Buffer.cursor buffer ~at:(Unsigned.UInt64.to_int offset)
       in
       let header = Dwarf.DebugLine.parse_line_program_header cursor buffer in
-      let entries = Dwarf.DebugLine.parse_line_program cursor header in
+      let entries =
+        Dwarf.DebugLine.parse_line_program cursor header |> Array.of_seq
+      in
       Some (header, entries)
 
 (* Resolve address to source location *)

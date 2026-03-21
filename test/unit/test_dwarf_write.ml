@@ -1436,7 +1436,7 @@ let test_write_debug_line_simple () =
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
-  let parsed = Dwarf.DebugLine.parse_line_program cur ph in
+  let parsed = Dwarf.DebugLine.parse_line_program cur ph |> List.of_seq in
   check int "3 entries" 3 (List.length parsed);
   let e0 = List.nth parsed 0 in
   check int "e0.addr" 0x1000 (Unsigned.UInt64.to_int e0.address);
@@ -1463,7 +1463,7 @@ let test_write_debug_line_columns () =
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
-  let parsed = Dwarf.DebugLine.parse_line_program cur ph in
+  let parsed = Dwarf.DebugLine.parse_line_program cur ph |> List.of_seq in
   check int "4 entries" 4 (List.length parsed);
   let e0 = List.nth parsed 0 in
   check int "e0.col" 5 (Unsigned.UInt32.to_int e0.column);
@@ -1490,7 +1490,7 @@ let test_write_debug_line_stmt_toggle () =
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
-  let parsed = Dwarf.DebugLine.parse_line_program cur ph in
+  let parsed = Dwarf.DebugLine.parse_line_program cur ph |> List.of_seq in
   check int "4 entries" 4 (List.length parsed);
   check bool "e0.is_stmt" true (List.nth parsed 0).is_stmt;
   check bool "e1.is_stmt" false (List.nth parsed 1).is_stmt;
@@ -1511,7 +1511,7 @@ let test_write_debug_line_multi_seq () =
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
-  let parsed = Dwarf.DebugLine.parse_line_program cur ph in
+  let parsed = Dwarf.DebugLine.parse_line_program cur ph |> List.of_seq in
   check int "4 entries" 4 (List.length parsed);
   let e0 = List.nth parsed 0 in
   check int "e0.addr" 0x1000 (Unsigned.UInt64.to_int e0.address);
@@ -1533,7 +1533,7 @@ let test_write_debug_line_discriminator () =
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let ph = Dwarf.DebugLine.parse_line_program_header cur obj_buf in
-  let parsed = Dwarf.DebugLine.parse_line_program cur ph in
+  let parsed = Dwarf.DebugLine.parse_line_program cur ph |> List.of_seq in
   check int "3 entries" 3 (List.length parsed);
   check int "e0.disc" 1
     (Unsigned.UInt32.to_int (List.nth parsed 0).discriminator);

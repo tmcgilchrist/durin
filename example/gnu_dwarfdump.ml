@@ -160,76 +160,78 @@ let dump_debug_line filename =
         let entries = Dwarf.DebugLine.parse_line_program cursor header in
 
         (* Display each entry in system dwarfdump format *)
-        List.iteri
-          (fun i entry ->
-            let flags = [] in
-            let flags =
-              if entry.Dwarf.DebugLine.is_stmt then "NS" :: flags else flags
-            in
-            let flags =
-              if entry.Dwarf.DebugLine.basic_block then "BB" :: flags else flags
-            in
-            let flags =
-              (* Show ET flag if end_sequence is set, OR if epilogue_begin is set.
-                 This matches libdwarf's dwarfdump behavior which considers the
-                 epilogue as part of the "end of text sequence". *)
-              if
-                entry.Dwarf.DebugLine.end_sequence
-                || entry.Dwarf.DebugLine.epilogue_begin
-              then "ET" :: flags
-              else flags
-            in
-            let flags =
-              if entry.Dwarf.DebugLine.prologue_end then "PE" :: flags
-              else flags
-            in
-            let flags =
-              if entry.Dwarf.DebugLine.epilogue_begin then "EB" :: flags
-              else flags
-            in
-            let flags_str = String.concat " " (List.rev flags) in
+        ignore
+          (Seq.fold_left
+             (fun i entry ->
+               let flags = [] in
+               let flags =
+                 if entry.Dwarf.DebugLine.is_stmt then "NS" :: flags else flags
+               in
+               let flags =
+                 if entry.Dwarf.DebugLine.basic_block then "BB" :: flags
+                 else flags
+               in
+               let flags =
+                 if
+                   entry.Dwarf.DebugLine.end_sequence
+                   || entry.Dwarf.DebugLine.epilogue_begin
+                 then "ET" :: flags
+                 else flags
+               in
+               let flags =
+                 if entry.Dwarf.DebugLine.prologue_end then "PE" :: flags
+                 else flags
+               in
+               let flags =
+                 if entry.Dwarf.DebugLine.epilogue_begin then "EB" :: flags
+                 else flags
+               in
+               let flags_str = String.concat " " (List.rev flags) in
 
-            let isa_str =
-              if Unsigned.UInt32.to_int entry.Dwarf.DebugLine.isa <> 0 then
-                Printf.sprintf " IS=%ld"
-                  (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.isa)
-              else ""
-            in
+               let isa_str =
+                 if Unsigned.UInt32.to_int entry.Dwarf.DebugLine.isa <> 0 then
+                   Printf.sprintf " IS=%ld"
+                     (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.isa)
+                 else ""
+               in
 
-            let discriminator_str =
-              if Unsigned.UInt32.to_int entry.Dwarf.DebugLine.discriminator <> 0
-              then
-                Printf.sprintf " DI=%ld"
-                  (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.discriminator)
-              else ""
-            in
+               let discriminator_str =
+                 if
+                   Unsigned.UInt32.to_int entry.Dwarf.DebugLine.discriminator
+                   <> 0
+                 then
+                   Printf.sprintf " DI=%ld"
+                     (Unsigned.UInt32.to_int32
+                        entry.Dwarf.DebugLine.discriminator)
+                 else ""
+               in
 
-            (* Get the filename from header for first file (line_strp references now resolved by library) *)
-            let get_filename () =
-              if Array.length header.file_names > 0 then
-                let file_entry = header.file_names.(0) in
-                let full_path =
-                  if file_entry.directory = "" then file_entry.name
-                  else file_entry.directory ^ "/" ^ file_entry.name
-                in
-                Some full_path
-              else None
-            in
+               let get_filename () =
+                 if Array.length header.file_names > 0 then
+                   let file_entry = header.file_names.(0) in
+                   let full_path =
+                     if file_entry.directory = "" then file_entry.name
+                     else file_entry.directory ^ "/" ^ file_entry.name
+                   in
+                   Some full_path
+                 else None
+               in
 
-            let uri_str =
-              if i = 0 then
-                match get_filename () with
-                | Some filename -> Printf.sprintf " uri: \"%s\"" filename
-                | None -> ""
-              else ""
-            in
+               let uri_str =
+                 if i = 0 then
+                   match get_filename () with
+                   | Some filename -> Printf.sprintf " uri: \"%s\"" filename
+                   | None -> ""
+                 else ""
+               in
 
-            Printf.printf "0x%08x  [%4ld,%2ld] %s%s%s%s\n"
-              (Unsigned.UInt64.to_int entry.Dwarf.DebugLine.address)
-              (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.line)
-              (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.column)
-              flags_str isa_str discriminator_str uri_str)
-          entries;
+               Printf.printf "0x%08x  [%4ld,%2ld] %s%s%s%s\n"
+                 (Unsigned.UInt64.to_int entry.Dwarf.DebugLine.address)
+                 (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.line)
+                 (Unsigned.UInt32.to_int32 entry.Dwarf.DebugLine.column)
+                 flags_str isa_str discriminator_str uri_str;
+               i + 1)
+             0 entries);
         Printf.printf "\n"
   with
   | Sys_error msg ->

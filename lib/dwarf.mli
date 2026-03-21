@@ -1491,25 +1491,25 @@ module DebugLine : sig
       Header" *)
 
   val parse_line_program :
-    Object.Buffer.cursor -> line_program_header -> line_table_entry list
+    Object.Buffer.cursor -> line_program_header -> line_table_entry Seq.t
   (** Parse the line number program following the header.
 
-      This function executes the line number program (sequence of opcodes) that
-      follows the line program header. It runs the DWARF 5 line number state
-      machine to produce the complete line table matrix.
+      Returns a lazy sequence of line table entries produced by executing the
+      DWARF line number state machine. Entries are generated on demand as the
+      sequence is consumed.
 
       The state machine processes three types of opcodes:
       - Special opcodes (values opcode_base to 255): Efficiently encode common
         address/line advance combinations
       - Standard opcodes (values 1 to opcode_base-1): Individual operations like
-        DW_LNS_copy, DW_LNS_advance_pc, DW_LNS_advance_line
+        DW_LNS_copy, DW_LNS_advance_pc
       - Extended opcodes (value 0 followed by length and extended opcode):
         Operations like DW_LNE_end_sequence, DW_LNE_set_address,
         DW_LNE_set_discriminator
 
       @param cursor Buffer cursor positioned after the line program header
       @param header Parsed line program header containing opcode definitions
-      @return List of line table entries representing the complete line table
+      @return Lazy sequence of line table entries
 
       @raise Failure
         if program contains invalid opcodes or malformed instructions

@@ -3301,13 +3301,7 @@ module DebugLine = struct
       section 6.2.2. The state machine processes opcodes and generates line
       table entries that map program addresses to source locations. *)
   let parse_line_program (cur : Object.Buffer.cursor)
-      (header : line_program_header) : line_table_entry list =
-    (* Calculate program length from header.
-       unit_length includes everything after the initial_length field.
-       DWARF 5: version(2) + address_size(1) + segment_selector_size(1)
-                + header_length_field(offset_size) = 4 + offset_size
-       DWARF 4: version(2) + header_length_field(offset_size)
-                = 2 + offset_size *)
+      (header : line_program_header) : line_table_entry Seq.t =
     let offset_size = offset_size_for_format header.format in
     let version_int = Unsigned.UInt16.to_int header.version in
     let header_overhead =
@@ -3338,10 +3332,6 @@ module DebugLine = struct
     let isa = ref (Unsigned.UInt32.of_int 0) in
     let discriminator = ref (Unsigned.UInt32.of_int 0) in
 
-    let entries = ref [] in
-    let program_done = ref false in
-
-    (* Helper to reset state machine after end_sequence *)
     let reset_state () =
       address := Unsigned.UInt64.of_int 0;
       op_index := Unsigned.UInt32.of_int 0;
@@ -3382,182 +3372,183 @@ module DebugLine = struct
       }
     in
 
-    (* Process opcodes until end of program *)
-    while (not !program_done) && !bytes_read < total_program_length do
-      try
-        let opcode = Object.Buffer.Read.u8 cur in
-        bytes_read := !bytes_read + 1;
-        let opcode_val = Unsigned.UInt8.to_int opcode in
+    let emit_and_reset_flags () =
+      basic_block := false;
+      prologue_end := false;
+      epilogue_begin := false;
+      discriminator := Unsigned.UInt32.of_int 0
+    in
 
-        if opcode_val = 0 then (
-          (* Extended opcode *)
-          let length = Object.Buffer.Read.uleb128 cur in
-          (* LEB128 encoding: conservatively estimate max 5 bytes for typical values *)
-          bytes_read := !bytes_read + if length < 128 then 1 else 2;
-          let extended_opcode = Object.Buffer.Read.u8 cur in
+    let rec next () =
+      if !bytes_read >= total_program_length then Seq.Nil
+      else
+        try
+          let opcode = Object.Buffer.Read.u8 cur in
           bytes_read := !bytes_read + 1;
-          let extended_val = Unsigned.UInt8.to_int extended_opcode in
+          let opcode_val = Unsigned.UInt8.to_int opcode in
 
-          (* Extended opcode handling: DWARF 5 extended opcode support.
-           * We implement the standard extended opcodes:
-           * - DW_LNE_end_sequence (0x01): End of line number sequence
-           * - DW_LNE_set_address (0x02): Set absolute address
-           * - DW_LNE_set_discriminator (0x04): Set discriminator for profiling
-           *
-           * Note: DW_LNE_define_file (0x03) is deprecated in DWARF 5 and not supported.
-           *
-           * For unknown extended opcodes (vendor extensions 0x80-0xFF or future opcodes),
-           * we safely skip them by reading exactly 'length - 1' bytes to maintain buffer
-           * integrity while ensuring parser robustness.
-           *
-           * This implementation follows DWARF 5 spec section 6.2.5.3. *)
-          match extended_val with
-          | 0x01 ->
-              (* DW_LNE_end_sequence *)
-              (* Set end_sequence, emit row, then reset state and continue *)
-              end_sequence := true;
-              entries := make_entry () :: !entries;
-              reset_state ()
-          | 0x02 ->
-              (* DW_LNE_set_address *)
-              let addr_bytes = length - 1 in
-              if addr_bytes = 4 then (
+          if opcode_val = 0 then (
+            (* Extended opcode *)
+            let length = Object.Buffer.Read.uleb128 cur in
+            bytes_read := !bytes_read + if length < 128 then 1 else 2;
+            let extended_opcode = Object.Buffer.Read.u8 cur in
+            bytes_read := !bytes_read + 1;
+            let extended_val = Unsigned.UInt8.to_int extended_opcode in
+            match extended_val with
+            | 0x01 ->
+                (* DW_LNE_end_sequence *)
+                end_sequence := true;
+                let entry = make_entry () in
+                reset_state ();
+                Seq.Cons (entry, next)
+            | 0x02 ->
+                (* DW_LNE_set_address *)
+                let addr_bytes = length - 1 in
+                if addr_bytes = 4 then (
+                  address :=
+                    Object.Buffer.Read.u32 cur |> Unsigned.UInt64.of_uint32;
+                  bytes_read := !bytes_read + 4)
+                else if addr_bytes = 8 then (
+                  address := Object.Buffer.Read.u64 cur;
+                  bytes_read := !bytes_read + 8)
+                else failwith "Unsupported address size in DW_LNE_set_address";
+                next ()
+            | 0x04 ->
+                (* DW_LNE_set_discriminator *)
+                let disc_val = Object.Buffer.Read.uleb128 cur in
+                discriminator := Unsigned.UInt32.of_int disc_val;
+                bytes_read := !bytes_read + if disc_val < 128 then 1 else 2;
+                next ()
+            | _ ->
+                (* Skip unknown extended opcodes *)
+                for _i = 1 to length - 1 do
+                  ignore (Object.Buffer.Read.u8 cur);
+                  bytes_read := !bytes_read + 1
+                done;
+                next ())
+          else if opcode_val >= Unsigned.UInt8.to_int header.opcode_base then (
+            (* Special opcode *)
+            let adjusted_opcode =
+              opcode_val - Unsigned.UInt8.to_int header.opcode_base
+            in
+            let line_increment =
+              header.line_base
+              + (adjusted_opcode mod Unsigned.UInt8.to_int header.line_range)
+            in
+            let address_increment =
+              adjusted_opcode
+              / Unsigned.UInt8.to_int header.line_range
+              * Unsigned.UInt8.to_int header.minimum_instruction_length
+            in
+            address :=
+              Unsigned.UInt64.add !address
+                (Unsigned.UInt64.of_int address_increment);
+            line :=
+              Unsigned.UInt32.add !line (Unsigned.UInt32.of_int line_increment);
+            let entry = make_entry () in
+            emit_and_reset_flags ();
+            Seq.Cons (entry, next))
+          else
+            (* Standard opcode *)
+            match opcode_val with
+            | 0x01 ->
+                (* DW_LNS_copy *)
+                let entry = make_entry () in
+                emit_and_reset_flags ();
+                Seq.Cons (entry, next)
+            | 0x02 ->
+                (* DW_LNS_advance_pc *)
+                let advance = Object.Buffer.Read.uleb128 cur in
+                bytes_read := !bytes_read + if advance < 128 then 1 else 2;
+                let address_increment =
+                  advance
+                  * Unsigned.UInt8.to_int header.minimum_instruction_length
+                in
                 address :=
-                  Object.Buffer.Read.u32 cur |> Unsigned.UInt64.of_uint32;
-                bytes_read := !bytes_read + 4)
-              else if addr_bytes = 8 then (
-                address := Object.Buffer.Read.u64 cur;
-                bytes_read := !bytes_read + 8)
-              else failwith "Unsupported address size in DW_LNE_set_address"
-          | 0x04 ->
-              (* DW_LNE_set_discriminator *)
-              let disc_val = Object.Buffer.Read.uleb128 cur in
-              discriminator := Unsigned.UInt32.of_int disc_val;
-              bytes_read := !bytes_read + if disc_val < 128 then 1 else 2
-          | _ ->
-              (* Skip unknown extended opcodes *)
-              (* The DW_LNE_define_file operation defined in earlier versions of DWARF is deprecated
-                in DWARF Version 5. *)
-              for _i = 1 to length - 1 do
-                ignore (Object.Buffer.Read.u8 cur);
-                bytes_read := !bytes_read + 1
-              done)
-        else if opcode_val >= Unsigned.UInt8.to_int header.opcode_base then (
-          (* Special opcode *)
-          let adjusted_opcode =
-            opcode_val - Unsigned.UInt8.to_int header.opcode_base
-          in
-          let line_increment =
-            header.line_base
-            + (adjusted_opcode mod Unsigned.UInt8.to_int header.line_range)
-          in
-          let address_increment =
-            adjusted_opcode
-            / Unsigned.UInt8.to_int header.line_range
-            * Unsigned.UInt8.to_int header.minimum_instruction_length
-          in
-
-          address :=
-            Unsigned.UInt64.add !address
-              (Unsigned.UInt64.of_int address_increment);
-          line :=
-            Unsigned.UInt32.add !line (Unsigned.UInt32.of_int line_increment);
-
-          entries := make_entry () :: !entries;
-          basic_block := false;
-          prologue_end := false;
-          epilogue_begin := false;
-          discriminator := Unsigned.UInt32.of_int 0)
-        else
-          (* Standard opcode *)
-          match opcode_val with
-          | 0x01 ->
-              (* DW_LNS_copy *)
-              entries := make_entry () :: !entries;
-              basic_block := false;
-              prologue_end := false;
-              epilogue_begin := false;
-              discriminator := Unsigned.UInt32.of_int 0
-          | 0x02 ->
-              (* DW_LNS_advance_pc *)
-              let advance = Object.Buffer.Read.uleb128 cur in
-              bytes_read := !bytes_read + if advance < 128 then 1 else 2;
-              let address_increment =
-                advance
-                * Unsigned.UInt8.to_int header.minimum_instruction_length
-              in
-              address :=
-                Unsigned.UInt64.add !address
-                  (Unsigned.UInt64.of_int address_increment)
-          | 0x03 ->
-              (* DW_LNS_advance_line *)
-              let advance = Object.Buffer.Read.sleb128 cur in
-              bytes_read :=
-                !bytes_read + if advance >= -64 && advance < 64 then 1 else 2;
-              line := Unsigned.UInt32.add !line (Unsigned.UInt32.of_int advance)
-          | 0x04 ->
-              (* DW_LNS_set_file *)
-              let file_val = Object.Buffer.Read.uleb128 cur in
-              bytes_read := !bytes_read + if file_val < 128 then 1 else 2;
-              file_index := Unsigned.UInt32.of_int file_val
-          | 0x05 ->
-              (* DW_LNS_set_column *)
-              let col_val = Object.Buffer.Read.uleb128 cur in
-              bytes_read := !bytes_read + if col_val < 128 then 1 else 2;
-              column := Unsigned.UInt32.of_int col_val
-          | 0x06 ->
-              (* DW_LNS_negate_stmt *)
-              is_stmt := not !is_stmt
-          | 0x07 ->
-              (* DW_LNS_set_basic_block *)
-              basic_block := true
-          | 0x08 ->
-              (* DW_LNS_const_add_pc *)
-              let adjusted_opcode =
-                255 - Unsigned.UInt8.to_int header.opcode_base
-              in
-              let address_increment =
-                adjusted_opcode
-                / Unsigned.UInt8.to_int header.line_range
-                * Unsigned.UInt8.to_int header.minimum_instruction_length
-              in
-              address :=
-                Unsigned.UInt64.add !address
-                  (Unsigned.UInt64.of_int address_increment)
-          | 0x09 ->
-              (* DW_LNS_fixed_advance_pc *)
-              let advance = Object.Buffer.Read.u16 cur in
-              bytes_read := !bytes_read + 2;
-              address :=
-                Unsigned.UInt64.add !address
-                  (Unsigned.UInt64.of_int (Unsigned.UInt16.to_int advance))
-          | 0x0a ->
-              (* DW_LNS_set_prologue_end *)
-              prologue_end := true
-          | 0x0b ->
-              (* DW_LNS_set_epilogue_begin *)
-              epilogue_begin := true
-          | 0x0c ->
-              (* DW_LNS_set_isa *)
-              let isa_val = Object.Buffer.Read.uleb128 cur in
-              bytes_read := !bytes_read + if isa_val < 128 then 1 else 2;
-              isa := Unsigned.UInt32.of_int isa_val
-          | _ ->
-              (* Skip unknown standard opcodes using operand count from header *)
-              let operand_count =
-                if opcode_val < Array.length header.standard_opcode_lengths then
-                  Unsigned.UInt8.to_int
-                    header.standard_opcode_lengths.(opcode_val - 1)
-                else 0
-              in
-              for _i = 1 to operand_count do
-                let val_read = Object.Buffer.Read.uleb128 cur in
-                bytes_read := !bytes_read + if val_read < 128 then 1 else 2
-              done
-      with End_of_file | _ -> program_done := true
-    done;
-
-    List.rev !entries
+                  Unsigned.UInt64.add !address
+                    (Unsigned.UInt64.of_int address_increment);
+                next ()
+            | 0x03 ->
+                (* DW_LNS_advance_line *)
+                let advance = Object.Buffer.Read.sleb128 cur in
+                bytes_read :=
+                  !bytes_read + if advance >= -64 && advance < 64 then 1 else 2;
+                line :=
+                  Unsigned.UInt32.add !line (Unsigned.UInt32.of_int advance);
+                next ()
+            | 0x04 ->
+                (* DW_LNS_set_file *)
+                let file_val = Object.Buffer.Read.uleb128 cur in
+                bytes_read := !bytes_read + if file_val < 128 then 1 else 2;
+                file_index := Unsigned.UInt32.of_int file_val;
+                next ()
+            | 0x05 ->
+                (* DW_LNS_set_column *)
+                let col_val = Object.Buffer.Read.uleb128 cur in
+                bytes_read := !bytes_read + if col_val < 128 then 1 else 2;
+                column := Unsigned.UInt32.of_int col_val;
+                next ()
+            | 0x06 ->
+                (* DW_LNS_negate_stmt *)
+                is_stmt := not !is_stmt;
+                next ()
+            | 0x07 ->
+                (* DW_LNS_set_basic_block *)
+                basic_block := true;
+                next ()
+            | 0x08 ->
+                (* DW_LNS_const_add_pc *)
+                let adjusted_opcode =
+                  255 - Unsigned.UInt8.to_int header.opcode_base
+                in
+                let address_increment =
+                  adjusted_opcode
+                  / Unsigned.UInt8.to_int header.line_range
+                  * Unsigned.UInt8.to_int header.minimum_instruction_length
+                in
+                address :=
+                  Unsigned.UInt64.add !address
+                    (Unsigned.UInt64.of_int address_increment);
+                next ()
+            | 0x09 ->
+                (* DW_LNS_fixed_advance_pc *)
+                let advance = Object.Buffer.Read.u16 cur in
+                bytes_read := !bytes_read + 2;
+                address :=
+                  Unsigned.UInt64.add !address
+                    (Unsigned.UInt64.of_int (Unsigned.UInt16.to_int advance));
+                next ()
+            | 0x0a ->
+                (* DW_LNS_set_prologue_end *)
+                prologue_end := true;
+                next ()
+            | 0x0b ->
+                (* DW_LNS_set_epilogue_begin *)
+                epilogue_begin := true;
+                next ()
+            | 0x0c ->
+                (* DW_LNS_set_isa *)
+                let isa_val = Object.Buffer.Read.uleb128 cur in
+                bytes_read := !bytes_read + if isa_val < 128 then 1 else 2;
+                isa := Unsigned.UInt32.of_int isa_val;
+                next ()
+            | _ ->
+                (* Skip unknown standard opcodes *)
+                let operand_count =
+                  if opcode_val < Array.length header.standard_opcode_lengths
+                  then
+                    Unsigned.UInt8.to_int
+                      header.standard_opcode_lengths.(opcode_val - 1)
+                  else 0
+                in
+                for _i = 1 to operand_count do
+                  let val_read = Object.Buffer.Read.uleb128 cur in
+                  bytes_read := !bytes_read + if val_read < 128 then 1 else 2
+                done;
+                next ()
+        with End_of_file | _ -> Seq.Nil
+    in
+    next
 end
 
 module DebugLoc = struct
