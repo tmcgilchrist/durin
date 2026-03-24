@@ -2409,16 +2409,16 @@ module CompileUnit = struct
 
   type t = {
     parent_ : int;
-    span : span;
+    offset : int;
     raw_buffer_ : Object_file.t;
     header : header;
   }
 
-  let make parent_ span raw_buffer_ header =
-    { parent_; span; raw_buffer_; header }
+  let make parent_ offset raw_buffer_ header =
+    { parent_; offset; raw_buffer_; header }
 
   let dwarf_info t = t.parent_
-  let data t = t.span
+  let offset t = t.offset
   let header t = t.header
 
   (** Extract encoding parameters from the unit header. This provides the
@@ -2431,24 +2431,16 @@ module CompileUnit = struct
     }
 
   let root_die t abbrev_table full_buffer =
-    (* Create cursor positioned after the compilation unit header *)
     let header_size = Unsigned.UInt64.to_int t.header.span.size in
     let cur =
-      Object.Buffer.cursor t.raw_buffer_.buffer
-        ~at:
-          (Unsigned.UInt64.to_int
-             (Unsigned.UInt64.add t.span.start
-                (Unsigned.UInt64.of_int header_size)))
+      Object.Buffer.cursor t.raw_buffer_.buffer ~at:(t.offset + header_size)
     in
     let enc = encoding t in
     DIE.parse_die cur abbrev_table enc full_buffer
 
   let die_cursor t abbrev_table full_buffer =
     let header_size = Unsigned.UInt64.to_int t.header.span.size in
-    let pos =
-      Unsigned.UInt64.to_int
-        (Unsigned.UInt64.add t.span.start (Unsigned.UInt64.of_int header_size))
-    in
+    let pos = t.offset + header_size in
     let enc = encoding t in
     ( Object.Buffer.cursor t.raw_buffer_.buffer ~at:pos,
       abbrev_table,
@@ -2851,8 +2843,8 @@ let parse_compile_unit (object_file : Object_file.t)
   (* Reset cursor to start for consistent parsing *)
   Object.Buffer.seek cur start;
 
-  let data, parsed = parse_compile_unit_header cur in
-  CompileUnit.make 0 data object_file parsed
+  let _unit_span, parsed = parse_compile_unit_header cur in
+  CompileUnit.make 0 start object_file parsed
 
 let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
   match find_debug_section_by_type dwarf.object_.buffer Debug_info with
@@ -2871,9 +2863,10 @@ let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
             let cur =
               Object.Buffer.cursor dwarf.object_.buffer ~at:absolute_pos
             in
-            let span, parsed_header = parse_compile_unit_header cur in
+            let _unit_span, parsed_header = parse_compile_unit_header cur in
             let unit =
-              CompileUnit.make cursor_pos span dwarf.object_ parsed_header
+              CompileUnit.make cursor_pos absolute_pos dwarf.object_
+                parsed_header
             in
 
             (* Calculate next position: current + unit_length + length_field_size *)
@@ -6939,7 +6932,7 @@ module SplitDwarf = struct
                 Unsigned.UInt64.to_int section_offset + cursor_pos
               in
               let cur = cursor ctx.dwo_buffer ~at:absolute_pos in
-              let span, parsed_header = parse_compile_unit_header cur in
+              let _unit_span, parsed_header = parse_compile_unit_header cur in
               let obj =
                 Object_file.
                   {
@@ -6947,7 +6940,9 @@ module SplitDwarf = struct
                     format = Object_format.detect_format ctx.dwo_buffer;
                   }
               in
-              let unit = CompileUnit.make cursor_pos span obj parsed_header in
+              let unit =
+                CompileUnit.make cursor_pos absolute_pos obj parsed_header
+              in
               let unit_length =
                 Unsigned.UInt64.to_int parsed_header.unit_length
               in
@@ -7007,10 +7002,7 @@ module SplitDwarf = struct
     in
     let enc = CompileUnit.encoding cu in
     let header_size = Unsigned.UInt64.to_int cu.header.span.size in
-    let die_start =
-      Unsigned.UInt64.to_int
-        (Unsigned.UInt64.add cu.span.start (Unsigned.UInt64.of_int header_size))
-    in
+    let die_start = cu.offset + header_size in
     let cur = cursor ctx.dwo_buffer ~at:die_start in
     match DIE.parse_die cur abbrev enc ctx.dwo_buffer with
     | None -> None

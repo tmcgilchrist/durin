@@ -489,11 +489,11 @@ let dump_debug_info filename =
           (* Process each compile unit *)
           Seq.iter
             (fun unit ->
-              let span = Dwarf.CompileUnit.data unit in
+              let unit_offset = Dwarf.CompileUnit.offset unit in
               let header = Dwarf.CompileUnit.header unit in
 
               let unit_offset_in_section =
-                Unsigned.UInt64.(sub span.start debug_info_offset |> to_int)
+                unit_offset - Unsigned.UInt64.to_int debug_info_offset
               in
 
               let unit_length = Unsigned.UInt64.to_int header.unit_length in

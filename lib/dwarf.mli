@@ -1392,14 +1392,15 @@ module CompileUnit : sig
   type t
   (** A compilation unit with parsed content. *)
 
-  val make : int -> span -> Object_file.t -> header -> t
-  (** Create a new compilation unit. *)
+  val make : int -> int -> Object_file.t -> header -> t
+  (** Create a new compilation unit. The first [int] is the section-relative
+      position, the second is the absolute buffer offset. *)
 
   val dwarf_info : t -> int
-  (** Get the parent DWARF info identifier. *)
+  (** Get the section-relative position of this unit. *)
 
-  val data : t -> span
-  (** Get the span indicating location/size of unit data. *)
+  val offset : t -> int
+  (** Get the absolute buffer offset where this unit starts. *)
 
   val header : t -> header
   (** Force parsing of the compilation unit header and return parsed data. *)
