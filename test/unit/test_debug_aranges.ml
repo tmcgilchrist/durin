@@ -47,7 +47,7 @@ let test_aranges_header_record () =
       debug_info_offset = Unsigned.UInt64.of_int 0;
       address_size = Unsigned.UInt8.of_int 8;
       segment_size = Unsigned.UInt8.of_int 0;
-      header_span =
+      span =
         { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 12 };
     }
   in
@@ -65,7 +65,7 @@ let test_aranges_set_record () =
       debug_info_offset = Unsigned.UInt64.of_int 0x0c;
       address_size = Unsigned.UInt8.of_int 8;
       segment_size = Unsigned.UInt8.of_int 0;
-      header_span =
+      span =
         { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 12 };
     }
   in
@@ -96,7 +96,7 @@ let test_aranges_multiple_ranges () =
       debug_info_offset = Unsigned.UInt64.of_int 0;
       address_size = Unsigned.UInt8.of_int 4;
       segment_size = Unsigned.UInt8.of_int 0;
-      header_span =
+      span =
         { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 12 };
     }
   in

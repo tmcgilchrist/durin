@@ -1182,11 +1182,10 @@ type call_frame_instruction =
 val string_of_call_frame_instruction : call_frame_instruction -> string
 (** Convert a [call_frame_instruction] to its string representation. *)
 
-(** Range list entry encoding values. Each entry in a range list begins
-    with one of these codes to indicate the kind of entry that follows.
-    Range lists describe the non-contiguous address ranges owned by a
-    DIE, such as the code addresses belonging to a function that has
-    been split by the optimiser.
+(** Range list entry encoding values. Each entry in a range list begins with one
+    of these codes to indicate the kind of entry that follows. Range lists
+    describe the non-contiguous address ranges owned by a DIE, such as the code
+    addresses belonging to a function that has been split by the optimiser.
 
     DWARF 5 specification, Table 7.30. *)
 type range_list_entry =
@@ -1216,8 +1215,6 @@ type t
 (** Opaque DWARF context holding parsed abbreviation tables, compilation units,
     and a reference to the underlying object file. Created via {!create} and
     used as the entry point for parsing DWARF sections. *)
-
-(* TODO our use of span is inconsistent across the library. *)
 
 type span = { start : size_t; size : size_t }
 (** A byte range within a buffer, used to track the position and size of parsed
@@ -1379,7 +1376,7 @@ module CompileUnit : sig
             split_type). Synthesized as DW_UT_compile for DWARF 4. *)
     debug_abbrev_offset : u64;  (** Offset into debug abbreviation table *)
     address_size : u8;  (** Size of addresses in bytes (4 or 8) *)
-    header_span : span;  (** Span indicating the header's position and size *)
+    span : span;  (** Span indicating the header's position and size *)
     addr_base : u64 option;
         (** Address table base offset from DW_AT_addr_base *)
     type_signature : u64 option;
@@ -1533,12 +1530,10 @@ module DieZipper : sig
   (** Current depth from root (root = 0). *)
 end
 
-(* TODO use of span for this function is inconsistent. Do we take span as an argument when reading
-        another section? *)
 val parse_compile_unit_header :
   Object.Buffer.cursor -> span * CompileUnit.header
 (** Parse the header of a compilation unit from a buffer cursor. Returns both
-    the unit span and the parsed header with header_span included. *)
+    the unit span and the parsed header with span included. *)
 
 (** Line number information parsing.
 
@@ -1802,7 +1797,7 @@ module DebugTypes : sig
     address_size : u8;  (** Size of addresses in bytes *)
     type_signature : u64;  (** 64-bit type signature *)
     type_offset : u64;  (** Offset to the type DIE within this unit *)
-    header_span : span;  (** Span indicating the header's position and size *)
+    span : span;  (** Span indicating the header's position and size *)
   }
   (** Parsed type unit header.
 
@@ -1845,6 +1840,7 @@ module DebugPubnames : sig
     debug_info_offset : u64;
         (** Offset of the compilation unit in .debug_info *)
     debug_info_length : u64;  (** Size of the compilation unit in .debug_info *)
+    span : span;  (** Position and size of this header *)
   }
   (** Header for a pubnames set.
 
@@ -1883,6 +1879,7 @@ module DebugPubtypes : sig
     debug_info_offset : u64;
         (** Offset of the compilation unit in .debug_info *)
     debug_info_length : u64;  (** Size of the compilation unit in .debug_info *)
+    span : span;  (** Position and size of this header *)
   }
   (** Header for a pubtypes set.
 
@@ -1940,7 +1937,7 @@ module CallFrame : sig
     augmentation_data : string option;
         (** Implementation-specific augmentation data *)
     initial_instructions : string;  (** Call frame instructions for this CIE *)
-    header_span : span;  (** Tracks exact header size for precise parsing *)
+    span : span;  (** Tracks exact header size for precise parsing *)
     offset : u64;  (** Section-relative offset where CIE starts *)
   }
   (** Common Information Entry (CIE).
@@ -1975,6 +1972,7 @@ module CallFrame : sig
         (** Vendor-specific augmentation data, if present *)
     instructions : string;
         (** Call frame instructions for this address range *)
+    span : span;  (** Position and size of this FDE *)
     offset : u64;  (** Section-relative offset where this FDE starts *)
   }
   (** Frame Description Entry (FDE).
@@ -2813,7 +2811,7 @@ module DebugStrOffsets : sig
         (** Length of this contribution excluding the length field *)
     version : u16;  (** DWARF version number (typically 5) *)
     padding : u16;  (** Reserved padding field, must be zero *)
-    header_span : span;  (** Span indicating the header's position and size *)
+    span : span;  (** Span indicating the header's position and size *)
   }
   (** Header structure for a string offsets contribution.
 
@@ -3034,7 +3032,7 @@ module DebugAranges : sig
     debug_info_offset : u64;  (** Offset into .debug_info section *)
     address_size : u8;  (** Size of addresses in bytes *)
     segment_size : u8;  (** Size of segment selectors in bytes (usually 0) *)
-    header_span : span;  (** Span indicating the header's position and size *)
+    span : span;  (** Span indicating the header's position and size *)
   }
   (** Header structure for an address range table.
 

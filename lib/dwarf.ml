@@ -2400,7 +2400,7 @@ module CompileUnit = struct
     unit_type : unit_type;
     debug_abbrev_offset : u64;
     address_size : u8;
-    header_span : span;
+    span : span;
     addr_base : u64 option;
     type_signature : u64 option;
     type_offset : u64 option;
@@ -2432,7 +2432,7 @@ module CompileUnit = struct
 
   let root_die t abbrev_table full_buffer =
     (* Create cursor positioned after the compilation unit header *)
-    let header_size = Unsigned.UInt64.to_int t.header.header_span.size in
+    let header_size = Unsigned.UInt64.to_int t.header.span.size in
     let cur =
       Object.Buffer.cursor t.raw_buffer_.buffer
         ~at:
@@ -2444,7 +2444,7 @@ module CompileUnit = struct
     DIE.parse_die cur abbrev_table enc full_buffer
 
   let die_cursor t abbrev_table full_buffer =
-    let header_size = Unsigned.UInt64.to_int t.header.header_span.size in
+    let header_size = Unsigned.UInt64.to_int t.header.span.size in
     let pos =
       Unsigned.UInt64.to_int
         (Unsigned.UInt64.add t.span.start (Unsigned.UInt64.of_int header_size))
@@ -2810,7 +2810,7 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
 
   let header_end = cur.position in
   let header_size = header_end - start in
-  let header_span =
+  let hdr_span =
     {
       start = Unsigned.UInt64.of_int start;
       size = Unsigned.UInt64.of_int header_size;
@@ -2822,13 +2822,13 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
      DWARF64 there is a 4-byte marker (0xffffffff) + 8-byte length value. *)
   let length_field_size = match format with DWARF32 -> 4 | DWARF64 -> 12 in
   let total_size = length_field_size + Unsigned.UInt64.to_int unit_length in
-  let span =
+  let unit_span =
     {
       start = Unsigned.UInt64.of_int start;
       size = Unsigned.UInt64.of_int total_size;
     }
   in
-  ( span,
+  ( unit_span,
     {
       format;
       unit_length;
@@ -2836,7 +2836,7 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
       unit_type;
       debug_abbrev_offset;
       address_size;
-      header_span;
+      span = hdr_span;
       addr_base = None;
       type_signature;
       type_offset;
@@ -3691,7 +3691,7 @@ module DebugTypes = struct
     address_size : u8;
     type_signature : u64;
     type_offset : u64;
-    header_span : span;
+    span : span;
   }
 
   let parse_type_unit_header (cur : Object.Buffer.cursor) :
@@ -3710,7 +3710,7 @@ module DebugTypes = struct
     let type_offset = read_offset_for_format format cur in
     let header_end = cur.position in
     let header_size = header_end - start in
-    let header_span =
+    let hdr_span =
       {
         start = Unsigned.UInt64.of_int start;
         size = Unsigned.UInt64.of_int header_size;
@@ -3718,13 +3718,13 @@ module DebugTypes = struct
     in
     let length_field_size = match format with DWARF32 -> 4 | DWARF64 -> 12 in
     let total_size = length_field_size + Unsigned.UInt64.to_int unit_length in
-    let span =
+    let unit_span =
       {
         start = Unsigned.UInt64.of_int start;
         size = Unsigned.UInt64.of_int total_size;
       }
     in
-    ( span,
+    ( unit_span,
       {
         format;
         unit_length;
@@ -3733,7 +3733,7 @@ module DebugTypes = struct
         address_size;
         type_signature;
         type_offset;
-        header_span;
+        span = hdr_span;
       } )
 
   let parse_type_units (buffer : Object.Buffer.t) :
@@ -3772,16 +3772,25 @@ module DebugPubnames = struct
     version : u16;
     debug_info_offset : u64;
     debug_info_length : u64;
+    span : span;
   }
 
   type entry = { offset : u64; name : string }
 
   let parse_header (cur : Object.Buffer.cursor) : header =
+    let start_pos = cur.position in
     let format, unit_length = parse_initial_length cur in
     let version = Object.Buffer.Read.u16 cur in
     let debug_info_offset = read_offset_for_format format cur in
     let debug_info_length = read_offset_for_format format cur in
-    { format; unit_length; version; debug_info_offset; debug_info_length }
+    let end_pos = cur.position in
+    let span =
+      {
+        start = Unsigned.UInt64.of_int start_pos;
+        size = Unsigned.UInt64.of_int (end_pos - start_pos);
+      }
+    in
+    { format; unit_length; version; debug_info_offset; debug_info_length; span }
 
   let parse_entries (cur : Object.Buffer.cursor) (header : header) : entry list
       =
@@ -3811,16 +3820,25 @@ module DebugPubtypes = struct
     version : u16;
     debug_info_offset : u64;
     debug_info_length : u64;
+    span : span;
   }
 
   type entry = { offset : u64; name : string }
 
   let parse_header (cur : Object.Buffer.cursor) : header =
+    let start_pos = cur.position in
     let format, unit_length = parse_initial_length cur in
     let version = Object.Buffer.Read.u16 cur in
     let debug_info_offset = read_offset_for_format format cur in
     let debug_info_length = read_offset_for_format format cur in
-    { format; unit_length; version; debug_info_offset; debug_info_length }
+    let end_pos = cur.position in
+    let span =
+      {
+        start = Unsigned.UInt64.of_int start_pos;
+        size = Unsigned.UInt64.of_int (end_pos - start_pos);
+      }
+    in
+    { format; unit_length; version; debug_info_offset; debug_info_length; span }
 
   let parse_entries (cur : Object.Buffer.cursor) (header : header) : entry list
       =
@@ -3861,7 +3879,7 @@ module CallFrame = struct
     augmentation_length : u64 option;
     augmentation_data : string option;
     initial_instructions : string;
-    header_span : span; (* Tracks exact header size *)
+    span : span; (* Tracks exact header size *)
     offset : u64; (* Section-relative offset where CIE starts *)
   }
 
@@ -3874,7 +3892,8 @@ module CallFrame = struct
     augmentation_length : u64 option;
     augmentation_data : string option;
     instructions : string;
-    offset : u64; (* File offset where this FDE starts *)
+    span : span;
+    offset : u64;
   }
 
   (* CFI rule types for state machine *)
@@ -3911,7 +3930,7 @@ module CallFrame = struct
       augmentation_length = None;
       augmentation_data = None;
       initial_instructions = "";
-      header_span =
+      span =
         { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 0 };
       offset = Unsigned.UInt64.of_int 0;
     }
@@ -3985,7 +4004,7 @@ module CallFrame = struct
 
     (* Calculate exact header size using cursor position tracking *)
     let header_end_pos = cur.position in
-    let header_span =
+    let span =
       {
         start = Unsigned.UInt64.of_int start_pos;
         size = Unsigned.UInt64.of_int (header_end_pos - start_pos);
@@ -4015,7 +4034,7 @@ module CallFrame = struct
       augmentation_length;
       augmentation_data;
       initial_instructions;
-      header_span;
+      span;
       offset = Unsigned.UInt64.of_int 0;
       (* Debug frame CIEs don't have meaningful offsets for eh_frame lookup *)
     }
@@ -4047,6 +4066,7 @@ module CallFrame = struct
       else ""
     in
 
+    let end_pos = cur.position in
     {
       format;
       length;
@@ -4056,6 +4076,11 @@ module CallFrame = struct
       augmentation_length;
       augmentation_data;
       instructions;
+      span =
+        {
+          start = Unsigned.UInt64.of_int start_pos;
+          size = Unsigned.UInt64.of_int (end_pos - start_pos);
+        };
       offset = Unsigned.UInt64.of_int start_pos;
     }
 
@@ -4708,7 +4733,7 @@ module EHFrame = struct
       augmentation_length;
       augmentation_data;
       initial_instructions;
-      header_span =
+      span =
         {
           start = Unsigned.UInt64.of_int cie_id_start;
           size = Unsigned.UInt64.of_int (current_pos - cie_id_start);
@@ -4799,6 +4824,11 @@ module EHFrame = struct
       augmentation_length;
       augmentation_data;
       instructions;
+      span =
+        {
+          start = Unsigned.UInt64.of_int fde_offset;
+          size = Unsigned.UInt64.of_int (cursor.position - fde_offset);
+        };
       offset = Unsigned.UInt64.of_int fde_offset;
     }
 
@@ -6120,7 +6150,7 @@ module DebugStrOffsets = struct
     unit_length : u64;
     version : u16;
     padding : u16;
-    header_span : span;
+    span : span;
   }
 
   type offset_entry = { offset : u64; resolved_string : string option }
@@ -6134,7 +6164,7 @@ module DebugStrOffsets = struct
     let end_pos = cursor.position in
 
     (* Calculate header span *)
-    let header_span =
+    let span =
       {
         start = Unsigned.UInt64.of_int start_pos;
         size = Unsigned.UInt64.of_int (end_pos - start_pos);
@@ -6147,12 +6177,12 @@ module DebugStrOffsets = struct
         (Printf.sprintf "Expected DWARF version 5, got %d"
            (Unsigned.UInt16.to_int version));
 
-    { format; unit_length; version; padding; header_span }
+    { format; unit_length; version; padding; span }
 
   let parse_offsets (cursor : Object.Buffer.cursor) (header : header)
       (debug_str_section : (u32 * u64) option) (buffer : Object.Buffer.t) :
       offset_entry array =
-    let _header_size = Unsigned.UInt64.to_int header.header_span.size in
+    let _header_size = Unsigned.UInt64.to_int header.span.size in
     let offset_size = offset_size_for_format header.format in
     let data_size = Unsigned.UInt64.to_int header.unit_length - 4 in
     (* unit_length excludes itself (version+padding) *)
@@ -6406,7 +6436,7 @@ module DebugAranges = struct
     debug_info_offset : u64;
     address_size : u8;
     segment_size : u8;
-    header_span : span;
+    span : span;
   }
 
   type address_range = { start_address : u64; length : u64 }
@@ -6422,7 +6452,7 @@ module DebugAranges = struct
     let end_pos = cursor.position in
 
     (* Calculate header span *)
-    let header_span =
+    let span =
       {
         start = Unsigned.UInt64.of_int start_pos;
         size = Unsigned.UInt64.of_int (end_pos - start_pos);
@@ -6436,7 +6466,7 @@ module DebugAranges = struct
       debug_info_offset;
       address_size;
       segment_size;
-      header_span;
+      span;
     }
 
   let parse_entries cursor header =
@@ -6444,7 +6474,7 @@ module DebugAranges = struct
     let segment_size = Unsigned.UInt8.to_int header.segment_size in
 
     (* DWARF spec requires alignment to 2*address_size after the header.
-       The header size is tracked in header_span. For proper alignment with 8-byte addresses (16-byte alignment),
+       The header size is tracked in span. For proper alignment with 8-byte addresses (16-byte alignment),
        we observe that 4 bytes of padding are needed in practice. *)
     for _i = 0 to 3 do
       ignore (Object.Buffer.Read.u8 cursor)
@@ -6513,10 +6543,10 @@ module DebugAranges = struct
                         ~at:(Unsigned.UInt64.to_int debug_info_section_offset)
                     in
                     let _span, cu_header = parse_compile_unit_header cursor in
-                    (* DIE starts after the header, use the header_span from the CompileUnit.header *)
+                    (* DIE starts after the header, use the span from the CompileUnit.header *)
                     (* This excludes the unit_length field which is what we want *)
                     let die_offset_from_section_start =
-                      Unsigned.UInt64.to_int cu_header.header_span.size
+                      Unsigned.UInt64.to_int cu_header.span.size
                     in
                     Unsigned.UInt64.of_int die_offset_from_section_start
                   with _ -> header.debug_info_offset)
@@ -6976,7 +7006,7 @@ module SplitDwarf = struct
       dwo_abbrev_table ctx cu.CompileUnit.header.debug_abbrev_offset
     in
     let enc = CompileUnit.encoding cu in
-    let header_size = Unsigned.UInt64.to_int cu.header.header_span.size in
+    let header_size = Unsigned.UInt64.to_int cu.header.span.size in
     let die_start =
       Unsigned.UInt64.to_int
         (Unsigned.UInt64.add cu.span.start (Unsigned.UInt64.of_int header_size))

@@ -827,7 +827,7 @@ let dump_debug_str_offsets filename =
           Format.print_flush ();
 
           (* Print each offset with its resolved string *)
-          let header_size = Unsigned.UInt64.to_int header.header_span.size in
+          let header_size = Unsigned.UInt64.to_int header.span.size in
           Array.iteri
             (fun i offset_entry ->
               let relative_pos = header_size + (i * 4 (* offset_size *)) in

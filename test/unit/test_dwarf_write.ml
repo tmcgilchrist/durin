@@ -1697,6 +1697,7 @@ let test_write_debug_frame_section () =
       augmentation_length = None;
       augmentation_data = None;
       instructions = "";
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
       offset = Unsigned.UInt64.of_int 0;
     }
   in
@@ -1771,7 +1772,7 @@ let test_write_eh_cie_roundtrip () =
       augmentation_length = None;
       augmentation_data = None;
       initial_instructions = "";
-      header_span =
+      span =
         { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 0 };
       offset = Unsigned.UInt64.of_int 0;
     }
@@ -1817,7 +1818,7 @@ let test_write_eh_frame_cie_fde () =
       augmentation_length = None;
       augmentation_data = None;
       initial_instructions = "";
-      header_span =
+      span =
         { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 0 };
       offset = Unsigned.UInt64.of_int 0;
     }
@@ -1832,6 +1833,7 @@ let test_write_eh_frame_cie_fde () =
       augmentation_length = None;
       augmentation_data = None;
       instructions = "";
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
       offset = Unsigned.UInt64.of_int 0;
     }
   in
@@ -1869,7 +1871,7 @@ let test_write_eh_cie_augmented () =
         Some (Unsigned.UInt64.of_int (String.length aug_data));
       augmentation_data = Some aug_data;
       initial_instructions = "";
-      header_span =
+      span =
         { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 0 };
       offset = Unsigned.UInt64.of_int 0;
     }
@@ -1906,7 +1908,7 @@ let make_aranges_header ?(addr_sz = 8) ?(debug_info_off = 0) () :
     debug_info_offset = Unsigned.UInt64.of_int debug_info_off;
     address_size = Unsigned.UInt8.of_int addr_sz;
     segment_size = Unsigned.UInt8.of_int 0;
-    header_span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+    span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
   }
 
 let test_write_aranges_set () =
@@ -2021,8 +2023,7 @@ let test_write_debug_str_offsets () =
       unit_length = Unsigned.UInt64.zero;
       version = Unsigned.UInt16.of_int 5;
       padding = Unsigned.UInt16.of_int 0;
-      header_span =
-        { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
     }
   in
   let offsets =
@@ -2565,6 +2566,7 @@ let test_write_pubnames_set () =
       version = Unsigned.UInt16.of_int 2;
       debug_info_offset = u64 0;
       debug_info_length = u64 0x200;
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
     }
   in
   let entries =
@@ -2604,6 +2606,7 @@ let test_write_pubtypes_set () =
       version = Unsigned.UInt16.of_int 2;
       debug_info_offset = u64 0;
       debug_info_length = u64 0x100;
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
     }
   in
   let entries =
@@ -2844,6 +2847,7 @@ let test_debug_frame_dwarf64 () =
       augmentation_length = None;
       augmentation_data = None;
       instructions = "";
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
       offset = Unsigned.UInt64.of_int 0;
     }
   in
@@ -2885,8 +2889,7 @@ let test_aranges_dwarf64 () =
       debug_info_offset = Unsigned.UInt64.of_int 0;
       address_size = Unsigned.UInt8.of_int 8;
       segment_size = Unsigned.UInt8.of_int 0;
-      header_span =
-        { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
     }
   in
   let ranges =
@@ -2973,8 +2976,7 @@ let test_debug_str_offsets_dwarf64 () =
       unit_length = Unsigned.UInt64.zero;
       version = Unsigned.UInt16.of_int 5;
       padding = Unsigned.UInt16.of_int 0;
-      header_span =
-        { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
     }
   in
   let offsets =
@@ -3055,6 +3057,7 @@ let test_pubnames_dwarf64 () =
       version = Unsigned.UInt16.of_int 2;
       debug_info_offset = u64 0;
       debug_info_length = u64 0x200;
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
     }
   in
   let entries =
@@ -3096,6 +3099,7 @@ let test_pubtypes_dwarf64 () =
       version = Unsigned.UInt16.of_int 2;
       debug_info_offset = u64 0;
       debug_info_length = u64 0x100;
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
     }
   in
   let entries =

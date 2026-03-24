@@ -129,7 +129,7 @@ let dump_debug_line filename =
                   ~at:(Unsigned.UInt64.to_int debug_info_offset)
               in
               let _span, header = Dwarf.parse_compile_unit_header cursor in
-              Unsigned.UInt64.to_int header.header_span.size
+              Unsigned.UInt64.to_int header.span.size
           | None ->
               failwith
                 "No debug_info section found - cannot determine header size"
@@ -607,7 +607,7 @@ let dump_debug_info filename =
                   unit_start_in_debug_info
                   (Unsigned.UInt64.to_int debug_info_offset)
                   stmt_list_offset
-                  (Unsigned.UInt64.to_int header.header_span.size)
+                  (Unsigned.UInt64.to_int header.span.size)
                   ~print_children:false ~die_names;
 
                 (* Print LOCAL_SYMBOLS header and child DIEs *)
@@ -618,7 +618,7 @@ let dump_debug_info filename =
                       unit_start_in_debug_info
                       (Unsigned.UInt64.to_int debug_info_offset)
                       stmt_list_offset
-                      (Unsigned.UInt64.to_int header.header_span.size)
+                      (Unsigned.UInt64.to_int header.span.size)
                       ~print_children:true ~die_names)
                   root_die.Dwarf.DIE.children;
                 Printf.printf "\n")
@@ -833,9 +833,7 @@ let dump_debug_aranges filename =
                 Dwarf.CompileUnit.dwarf_info unit
               in
               let unit_header = Dwarf.CompileUnit.header unit in
-              let header_size =
-                Unsigned.UInt64.to_int unit_header.header_span.size
-              in
+              let header_size = Unsigned.UInt64.to_int unit_header.span.size in
               (* The cu_die_offset is relative to the start of .debug_info section.
                For the first CU starting at offset 0, the DIE starts at header size offset.
                For subsequent CUs, we need to check if their DIE offset matches. *)
