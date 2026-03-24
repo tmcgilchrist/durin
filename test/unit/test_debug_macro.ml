@@ -19,7 +19,7 @@ let test_macro_header_no_flags () =
   let bytes = [ 0x05; 0x00; 0x00 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let header = Dwarf.parse_debug_macro_header cursor in
+  let header = Dwarf.DebugMacro.parse_header cursor in
   check int "version is 5" (Unsigned.UInt16.to_int header.version) 5;
   check int "flags is 0" (Unsigned.UInt8.to_int header.flags) 0;
   check bool "no debug_line_offset" true (header.debug_line_offset = None);
@@ -34,7 +34,7 @@ let test_macro_header_with_line_offset () =
   in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let header = Dwarf.parse_debug_macro_header cursor in
+  let header = Dwarf.DebugMacro.parse_header cursor in
   check int "flags is 2" (Unsigned.UInt8.to_int header.flags) 2;
   (match header.debug_line_offset with
   | Some off ->
@@ -66,7 +66,7 @@ let test_macro_header_with_both_offsets () =
   in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let header = Dwarf.parse_debug_macro_header cursor in
+  let header = Dwarf.DebugMacro.parse_header cursor in
   check int "flags is 6" (Unsigned.UInt8.to_int header.flags) 6;
   (match header.debug_line_offset with
   | Some off ->
@@ -89,7 +89,7 @@ let test_macro_entry_define () =
   let bytes = [ 0x01; 0x05; 0x66; 0x6f; 0x6f; 0x00 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let entry = Dwarf.parse_debug_macro_entry cursor Dwarf.DWARF32 in
+  let entry = Dwarf.DebugMacro.parse_entry cursor Dwarf.DWARF32 in
   match entry with
   | Some e -> (
       check string "type is DW_MACRO_define" "DW_MACRO_define"
@@ -108,7 +108,7 @@ let test_macro_entry_undef () =
   let bytes = [ 0x02; 0x03; 0x58; 0x00 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let entry = Dwarf.parse_debug_macro_entry cursor Dwarf.DWARF32 in
+  let entry = Dwarf.DebugMacro.parse_entry cursor Dwarf.DWARF32 in
   match entry with
   | Some e -> (
       check string "type is DW_MACRO_undef" "DW_MACRO_undef"
@@ -123,7 +123,7 @@ let test_macro_entry_start_file () =
   let bytes = [ 0x03; 0x01; 0x02 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let entry = Dwarf.parse_debug_macro_entry cursor Dwarf.DWARF32 in
+  let entry = Dwarf.DebugMacro.parse_entry cursor Dwarf.DWARF32 in
   match entry with
   | Some e -> (
       check string "type is DW_MACRO_start_file" "DW_MACRO_start_file"
@@ -141,7 +141,7 @@ let test_macro_entry_end_file () =
   let bytes = [ 0x04 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let entry = Dwarf.parse_debug_macro_entry cursor Dwarf.DWARF32 in
+  let entry = Dwarf.DebugMacro.parse_entry cursor Dwarf.DWARF32 in
   match entry with
   | Some e ->
       check string "type is DW_MACRO_end_file" "DW_MACRO_end_file"
@@ -156,7 +156,7 @@ let test_macro_entry_define_strp () =
   let bytes = [ 0x05; 0x0a; 0x20; 0x00; 0x00; 0x00 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let entry = Dwarf.parse_debug_macro_entry cursor Dwarf.DWARF32 in
+  let entry = Dwarf.DebugMacro.parse_entry cursor Dwarf.DWARF32 in
   match entry with
   | Some e -> (
       check string "type is DW_MACRO_define_strp" "DW_MACRO_define_strp"
@@ -175,7 +175,7 @@ let test_macro_entry_import () =
   let bytes = [ 0x07; 0x50; 0x00; 0x00; 0x00 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let entry = Dwarf.parse_debug_macro_entry cursor Dwarf.DWARF32 in
+  let entry = Dwarf.DebugMacro.parse_entry cursor Dwarf.DWARF32 in
   match entry with
   | Some e -> (
       check string "type is DW_MACRO_import" "DW_MACRO_import"
@@ -192,7 +192,7 @@ let test_macro_entry_define_strx () =
   let bytes = [ 0x0b; 0x01; 0x03 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let entry = Dwarf.parse_debug_macro_entry cursor Dwarf.DWARF32 in
+  let entry = Dwarf.DebugMacro.parse_entry cursor Dwarf.DWARF32 in
   match entry with
   | Some e -> (
       check string "type is DW_MACRO_define_strx" "DW_MACRO_define_strx"
@@ -211,7 +211,7 @@ let test_macro_entry_terminator () =
   let bytes = [ 0x00 ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let entry = Dwarf.parse_debug_macro_entry cursor Dwarf.DWARF32 in
+  let entry = Dwarf.DebugMacro.parse_entry cursor Dwarf.DWARF32 in
   check bool "terminator returns None" true (entry = None)
 
 (* ---- Unit parsing ---- *)
@@ -239,7 +239,7 @@ let test_macro_unit_define_and_end () =
   in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let unit = Dwarf.parse_debug_macro_unit cursor in
+  let unit = Dwarf.DebugMacro.parse_unit cursor in
   check int "version is 5" (Unsigned.UInt16.to_int unit.header.version) 5;
   check int "one entry" 1 (List.length unit.entries);
   let e = List.hd unit.entries in
@@ -267,7 +267,7 @@ let test_macro_unit_start_end_file () =
   in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let unit = Dwarf.parse_debug_macro_unit cursor in
+  let unit = Dwarf.DebugMacro.parse_unit cursor in
   check int "two entries" 2 (List.length unit.entries);
   let first = List.nth unit.entries 0 in
   check string "first is start_file" "DW_MACRO_start_file"
@@ -283,7 +283,7 @@ let test_macro_unit_empty () =
   in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  let unit = Dwarf.parse_debug_macro_unit cursor in
+  let unit = Dwarf.DebugMacro.parse_unit cursor in
   check int "no entries" 0 (List.length unit.entries)
 
 (* ---- Type conversion tests ---- *)

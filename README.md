@@ -5,8 +5,8 @@ Durin is a library for reading and writing the [Dwarf debugging format](https://
 It supports:
  * Reading and writing DWARF 4 and DWARF 5 from ELF and MachO object files.
  * Writing DWARF 5 into GNU assembler-compatible assembly files.
+ * Writing DWARF 5 into object files.
  * Split DWARF (`.dwo` files, `.dwp` package files, skeleton units).
- * DWARF32 and DWARF64 formats.
 
 It provides:
 

@@ -95,7 +95,8 @@ let roundtrip_tests =
     roundtrip "range_list_entry" gen_range_list_entry int_of_range_list_entry
       range_list_entry;
     roundtrip "macro_info_entry_type" gen_macro_info_entry_type
-      int_of_macro_info_entry_type macro_info_entry_type;
+      (fun v -> Unsigned.UInt8.to_int (u8_of_macro_info_entry_type v))
+      (fun i -> macro_info_entry_type_of_u8 (Unsigned.UInt8.of_int i));
     roundtrip "unit_type" gen_unit_type int_of_unit_type (fun i ->
         unit_type_of_u8 (Unsigned.UInt8.of_int i));
     roundtrip "children_determination" gen_children_determination
@@ -125,46 +126,7 @@ let roundtrip_tests =
 
 (* --- String consistency tests --- *)
 
-let test_abbreviation_tag_string_consistency =
-  QCheck.Test.make ~name:"abbreviation_tag string consistency"
-    (arb gen_abbreviation_tag) (fun v ->
-      let code = uint64_of_abbreviation_tag v in
-      string_of_abbreviation_tag_direct v = string_of_abbreviation_tag code)
-
-let string_testable_attribute_encodings =
-  QCheck.Gen.map
-    (fun v ->
-      match v with DW_AT_lo_user | DW_AT_hi_user -> DW_AT_name | v -> v)
-    gen_attribute_encoding
-
-let test_attribute_encoding_string_consistency =
-  QCheck.Test.make ~name:"attribute_encoding string consistency"
-    (arb string_testable_attribute_encodings) (fun v ->
-      let code = u64_of_attribute_encoding v in
-      string_of_attribute_encoding v = string_of_attribute_code code)
-
-let known_form_gen =
-  QCheck.Gen.map
-    (fun v -> match v with DW_FORM_unknown _ -> DW_FORM_addr | v -> v)
-    gen_attribute_form_encoding
-
-let test_attribute_form_encoding_string_consistency =
-  QCheck.Test.make ~name:"attribute_form_encoding string consistency"
-    (arb known_form_gen) (fun v ->
-      let code = u64_of_attribute_form_encoding v in
-      string_of_attribute_form_encoding_variant v
-      = string_of_attribute_form_encoding code)
-
 let () =
   let open Alcotest in
   run "DWARF constants roundtrip"
-    [
-      ("roundtrip", List.map QCheck_alcotest.to_alcotest roundtrip_tests);
-      ( "string consistency",
-        List.map QCheck_alcotest.to_alcotest
-          [
-            test_abbreviation_tag_string_consistency;
-            test_attribute_encoding_string_consistency;
-            test_attribute_form_encoding_string_consistency;
-          ] );
-    ]
+    [ ("roundtrip", List.map QCheck_alcotest.to_alcotest roundtrip_tests) ]

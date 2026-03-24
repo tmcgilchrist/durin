@@ -242,13 +242,6 @@ let dump_debug_line filename =
         (Printexc.to_string exn);
       exit 1
 
-(* Helper to format attribute name, treating DWARF 6 attrs as unknown *)
-let format_attr_name_for_code attr_code =
-  let code = Unsigned.UInt64.to_int attr_code in
-  if code > 0x8c && code < 0x2000 then
-    Printf.sprintf "<Unknown AT value 0x%02x>" code
-  else Dwarf.string_of_attribute_code attr_code
-
 let format_attr_name attr_enc =
   match attr_enc with
   | Dwarf.DW_AT_language_name -> "<Unknown AT value 0x90>"
@@ -286,7 +279,7 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
       die.Dwarf.DIE.offset - debug_info_offset
   in
   let offset_str = Printf.sprintf "0x%08x" relative_offset in
-  let tag_str = Dwarf.string_of_abbreviation_tag_direct die.Dwarf.DIE.tag in
+  let tag_str = Dwarf.string_of_abbreviation_tag die.Dwarf.DIE.tag in
 
   (* Format: < depth><offset>  TAG_NAME with spacing = 2 * (depth + 1) *)
   (* Spacing increases with depth: depth 0 = 2 spaces, depth 1 = 4, depth 2 = 6, etc. *)
@@ -1039,8 +1032,8 @@ let dump_debug_abbrev filename =
               if abbrev.Dwarf.has_children then "DW_children_yes"
               else "DW_children_no"
             in
+            let tag_str = Dwarf.string_of_abbreviation_tag abbrev.Dwarf.tag in
             let tag_u64 = Dwarf.uint64_of_abbreviation_tag abbrev.Dwarf.tag in
-            let tag_str = Dwarf.string_of_abbreviation_tag tag_u64 in
 
             Format.printf "<%5d><0x%08x><code:%4d> @[<h>%-27s@] %s@." code_int
               !current_offset code_int tag_str children_str;
@@ -1054,17 +1047,17 @@ let dump_debug_abbrev filename =
 
             List.iter
               (fun attr_spec ->
-                let attr_u64 =
+                let attr_code =
                   Dwarf.u64_of_attribute_encoding attr_spec.Dwarf.attr
+                  |> Unsigned.UInt64.to_int
                 in
-                let form_u64 =
+                let form_code =
                   Dwarf.u64_of_attribute_form_encoding attr_spec.Dwarf.form
+                  |> Unsigned.UInt64.to_int
                 in
-                let attr_code = Unsigned.UInt64.to_int attr_u64 in
-                let form_code = Unsigned.UInt64.to_int form_u64 in
-                let attr_str = format_attr_name_for_code attr_u64 in
+                let attr_str = format_attr_name attr_spec.Dwarf.attr in
                 let form_str =
-                  Dwarf.string_of_attribute_form_encoding form_u64
+                  Dwarf.string_of_attribute_form_encoding attr_spec.Dwarf.form
                 in
                 Format.printf "@[<h>       <0x%08x>              %-27s@] %s@."
                   !current_offset attr_str form_str;
@@ -1161,15 +1154,13 @@ let dump_debug_names filename =
         List.iter
           (fun abbrev ->
             let code = Unsigned.UInt64.to_int abbrev.Dwarf.DebugNames.code in
-            let tag_str = Dwarf.string_of_abbreviation_tag_direct abbrev.tag in
+            let tag_str = Dwarf.string_of_abbreviation_tag abbrev.tag in
             Printf.printf "    Abbreviation 0x%x {\n" code;
             Printf.printf "      Tag: %s\n" tag_str;
             List.iter
               (fun (idx_attr, form) ->
                 let idx_str = Dwarf.string_of_name_index_attribute idx_attr in
-                let form_str =
-                  Dwarf.string_of_attribute_form_encoding_variant form
-                in
+                let form_str = Dwarf.string_of_attribute_form_encoding form in
                 Printf.printf "      %s: %s\n" idx_str form_str)
               abbrev.attributes;
             Printf.printf "    }\n")
@@ -1336,7 +1327,7 @@ let dump_debug_macro filename =
 
         (* Parse the debug_macro section *)
         let macro_section =
-          Dwarf.parse_debug_macro_section cursor
+          Dwarf.DebugMacro.parse_section cursor
             (Unsigned.UInt64.to_int section_size)
         in
 

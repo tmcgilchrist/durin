@@ -32,6 +32,17 @@ let int_of_location_list_entry = function
   | DW_LLE_start_end -> 0x07
   | DW_LLE_start_length -> 0x08
 
+let string_of_location_list_entry = function
+  | DW_LLE_end_of_list -> "DW_LLE_end_of_list"
+  | DW_LLE_base_addressx -> "DW_LLE_base_addressx"
+  | DW_LLE_startx_endx -> "DW_LLE_startx_endx"
+  | DW_LLE_startx_length -> "DW_LLE_startx_length"
+  | DW_LLE_offset_pair -> "DW_LLE_offset_pair"
+  | DW_LLE_default_location -> "DW_LLE_default_location"
+  | DW_LLE_base_address -> "DW_LLE_base_address"
+  | DW_LLE_start_end -> "DW_LLE_start_end"
+  | DW_LLE_start_length -> "DW_LLE_start_length"
+
 type base_type =
   | DW_ATE_address
   | DW_ATE_boolean
@@ -610,3 +621,13 @@ let int_of_range_list_entry = function
   | DW_RLE_base_address -> 0x05
   | DW_RLE_start_end -> 0x06
   | DW_RLE_start_length -> 0x07
+
+let string_of_range_list_entry = function
+  | DW_RLE_end_of_list -> "DW_RLE_end_of_list"
+  | DW_RLE_base_addressx -> "DW_RLE_base_addressx"
+  | DW_RLE_startx_endx -> "DW_RLE_startx_endx"
+  | DW_RLE_startx_length -> "DW_RLE_startx_length"
+  | DW_RLE_offset_pair -> "DW_RLE_offset_pair"
+  | DW_RLE_base_address -> "DW_RLE_base_address"
+  | DW_RLE_start_end -> "DW_RLE_start_end"
+  | DW_RLE_start_length -> "DW_RLE_start_length"

@@ -1467,9 +1467,8 @@ let write_unit_index buf (idx : Dwarf.SplitDwarf.unit_index) =
 (* .debug_macro Writer *)
 
 let write_debug_macro_entry buf (fmt : Dwarf.dwarf_format)
-    (e : Dwarf.debug_macro_entry) =
-  write_u8 buf
-    (Unsigned.UInt8.of_int (Dwarf.int_of_macro_info_entry_type e.entry_type));
+    (e : Dwarf.DebugMacro.entry) =
+  write_u8 buf (Dwarf.u8_of_macro_info_entry_type e.entry_type);
   match e.entry_type with
   | DW_MACRO_define | DW_MACRO_undef ->
       let line = Option.value e.line_number ~default:Unsigned.UInt32.zero in
@@ -1498,7 +1497,7 @@ let write_debug_macro_entry buf (fmt : Dwarf.dwarf_format)
       write_offset buf fmt off
   | _ -> ()
 
-let write_debug_macro_unit buf (u : Dwarf.debug_macro_unit) =
+let write_debug_macro_unit buf (u : Dwarf.DebugMacro.macro_unit) =
   let h = u.header in
   write_u16_le buf h.version;
   write_u8 buf h.flags;
@@ -1511,7 +1510,7 @@ let write_debug_macro_unit buf (u : Dwarf.debug_macro_unit) =
   List.iter (fun e -> write_debug_macro_entry buf h.format e) u.entries;
   write_u8 buf (Unsigned.UInt8.of_int 0)
 
-let write_debug_macro buf (sec : Dwarf.debug_macro_section) =
+let write_debug_macro buf (sec : Dwarf.DebugMacro.section) =
   List.iter (fun u -> write_debug_macro_unit buf u) sec.units
 
 (* .debug_pubnames/.debug_pubtypes Writers *)

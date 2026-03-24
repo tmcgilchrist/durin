@@ -14,7 +14,7 @@ let test_header binary_path =
   | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let header = Dwarf.parse_debug_macro_header cur in
+      let header = Dwarf.DebugMacro.parse_header cur in
       check int "version is 5" 5 (Unsigned.UInt16.to_int header.version);
       check bool "format is DWARF32" true (header.format = Dwarf.DWARF32);
       let flags = Unsigned.UInt8.to_int header.flags in
@@ -28,9 +28,9 @@ let test_entries_valid binary_path =
   | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let unit = Dwarf.parse_debug_macro_unit cur in
+      let unit = Dwarf.DebugMacro.parse_unit cur in
       List.iter
-        (fun (e : Dwarf.debug_macro_entry) ->
+        (fun (e : Dwarf.DebugMacro.entry) ->
           match e.entry_type with
           | DW_MACRO_define_strp | DW_MACRO_undef_strp ->
               check bool "line_number present" true
@@ -58,22 +58,21 @@ let test_entry_types_present binary_path =
   | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let unit = Dwarf.parse_debug_macro_unit cur in
+      let unit = Dwarf.DebugMacro.parse_unit cur in
       let has_start_file =
         List.exists
-          (fun (e : Dwarf.debug_macro_entry) ->
+          (fun (e : Dwarf.DebugMacro.entry) ->
             e.entry_type = DW_MACRO_start_file)
           unit.entries
       in
       let has_end_file =
         List.exists
-          (fun (e : Dwarf.debug_macro_entry) ->
-            e.entry_type = DW_MACRO_end_file)
+          (fun (e : Dwarf.DebugMacro.entry) -> e.entry_type = DW_MACRO_end_file)
           unit.entries
       in
       let has_define_strp =
         List.exists
-          (fun (e : Dwarf.debug_macro_entry) ->
+          (fun (e : Dwarf.DebugMacro.entry) ->
             e.entry_type = DW_MACRO_define_strp)
           unit.entries
       in
@@ -88,7 +87,7 @@ let test_full_section_traversal binary_path =
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let size = Unsigned.UInt64.to_int section.sh_size in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let parsed = Dwarf.parse_debug_macro_section cur size in
+      let parsed = Dwarf.DebugMacro.parse_section cur size in
       check bool "has units" true (List.length parsed.units > 0)
 
 let binary_path =

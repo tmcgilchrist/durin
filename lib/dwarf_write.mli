@@ -175,10 +175,10 @@ val write_unit_index : Buffer.t -> Dwarf.SplitDwarf.unit_index -> unit
 (** {2 .debug_macro Writer} *)
 
 val write_debug_macro_entry :
-  Buffer.t -> Dwarf.dwarf_format -> Dwarf.debug_macro_entry -> unit
+  Buffer.t -> Dwarf.dwarf_format -> Dwarf.DebugMacro.entry -> unit
 
-val write_debug_macro_unit : Buffer.t -> Dwarf.debug_macro_unit -> unit
-val write_debug_macro : Buffer.t -> Dwarf.debug_macro_section -> unit
+val write_debug_macro_unit : Buffer.t -> Dwarf.DebugMacro.macro_unit -> unit
+val write_debug_macro : Buffer.t -> Dwarf.DebugMacro.section -> unit
 
 (** {2 .debug_pubnames/.debug_pubtypes Writers} *)
 

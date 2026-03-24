@@ -363,7 +363,7 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
 
   let relative_offset = die.Dwarf.DIE.offset - debug_info_offset in
   Printf.printf "\n0x%08x:%s%s\n" relative_offset colon_spaces
-    (Dwarf.string_of_abbreviation_tag_direct die.Dwarf.DIE.tag);
+    (Dwarf.string_of_abbreviation_tag die.Dwarf.DIE.tag);
 
   (* Print attributes *)
   List.iter
@@ -617,17 +617,13 @@ let dump_debug_names filename =
           List.iter
             (fun abbrev ->
               let code = Unsigned.UInt64.to_int abbrev.Dwarf.DebugNames.code in
-              let tag_str =
-                Dwarf.string_of_abbreviation_tag_direct abbrev.tag
-              in
+              let tag_str = Dwarf.string_of_abbreviation_tag abbrev.tag in
               Printf.printf "    Abbreviation 0x%x {\n" code;
               Printf.printf "      Tag: %s\n" tag_str;
               List.iter
                 (fun (idx_attr, form) ->
                   let idx_str = Dwarf.string_of_name_index_attribute idx_attr in
-                  let form_str =
-                    Dwarf.string_of_attribute_form_encoding_variant form
-                  in
+                  let form_str = Dwarf.string_of_attribute_form_encoding form in
                   Printf.printf "      %s: %s\n" idx_str form_str)
                 abbrev.attributes;
               Printf.printf "    }\n")
@@ -796,7 +792,7 @@ let dump_debug_abbrev filename =
               List.iter
                 (fun attr_spec ->
                   Printf.printf "\t%s\t%s\n"
-                    (Dwarf.string_of_attribute_code attr_spec.Dwarf.attr)
+                    (Dwarf.string_of_attribute_encoding attr_spec.Dwarf.attr)
                     (Dwarf.string_of_attribute_form_encoding
                        attr_spec.Dwarf.form))
                 abbrev.Dwarf.attr_specs;
@@ -975,7 +971,7 @@ let dump_debug_macro filename =
           (* Parse the debug_macro section *)
           let section_size_int = Unsigned.UInt64.to_int section_size in
           let macro_section =
-            Dwarf.parse_debug_macro_section cursor section_size_int
+            Dwarf.DebugMacro.parse_section cursor section_size_int
           in
 
           Printf.printf

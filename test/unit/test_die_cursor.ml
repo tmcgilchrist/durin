@@ -69,7 +69,7 @@ let test_die_cursor_basic () =
   | Some (die, has_children) ->
       check bool "compile_unit has children" true has_children;
       check string "tag is compile_unit" "DW_TAG_compile_unit"
-        (Dwarf.string_of_abbreviation_tag_direct die.tag)
+        (Dwarf.string_of_abbreviation_tag die.tag)
 
 let test_die_cursor_skip_children () =
   let bytes = make_test_die_bytes () in
@@ -97,21 +97,20 @@ let test_die_zipper_down_up () =
   | None -> fail "expected zipper"
   | Some z -> (
       check string "root is compile_unit" "DW_TAG_compile_unit"
-        (Dwarf.string_of_abbreviation_tag_direct (Dwarf.DieZipper.tag z));
+        (Dwarf.string_of_abbreviation_tag (Dwarf.DieZipper.tag z));
       check int "root depth is 0" 0 (Dwarf.DieZipper.depth z);
       match Dwarf.DieZipper.down z with
       | None -> fail "expected child"
       | Some child -> (
           check string "child is variable" "DW_TAG_variable"
-            (Dwarf.string_of_abbreviation_tag_direct
-               (Dwarf.DieZipper.tag child));
+            (Dwarf.string_of_abbreviation_tag (Dwarf.DieZipper.tag child));
           check int "child depth is 1" 1 (Dwarf.DieZipper.depth child);
           match Dwarf.DieZipper.up child with
           | None -> fail "expected parent"
           | Some parent ->
               check string "parent is compile_unit" "DW_TAG_compile_unit"
-                (Dwarf.string_of_abbreviation_tag_direct
-                   (Dwarf.DieZipper.tag parent))))
+                (Dwarf.string_of_abbreviation_tag (Dwarf.DieZipper.tag parent)))
+      )
 
 let test_die_zipper_right () =
   let bytes = make_test_die_bytes () in
@@ -126,14 +125,12 @@ let test_die_zipper_right () =
       | None -> fail "expected first child"
       | Some first -> (
           check string "first child is variable" "DW_TAG_variable"
-            (Dwarf.string_of_abbreviation_tag_direct
-               (Dwarf.DieZipper.tag first));
+            (Dwarf.string_of_abbreviation_tag (Dwarf.DieZipper.tag first));
           match Dwarf.DieZipper.right first with
           | None -> fail "expected second child"
           | Some second ->
               check string "second child is variable" "DW_TAG_variable"
-                (Dwarf.string_of_abbreviation_tag_direct
-                   (Dwarf.DieZipper.tag second));
+                (Dwarf.string_of_abbreviation_tag (Dwarf.DieZipper.tag second));
               let no_more = Dwarf.DieZipper.right second in
               check bool "no third child" true (no_more = None)))
 

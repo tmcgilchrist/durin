@@ -5,46 +5,33 @@ open Durin
 
 let test_tag_to_string () =
   check string "DW_TAG_compile_unit" "DW_TAG_compile_unit"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x11));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_compile_unit);
   check string "DW_TAG_subprogram" "DW_TAG_subprogram"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x2e));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_subprogram);
   check string "DW_TAG_variable" "DW_TAG_variable"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x34));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_variable);
   check string "DW_TAG_base_type" "DW_TAG_base_type"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x24));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_base_type);
   check string "DW_TAG_formal_parameter" "DW_TAG_formal_parameter"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x05));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_formal_parameter);
   check string "DW_TAG_typedef" "DW_TAG_typedef"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x16));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_typedef);
   check string "DW_TAG_structure_type" "DW_TAG_structure_type"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x13));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_structure_type);
   check string "DW_TAG_member" "DW_TAG_member"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x0d));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_member);
   check string "DW_TAG_pointer_type" "DW_TAG_pointer_type"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x0f));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_pointer_type);
   check string "DW_TAG_array_type" "DW_TAG_array_type"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x01));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_array_type);
   check string "DW_TAG_enumeration_type" "DW_TAG_enumeration_type"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x04));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_enumeration_type);
   check string "DW_TAG_namespace" "DW_TAG_namespace"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x39))
-
-let test_tag_direct_to_string () =
-  check string "DW_TAG_compile_unit direct" "DW_TAG_compile_unit"
-    (Dwarf.string_of_abbreviation_tag_direct Dwarf.DW_TAG_compile_unit);
-  check string "DW_TAG_subprogram direct" "DW_TAG_subprogram"
-    (Dwarf.string_of_abbreviation_tag_direct Dwarf.DW_TAG_subprogram);
-  check string "DW_TAG_variable direct" "DW_TAG_variable"
-    (Dwarf.string_of_abbreviation_tag_direct Dwarf.DW_TAG_variable);
-  check string "DW_TAG_type_unit direct" "DW_TAG_type_unit"
-    (Dwarf.string_of_abbreviation_tag_direct Dwarf.DW_TAG_type_unit);
-  check string "DW_TAG_template_alias direct" "DW_TAG_template_alias"
-    (Dwarf.string_of_abbreviation_tag_direct Dwarf.DW_TAG_template_alias)
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_namespace)
 
 let test_tag_to_uint64_roundtrip () =
   let check_roundtrip tag expected_name =
-    let code = Dwarf.uint64_of_abbreviation_tag tag in
-    let name = Dwarf.string_of_abbreviation_tag code in
+    let name = Dwarf.string_of_abbreviation_tag tag in
     check string expected_name expected_name name
   in
   check_roundtrip Dwarf.DW_TAG_compile_unit "DW_TAG_compile_unit";
@@ -61,71 +48,68 @@ let test_tag_to_uint64_roundtrip () =
 
 let test_dwarf5_tags () =
   check string "DW_TAG_type_unit" "DW_TAG_type_unit"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x41));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_type_unit);
   check string "DW_TAG_rvalue_reference_type" "DW_TAG_rvalue_reference_type"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x42));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_rvalue_reference_type);
   check string "DW_TAG_template_alias" "DW_TAG_template_alias"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x43));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_template_alias);
   check string "DW_TAG_GNU_template_parameter_pack"
     "DW_TAG_GNU_template_parameter_pack"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x4107));
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_GNU_template_parameter_pack);
   check string "DW_TAG_call_site" "DW_TAG_call_site"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x48));
-  (* Unknown tags produce fallback *)
-  check string "unknown tag fallback" "DW_TAG_<0x99>"
-    (Dwarf.string_of_abbreviation_tag (Unsigned.UInt64.of_int 0x99))
+    (Dwarf.string_of_abbreviation_tag Dwarf.DW_TAG_call_site)
 
 (* ---- Attribute code string conversion ---- *)
 
 let test_attribute_code_strings () =
   check string "DW_AT_name" "DW_AT_name"
-    (Dwarf.string_of_attribute_code (Unsigned.UInt64.of_int 0x03));
+    (Dwarf.string_of_attribute_encoding Dwarf.DW_AT_name);
   check string "DW_AT_type" "DW_AT_type"
-    (Dwarf.string_of_attribute_code (Unsigned.UInt64.of_int 0x49));
+    (Dwarf.string_of_attribute_encoding Dwarf.DW_AT_type);
   check string "DW_AT_low_pc" "DW_AT_low_pc"
-    (Dwarf.string_of_attribute_code (Unsigned.UInt64.of_int 0x11));
+    (Dwarf.string_of_attribute_encoding Dwarf.DW_AT_low_pc);
   check string "DW_AT_high_pc" "DW_AT_high_pc"
-    (Dwarf.string_of_attribute_code (Unsigned.UInt64.of_int 0x12));
+    (Dwarf.string_of_attribute_encoding Dwarf.DW_AT_high_pc);
   check string "DW_AT_language" "DW_AT_language"
-    (Dwarf.string_of_attribute_code (Unsigned.UInt64.of_int 0x13));
+    (Dwarf.string_of_attribute_encoding Dwarf.DW_AT_language);
   check string "DW_AT_comp_dir" "DW_AT_comp_dir"
-    (Dwarf.string_of_attribute_code (Unsigned.UInt64.of_int 0x1b));
+    (Dwarf.string_of_attribute_encoding Dwarf.DW_AT_comp_dir);
   check string "DW_AT_stmt_list" "DW_AT_stmt_list"
-    (Dwarf.string_of_attribute_code (Unsigned.UInt64.of_int 0x10));
+    (Dwarf.string_of_attribute_encoding Dwarf.DW_AT_stmt_list);
   check string "DW_AT_producer" "DW_AT_producer"
-    (Dwarf.string_of_attribute_code (Unsigned.UInt64.of_int 0x25));
+    (Dwarf.string_of_attribute_encoding Dwarf.DW_AT_producer);
   check string "DW_AT_decl_file" "DW_AT_decl_file"
-    (Dwarf.string_of_attribute_code (Unsigned.UInt64.of_int 0x3a));
+    (Dwarf.string_of_attribute_encoding Dwarf.DW_AT_decl_file);
   check string "DW_AT_decl_line" "DW_AT_decl_line"
-    (Dwarf.string_of_attribute_code (Unsigned.UInt64.of_int 0x3b))
+    (Dwarf.string_of_attribute_encoding Dwarf.DW_AT_decl_line)
 
 (* ---- Form encoding string conversion ---- *)
 
 let test_form_encoding_strings () =
   check string "DW_FORM_addr" "DW_FORM_addr"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x01));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_addr);
   check string "DW_FORM_data1" "DW_FORM_data1"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x0b));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_data1);
   check string "DW_FORM_data2" "DW_FORM_data2"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x05));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_data2);
   check string "DW_FORM_data4" "DW_FORM_data4"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x06));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_data4);
   check string "DW_FORM_data8" "DW_FORM_data8"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x07));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_data8);
   check string "DW_FORM_string" "DW_FORM_string"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x08));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_string);
   check string "DW_FORM_strp" "DW_FORM_strp"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x0e));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_strp);
   check string "DW_FORM_ref_addr" "DW_FORM_ref_addr"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x10));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_ref_addr);
   check string "DW_FORM_exprloc" "DW_FORM_exprloc"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x18));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_exprloc);
   check string "DW_FORM_implicit_const" "DW_FORM_implicit_const"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x21));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_implicit_const);
   check string "DW_FORM_strx1" "DW_FORM_strx1"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x25));
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_strx1);
   check string "DW_FORM_addrx" "DW_FORM_addrx"
-    (Dwarf.string_of_attribute_form_encoding (Unsigned.UInt64.of_int 0x1b))
+    (Dwarf.string_of_attribute_form_encoding Dwarf.DW_FORM_addrx)
 
 (* ---- Abbreviation record construction ---- *)
 
@@ -147,14 +131,14 @@ let test_abbrev_record () =
   in
   check int "code is 1" (Unsigned.UInt64.to_int abbrev.code) 1;
   check string "tag is compile_unit" "DW_TAG_compile_unit"
-    (Dwarf.string_of_abbreviation_tag_direct abbrev.tag);
+    (Dwarf.string_of_abbreviation_tag abbrev.tag);
   check bool "has_children" true abbrev.has_children;
   check int "one attr spec" 1 (List.length abbrev.attr_specs);
   let s = List.hd abbrev.attr_specs in
   check string "attr is DW_AT_name" "DW_AT_name"
     (Dwarf.string_of_attribute_encoding s.attr);
   check string "form is DW_FORM_string" "DW_FORM_string"
-    (Dwarf.string_of_attribute_form_encoding_variant s.form);
+    (Dwarf.string_of_attribute_form_encoding s.form);
   check bool "no implicit_const" true (s.implicit_const = None)
 
 let test_abbrev_with_implicit_const () =
@@ -166,7 +150,7 @@ let test_abbrev_with_implicit_const () =
     }
   in
   check string "form is DW_FORM_implicit_const" "DW_FORM_implicit_const"
-    (Dwarf.string_of_attribute_form_encoding_variant spec.form);
+    (Dwarf.string_of_attribute_form_encoding spec.form);
   match spec.implicit_const with
   | Some v -> check int64 "implicit_const is 42" v 42L
   | None -> fail "expected implicit_const"
@@ -200,7 +184,7 @@ let test_abbrev_multiple_attrs () =
     }
   in
   check string "tag is subprogram" "DW_TAG_subprogram"
-    (Dwarf.string_of_abbreviation_tag_direct abbrev.tag);
+    (Dwarf.string_of_abbreviation_tag abbrev.tag);
   check int "three attr specs" 3 (List.length abbrev.attr_specs);
   let s0 = List.nth abbrev.attr_specs 0 in
   let s1 = List.nth abbrev.attr_specs 1 in
@@ -212,11 +196,11 @@ let test_abbrev_multiple_attrs () =
   check string "attr 2 is DW_AT_high_pc" "DW_AT_high_pc"
     (Dwarf.string_of_attribute_encoding s2.attr);
   check string "form 0 is DW_FORM_string" "DW_FORM_string"
-    (Dwarf.string_of_attribute_form_encoding_variant s0.form);
+    (Dwarf.string_of_attribute_form_encoding s0.form);
   check string "form 1 is DW_FORM_addr" "DW_FORM_addr"
-    (Dwarf.string_of_attribute_form_encoding_variant s1.form);
+    (Dwarf.string_of_attribute_form_encoding s1.form);
   check string "form 2 is DW_FORM_data8" "DW_FORM_data8"
-    (Dwarf.string_of_attribute_form_encoding_variant s2.form)
+    (Dwarf.string_of_attribute_form_encoding s2.form)
 
 let test_abbrev_no_children () =
   let abbrev : Dwarf.abbrev =
@@ -228,7 +212,7 @@ let test_abbrev_no_children () =
     }
   in
   check string "tag is variable" "DW_TAG_variable"
-    (Dwarf.string_of_abbreviation_tag_direct abbrev.tag);
+    (Dwarf.string_of_abbreviation_tag abbrev.tag);
   check bool "no children" false abbrev.has_children;
   check int "no attr specs" 0 (List.length abbrev.attr_specs)
 
@@ -271,17 +255,17 @@ let test_abbrev_table_lookup () =
 
   let a1 = Hashtbl.find tbl (Unsigned.UInt64.of_int 1) in
   check string "code 1 is compile_unit" "DW_TAG_compile_unit"
-    (Dwarf.string_of_abbreviation_tag_direct a1.tag);
+    (Dwarf.string_of_abbreviation_tag a1.tag);
   check int "code 1 has 2 attrs" 2 (List.length a1.attr_specs);
 
   let a2 = Hashtbl.find tbl (Unsigned.UInt64.of_int 2) in
   check string "code 2 is subprogram" "DW_TAG_subprogram"
-    (Dwarf.string_of_abbreviation_tag_direct a2.tag);
+    (Dwarf.string_of_abbreviation_tag a2.tag);
   check int "code 2 has 3 attrs" 3 (List.length a2.attr_specs);
 
   let a3 = Hashtbl.find tbl (Unsigned.UInt64.of_int 3) in
   check string "code 3 is variable" "DW_TAG_variable"
-    (Dwarf.string_of_abbreviation_tag_direct a3.tag);
+    (Dwarf.string_of_abbreviation_tag a3.tag);
   check bool "code 3 no children" false a3.has_children;
 
   let missing = Hashtbl.find_opt tbl (Unsigned.UInt64.of_int 99) in
@@ -292,9 +276,8 @@ let () =
     [
       ( "tag_conversion",
         [
-          test_case "tag code to string" `Quick test_tag_to_string;
-          test_case "tag direct to string" `Quick test_tag_direct_to_string;
-          test_case "tag to uint64 roundtrip" `Quick
+          test_case "tag to string" `Quick test_tag_to_string;
+          test_case "tag to string roundtrip" `Quick
             test_tag_to_uint64_roundtrip;
           test_case "DWARF 5 tags" `Quick test_dwarf5_tags;
         ] );

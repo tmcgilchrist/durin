@@ -1610,7 +1610,7 @@ let test_write_debug_line_line_strp () =
   (* Verify the directory format uses line_strp *)
   let _dir_ct, dir_form = ph.directory_entry_formats.(0) in
   check string "dir form" "DW_FORM_line_strp"
-    (Dwarf.string_of_attribute_form_encoding_variant dir_form)
+    (Dwarf.string_of_attribute_form_encoding dir_form)
 
 let test_write_debug_line_missing_table () =
   let header = line_strp_line_header () in
@@ -2428,7 +2428,7 @@ let test_write_unit_index_tu () =
 
 (* Stage 17: .debug_macro tests *)
 
-let make_macro_header ?(flags = 0) () : Dwarf.debug_macro_header =
+let make_macro_header ?(flags = 0) () : Dwarf.DebugMacro.header =
   {
     format = Dwarf.DWARF32;
     version = Unsigned.UInt16.of_int 5;
@@ -2441,7 +2441,7 @@ let make_macro_header ?(flags = 0) () : Dwarf.debug_macro_header =
 let test_write_debug_macro_define_undef () =
   let header = make_macro_header () in
   let entries =
-    Dwarf.
+    Dwarf.DebugMacro.
       [
         {
           entry_type = DW_MACRO_define;
@@ -2459,12 +2459,12 @@ let test_write_debug_macro_define_undef () =
         };
       ]
   in
-  let unit = Dwarf.{ header; entries } in
+  let unit = Dwarf.DebugMacro.{ header; entries } in
   let buf = Buffer.create 64 in
   Dwarf_write.write_debug_macro_unit buf unit;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let parsed = Dwarf.parse_debug_macro_unit cur in
+  let parsed = Dwarf.DebugMacro.parse_unit cur in
   check int "entry count" 2 (List.length parsed.entries);
   let e0 = List.nth parsed.entries 0 in
   check string "e0 type" "DW_MACRO_define"
@@ -2480,7 +2480,7 @@ let test_write_debug_macro_define_undef () =
 let test_write_debug_macro_start_end_file () =
   let header = make_macro_header () in
   let entries =
-    Dwarf.
+    Dwarf.DebugMacro.
       [
         {
           entry_type = DW_MACRO_start_file;
@@ -2498,12 +2498,12 @@ let test_write_debug_macro_start_end_file () =
         };
       ]
   in
-  let unit = Dwarf.{ header; entries } in
+  let unit = Dwarf.DebugMacro.{ header; entries } in
   let buf = Buffer.create 64 in
   Dwarf_write.write_debug_macro_unit buf unit;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let parsed = Dwarf.parse_debug_macro_unit cur in
+  let parsed = Dwarf.DebugMacro.parse_unit cur in
   check int "entry count" 2 (List.length parsed.entries);
   let e0 = List.nth parsed.entries 0 in
   check string "e0 type" "DW_MACRO_start_file"
@@ -2518,7 +2518,7 @@ let test_write_debug_macro_start_end_file () =
 let test_write_debug_macro_strp () =
   let header = make_macro_header () in
   let entries =
-    Dwarf.
+    Dwarf.DebugMacro.
       [
         {
           entry_type = DW_MACRO_define_strp;
@@ -2536,12 +2536,12 @@ let test_write_debug_macro_strp () =
         };
       ]
   in
-  let unit = Dwarf.{ header; entries } in
+  let unit = Dwarf.DebugMacro.{ header; entries } in
   let buf = Buffer.create 64 in
   Dwarf_write.write_debug_macro_unit buf unit;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let parsed = Dwarf.parse_debug_macro_unit cur in
+  let parsed = Dwarf.DebugMacro.parse_unit cur in
   check int "entry count" 2 (List.length parsed.entries);
   let e0 = List.nth parsed.entries 0 in
   check string "e0 type" "DW_MACRO_define_strp"
@@ -3007,7 +3007,7 @@ let test_debug_str_offsets_dwarf64 () =
   check int "offset 2" 25 (Unsigned.UInt64.to_int o2)
 
 let test_debug_macro_dwarf64 () =
-  let header : Dwarf.debug_macro_header =
+  let header : Dwarf.DebugMacro.header =
     {
       format = Dwarf.DWARF64;
       version = Unsigned.UInt16.of_int 5;
@@ -3017,7 +3017,7 @@ let test_debug_macro_dwarf64 () =
     }
   in
   let entries =
-    Dwarf.
+    Dwarf.DebugMacro.
       [
         {
           entry_type = DW_MACRO_define_strp;
@@ -3028,12 +3028,12 @@ let test_debug_macro_dwarf64 () =
         };
       ]
   in
-  let unit = Dwarf.{ header; entries } in
+  let unit = Dwarf.DebugMacro.{ header; entries } in
   let buf = Buffer.create 128 in
   Dwarf_write.write_debug_macro_unit buf unit;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let parsed = Dwarf.parse_debug_macro_unit cur in
+  let parsed = Dwarf.DebugMacro.parse_unit cur in
   check
     (module struct
       type t = Dwarf.dwarf_format
