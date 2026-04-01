@@ -1,4 +1,4 @@
-open Types
+open Dwarf_types
 
 (** DWARF 5 unit type encodings.
 
@@ -144,7 +144,14 @@ val uint64_of_abbreviation_tag : abbreviation_tag -> u64
 (** Convert a DWARF [abbreviation_tag] tag to a u64. *)
 
 val string_of_abbreviation_tag : abbreviation_tag -> string
-(** Convert an [abbreviation_tag] to its string representation. *)
+(** Convert an [abbreviation_tag] to its string representation.
+
+    {@ocaml[
+      # Durin.Dwarf.string_of_abbreviation_tag DW_TAG_compile_unit;;
+      - : string = "DW_TAG_compile_unit"
+      # Durin.Dwarf.string_of_abbreviation_tag DW_TAG_subprogram;;
+      - : string = "DW_TAG_subprogram"
+    ]} *)
 
 (** The encodings for the child determination byte.
 
@@ -294,7 +301,14 @@ type attribute_encoding =
 
 val string_of_attribute_encoding : attribute_encoding -> string
 (** Convert an [attribute_encoding] to its string representation. The output
-    format is intended for display and is not a stable interface. *)
+    format is intended for display and is not a stable interface.
+
+    {@ocaml[
+      # Durin.Dwarf.string_of_attribute_encoding DW_AT_name;;
+      - : string = "DW_AT_name"
+      # Durin.Dwarf.string_of_attribute_encoding DW_AT_language;;
+      - : string = "DW_AT_language"
+    ]} *)
 
 val attribute_encoding : u64 -> attribute_encoding
 (** Convert a u64 to an [attribute_encoding]. *)
@@ -1480,16 +1494,15 @@ end
     {!DieCursor} is lighter weight.
 
     Typical usage:
-    {[
+    {@ocaml skip[
       let dc = DieCursor.create buffer abbrev_table encoding offset in
       match DieZipper.of_die_cursor dc with
       | None -> ()
       | Some z ->
-          (* z is focused on the root DIE *)
           DieZipper.children z
           |> Seq.iter (fun child ->
-                 let die = DieZipper.current child in
-                 (* process child DIE *))
+                 let _die = DieZipper.current child in
+                 ())
     ]} *)
 module DieZipper : sig
   type t
@@ -2878,7 +2891,7 @@ module DebugStrOffsets : sig
       @raise Failure if section format is invalid
 
       Usage example:
-      {[
+      {@ocaml skip[
         let str_offsets = DebugStrOffsets.parse buffer section_offset in
         let first_string = str_offsets.offsets.(0).resolved_string
       ]}
@@ -2985,7 +2998,7 @@ module DebugAddr : sig
       @raise Failure if section format is invalid
 
       Usage example:
-      {[
+      {@ocaml skip[
         let addr_table = DebugAddr.parse buffer section_offset in
         let first_address = addr_table.entries.(0).address
       ]}

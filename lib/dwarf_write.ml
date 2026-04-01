@@ -1,4 +1,4 @@
-open Types
+open Dwarf_types
 module Buffer = Stdlib.Buffer
 
 let write_u8 buf (v : u8) =

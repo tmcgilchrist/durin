@@ -15,7 +15,7 @@
     - https://github.com/llvm/llvm-project/blob/main/libunwind/include/mach-o/compact_unwind_encoding.h
 *)
 
-open Types
+open Dwarf_types
 
 (** Target architecture for compact unwinding *)
 type architecture =

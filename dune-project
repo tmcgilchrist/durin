@@ -2,6 +2,7 @@
 (name durin)
 (generate_opam_files true)
 (cram enable)
+(using mdx 0.2)
 
 (license BSD3)
 (maintainers "Tim McGilchrist <timmcgil@gmail.com>")
@@ -21,6 +22,7 @@
   (qcheck-alcotest :with-test)
   (ppx_import :with-test)
   (ppx_deriving_qcheck :with-test)
+  (mdx :with-test)
   (patdiff :with-dev-setup)
   (ocamlformat (and :with-dev-setup (= 0.27.0))))
  (synopsis "A library for reading and writing the DWARF debugging format.")

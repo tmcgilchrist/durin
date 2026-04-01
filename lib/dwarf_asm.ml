@@ -1,4 +1,4 @@
-open Types
+open Dwarf_types
 module Buffer = Stdlib.Buffer
 
 let emit_byte fmt v = Format.fprintf fmt "\t.byte\t0x%02x@\n" v

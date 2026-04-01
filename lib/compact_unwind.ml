@@ -1,4 +1,4 @@
-open Types
+open Dwarf_types
 
 exception Invalid_compact_unwind_format of string
 

@@ -1,4 +1,4 @@
-open Types
+open Dwarf_types
 
 type dwarf_section =
   | Debug_info

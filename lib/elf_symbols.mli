@@ -1,6 +1,6 @@
 (* ELF Symbol Table Parser Module Interface *)
 
-open Types
+open Dwarf_types
 
 type symbol_entry = {
   name : string;  (** Symbol name *)

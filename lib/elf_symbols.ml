@@ -1,6 +1,6 @@
 (* ELF Symbol Table Parser Module *)
 
-open Types
+open Dwarf_types
 
 (* Symbol table entry record *)
 type symbol_entry = {

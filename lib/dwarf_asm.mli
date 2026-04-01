@@ -1,4 +1,4 @@
-open Types
+open Dwarf_types
 
 (** {2 Primitive Assembly Directives} *)
 

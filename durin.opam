@@ -19,6 +19,7 @@ depends: [
   "qcheck-alcotest" {with-test}
   "ppx_import" {with-test}
   "ppx_deriving_qcheck" {with-test}
+  "mdx" {with-test}
   "patdiff" {with-dev-setup}
   "ocamlformat" {with-dev-setup & = "0.27.0"}
   "odoc" {with-doc}

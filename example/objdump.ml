@@ -56,7 +56,7 @@ let print_common_encodings (header : Dwarf.CompactUnwind.unwind_info_header)
     encodings
 
 let print_personalities (header : Dwarf.CompactUnwind.unwind_info_header)
-    (personalities : Types.u32 array) =
+    (personalities : Unsigned.UInt32.t array) =
   Printf.printf "  Personality functions: (count = %ld)\n"
     (Unsigned.UInt32.to_int32 header.Dwarf.CompactUnwind.personality_array_count);
   Array.iteri

@@ -1,4 +1,4 @@
-open Types
+open Dwarf_types
 module Buffer = Stdlib.Buffer
 
 val write_u8 : Buffer.t -> u8 -> unit
@@ -200,8 +200,8 @@ val write_type_unit :
   Buffer.t ->
   Dwarf.encoding ->
   Dwarf.DIE.t ->
-  (int -> Types.u64) ->
-  Types.u64 ->
-  Types.u64 ->
-  Types.u64 ->
+  (int -> u64) ->
+  u64 ->
+  u64 ->
+  u64 ->
   unit
