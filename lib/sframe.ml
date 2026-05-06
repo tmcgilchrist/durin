@@ -15,6 +15,7 @@ let fde_v2_size = 20
 (* Flag bits in sframe_preamble.sfp_flags *)
 let flag_fde_sorted = 0x1
 let flag_frame_pointer = 0x2
+let flag_func_start_pcrel = 0x4
 
 (* ABI/arch identifiers *)
 let abi_aarch64_be_id = 1
@@ -35,7 +36,13 @@ let fre_info_offset_size_shift = 5
 let fre_info_mangled_ra_mask = 0x80
 
 type abi_arch = Aarch64_be | Aarch64_le | Amd64_le
-type flags = { fde_sorted : bool; frame_pointer : bool }
+
+type flags = {
+  fde_sorted : bool;
+  frame_pointer : bool;
+  func_start_pcrel : bool;
+}
+
 type preamble = { magic : u16; version : u8; flags : flags }
 
 type header = {
@@ -141,6 +148,7 @@ let parse_preamble (cur : Object.Buffer.cursor) : preamble =
     {
       fde_sorted = flags_int land flag_fde_sorted <> 0;
       frame_pointer = flags_int land flag_frame_pointer <> 0;
+      func_start_pcrel = flags_int land flag_func_start_pcrel <> 0;
     }
   in
   { magic; version; flags }

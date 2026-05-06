@@ -29,6 +29,11 @@ type flags = {
   fde_sorted : bool;  (** [SFRAME_F_FDE_SORTED] (0x1): FDEs sorted by PC. *)
   frame_pointer : bool;
       (** [SFRAME_F_FRAME_POINTER] (0x2): functions preserve FP. *)
+  func_start_pcrel : bool;
+      (** [SFRAME_F_FDE_FUNC_START_PCREL] (0x4): when set,
+          [fde.func_start_address] is PC-relative to the FDE's location in the
+          section rather than an absolute VMA. Added in binutils 2.42; enabled
+          by default by gcc/gas when emitting [.sframe]. *)
 }
 (** Section-wide flag bits stored in the preamble. *)
 

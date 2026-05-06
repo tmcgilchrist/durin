@@ -33,6 +33,13 @@ let test_header_fde_sorted binary_path =
   let t = parse_sframe binary_path in
   check bool "FDE_SORTED flag set" true t.header.preamble.flags.fde_sorted
 
+let test_header_func_start_pcrel binary_path =
+  (* binutils 2.42+ enables FUNC_START_PCREL by default when emitting .sframe.
+     Anything we build with -Wa,--gsframe on a modern toolchain has it set. *)
+  let t = parse_sframe binary_path in
+  check bool "FUNC_START_PCREL flag set" true
+    t.header.preamble.flags.func_start_pcrel
+
 let test_fdes_present binary_path =
   let t = parse_sframe binary_path in
   let n = Unsigned.UInt32.to_int t.header.num_fdes in
@@ -86,6 +93,7 @@ let () =
           ("magic + version + ABI", `Quick, test_header_basic);
           ("CFA fixed RA offset", `Quick, test_header_amd64_ra_offset);
           ("FDE_SORTED flag", `Quick, test_header_fde_sorted);
+          ("FUNC_START_PCREL flag", `Quick, test_header_func_start_pcrel);
         ] );
       ( "fdes",
         [

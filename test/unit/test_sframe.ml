@@ -127,6 +127,19 @@ let test_flag_both () =
   check bool "fde_sorted set" true t.header.preamble.flags.fde_sorted;
   check bool "frame_pointer set" true t.header.preamble.flags.frame_pointer
 
+let test_flag_func_start_pcrel () =
+  let t = parse_minimal_v2 ~flags_byte:0x4 () in
+  check bool "func_start_pcrel set" true
+    t.header.preamble.flags.func_start_pcrel;
+  check bool "fde_sorted unset" false t.header.preamble.flags.fde_sorted
+
+let test_flag_all_three () =
+  let t = parse_minimal_v2 ~flags_byte:0x7 () in
+  check bool "fde_sorted set" true t.header.preamble.flags.fde_sorted;
+  check bool "frame_pointer set" true t.header.preamble.flags.frame_pointer;
+  check bool "func_start_pcrel set" true
+    t.header.preamble.flags.func_start_pcrel
+
 (* ---- ABI decoding ---- *)
 
 let test_abi_amd64_le () =
@@ -477,6 +490,8 @@ let () =
           test_case "FDE_SORTED" `Quick test_flag_fde_sorted;
           test_case "FRAME_POINTER" `Quick test_flag_frame_pointer;
           test_case "both flags" `Quick test_flag_both;
+          test_case "FDE_FUNC_START_PCREL" `Quick test_flag_func_start_pcrel;
+          test_case "all three flags" `Quick test_flag_all_three;
         ] );
       ( "abi",
         [
