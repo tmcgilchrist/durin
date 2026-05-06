@@ -156,3 +156,16 @@
    (= %{architecture} "amd64")))
  (action
   (system "gcc -gdwarf-5 -g3 test_macros.c -o test_macros_linux")))
+
+; SFrame fixture: requires binutils 2.40+ which understands -Wa,--gsframe.
+
+(rule
+ (alias runtest)
+ (deps sframe_test.c)
+ (targets sframe_test_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system "gcc -O0 -Wa,--gsframe %{deps} -o sframe_test_linux")))
