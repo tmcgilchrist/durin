@@ -113,3 +113,9 @@
   (= %{system} "linux"))
  (action
   (run %{exe:test_dwarf_asm.exe})))
+
+(test
+ (name test_sframe)
+ (libraries durin object alcotest astring)
+ (action
+  (run %{exe:test_sframe.exe})))

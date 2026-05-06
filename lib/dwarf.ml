@@ -30,6 +30,7 @@ type dwarf_section =
   | Debug_macinfo
   | Debug_cu_index
   | Debug_tu_index
+  | Sframe
 
 (** Convert Mach-O cpu_type to architecture string *)
 let string_of_cpu_type = function
@@ -198,7 +199,9 @@ let object_format_to_section_name format section =
       | Debug_str_offs_dwo -> ".debug_str_offsets.dwo"
       | Debug_macro_dwo -> ".debug_macro.dwo"
       | Debug_cu_index -> ".debug_cu_index"
-      | Debug_tu_index -> ".debug_tu_index")
+      | Debug_tu_index -> ".debug_tu_index"
+      | Sframe ->
+          failwith ".sframe is an ELF-only section, not supported on MachO")
   | Object_format.ELF -> (
       match section with
       | Debug_info -> ".debug_info"
@@ -229,7 +232,8 @@ let object_format_to_section_name format section =
       | Debug_str_offs_dwo -> ".debug_str_offsets.dwo"
       | Debug_macro_dwo -> ".debug_macro.dwo"
       | Debug_cu_index -> ".debug_cu_index"
-      | Debug_tu_index -> ".debug_tu_index")
+      | Debug_tu_index -> ".debug_tu_index"
+      | Sframe -> ".sframe")
 
 include Dwarf_abbreviation_tag
 include Dwarf_attribute
@@ -7192,4 +7196,22 @@ module CompactUnwind = struct
           let arch = detect_architecture buffer in
           Some (unwind_info, arch)
         with Invalid_compact_unwind_format _ -> None)
+end
+
+(** SFrame module integrates with the GNU SFrame stack-trace format. *)
+module SFrame = struct
+  include Sframe
+
+  let find_sframe_section buffer =
+    match find_debug_section_by_type buffer Sframe with
+    | None -> None
+    | Some (offset, size) ->
+        Some (Unsigned.UInt64.to_int offset, Unsigned.UInt64.to_int size)
+
+  let parse_from_buffer buffer =
+    match find_sframe_section buffer with
+    | None -> None
+    | Some (offset, size) -> (
+        let cur = Object.Buffer.cursor buffer ~at:offset in
+        try Some (parse cur size) with Invalid_sframe_format _ -> None)
 end
