@@ -3386,9 +3386,13 @@ module SFrame : sig
         {!resolve_func_start_pc} when handling [SFRAME_F_FDE_FUNC_START_PCREL].
   *)
 
-  val parse_from_buffer : Object.Buffer.t -> t option
+  val parse_from_buffer : Object.Buffer.t -> (t * int) option
   (** Parse the [.sframe] section from an ELF buffer.
-      @return [None] if no [.sframe] section is present or it fails to parse. *)
+      @return
+        [None] if no [.sframe] section is present or it fails to parse.
+        Otherwise [Some (t, section_addr)] where [section_addr] is the section's
+        load address; pass it to {!resolve_func_start_pc} when handling
+        [SFRAME_F_FDE_FUNC_START_PCREL]. *)
 end
 
 (** DWARF Expression Evaluator.

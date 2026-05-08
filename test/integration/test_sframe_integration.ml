@@ -80,7 +80,9 @@ let test_parse_from_buffer binary_path =
   let buffer = Object.Buffer.parse binary_path in
   match Dwarf.SFrame.parse_from_buffer buffer with
   | None -> fail "parse_from_buffer returned None"
-  | Some t -> check bool "non-empty FDEs" true (Array.length t.fdes > 0)
+  | Some (t, section_addr) ->
+      check bool "non-empty FDEs" true (Array.length t.fdes > 0);
+      check bool "section_addr is positive" true (section_addr > 0)
 
 let test_roundtrip_fixture binary_path =
   match Test_helpers.find_section binary_path ".sframe" with

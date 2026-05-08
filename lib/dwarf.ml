@@ -7223,7 +7223,7 @@ module SFrame = struct
   let parse_from_buffer buffer =
     match find_sframe_section buffer with
     | None -> None
-    | Some (offset, size, _addr) -> (
+    | Some (offset, size, addr) -> (
         let cur = Object.Buffer.cursor buffer ~at:offset in
-        try Some (parse cur size) with Invalid_sframe_format _ -> None)
+        try Some (parse cur size, addr) with Invalid_sframe_format _ -> None)
 end
