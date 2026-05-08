@@ -137,7 +137,7 @@ let fre_size ~fre_type (fre : Sframe.fre) : int =
   + (fre.info.offset_count * offset_size_bytes fre.info.offset_size)
 
 let fre_info_byte (info : Sframe.fre_info) : int =
-  let cfa_bit = match info.cfa_base_reg with `Sp -> 0 | `Fp -> 1 in
+  let cfa_bit = match info.cfa_base_reg with `Sp -> 1 | `Fp -> 0 in
   let size_bits =
     match info.offset_size with
     | Sframe.Off_1b -> 0

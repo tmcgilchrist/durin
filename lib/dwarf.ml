@@ -7203,16 +7203,27 @@ module SFrame = struct
   include Sframe
   module Write = Sframe_write
 
+  (* SFrame is ELF-only; look up the section directly so we can also
+     surface its load address ([sh_addr]), which callers need to resolve
+     [SFRAME_F_FDE_FUNC_START_PCREL]. *)
   let find_sframe_section buffer =
-    match find_debug_section_by_type buffer Sframe with
-    | None -> None
-    | Some (offset, size) ->
-        Some (Unsigned.UInt64.to_int offset, Unsigned.UInt64.to_int size)
+    try
+      let _, sections = Object.Elf.read_elf buffer in
+      Array.find_map
+        (fun (s : Object.Elf.section) ->
+          if s.sh_name_str = ".sframe" then
+            Some
+              ( Unsigned.UInt64.to_int s.sh_offset,
+                Unsigned.UInt64.to_int s.sh_size,
+                Unsigned.UInt64.to_int s.sh_addr )
+          else None)
+        sections
+    with _ -> None
 
   let parse_from_buffer buffer =
     match find_sframe_section buffer with
     | None -> None
-    | Some (offset, size) -> (
+    | Some (offset, size, _addr) -> (
         let cur = Object.Buffer.cursor buffer ~at:offset in
         try Some (parse cur size) with Invalid_sframe_format _ -> None)
 end

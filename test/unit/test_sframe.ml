@@ -45,7 +45,8 @@ let make_fde_v1 ~addr ~size ~fre_off ~num_fres ~info_byte () : int list =
 let fde_info_byte ~fretype ~fdetype ~pauth_key : int =
   fretype lor (fdetype lsl 4) lor (pauth_key lsl 5)
 
-(* FRE info byte. cfa_base: 0=Sp, 1=Fp.
+(* FRE info byte. cfa_base: 1=Sp, 0=Fp (binutils convention; docs-2.41
+   has the mapping inverted but real-world data uses SP=1, FP=0).
    offset_count: 1..3. offset_size: 0=1B, 1=2B, 2=4B. mangled_ra: bool. *)
 let fre_info_byte ~cfa_base ~offset_count ~offset_size ~mangled_ra : int =
   let mr = if mangled_ra then 1 else 0 in
@@ -307,7 +308,7 @@ let make_section_with_one_fde_one_fre ~fre_type_int ~addr_bytes ~info_byte
 
 let test_fre_addr1_one_offset () =
   let info =
-    fre_info_byte ~cfa_base:0 ~offset_count:1 ~offset_size:0 ~mangled_ra:false
+    fre_info_byte ~cfa_base:1 ~offset_count:1 ~offset_size:0 ~mangled_ra:false
   in
   let bytes, _ =
     make_section_with_one_fde_one_fre ~fre_type_int:0 ~addr_bytes:(u8 0x10)
@@ -326,7 +327,7 @@ let test_fre_addr1_one_offset () =
 
 let test_fre_addr2_two_offsets_2byte () =
   let info =
-    fre_info_byte ~cfa_base:1 ~offset_count:2 ~offset_size:1 ~mangled_ra:false
+    fre_info_byte ~cfa_base:0 ~offset_count:2 ~offset_size:1 ~mangled_ra:false
   in
   let bytes, _ =
     make_section_with_one_fde_one_fre ~fre_type_int:1 ~addr_bytes:(u16 0x1234)

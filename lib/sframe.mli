@@ -111,7 +111,10 @@ type fre_offset_size =
 
 type fre_info = {
   cfa_base_reg : [ `Sp | `Fp ];
-      (** Bit 0: [0] = CFA derived from SP, [1] = CFA derived from FP. *)
+      (** Bit 0: [1] = CFA derived from SP, [0] = CFA derived from FP. The
+          docs-2.41 spec writes this the opposite way around, but the binutils
+          implementation (and therefore real-world [.sframe] data) uses SP=1,
+          FP=0. *)
   offset_count : int;
       (** Bits 1–4: number of stack offsets following the FRE header (1–3).
           Offset 1: CFA = base_reg + offset1. Offset 2: RA (or FP if RA not
@@ -166,3 +169,26 @@ val string_of_fde_type : fde_type -> string
 val string_of_fre_type : fre_type -> string
 val string_of_pauth_key : pauth_key -> string
 val string_of_fre_offset_size : fre_offset_size -> string
+
+val string_of_version : u8 -> string
+(** Format as ["SFRAME_VERSION_N"], matching the [SFRAME_VERSION_*] tokens used
+    by [readelf --sframe]. *)
+
+val flag_names : flags -> string list
+(** Returns the [SFRAME_F_*] token of each flag set in [f], in spec order:
+    [FDE_SORTED], [FRAME_POINTER], [FDE_FUNC_START_PCREL]. *)
+
+val string_of_cfa_base_reg : [ `Sp | `Fp ] -> string
+(** ["sp"] or ["fp"]. *)
+
+val format_cfa : fre -> string
+(** Format the CFA specification of a parsed FRE — e.g. ["sp+16"], ["fp-8"].
+    Uses [info.cfa_base_reg] and [offsets.(0)]; valid regardless of ABI. *)
+
+val resolve_func_start_pc : t -> section_addr:int -> fde_index:int -> int
+(** Resolve the absolute virtual memory address of the function described by FDE
+    [fde_index]. When [SFRAME_F_FDE_FUNC_START_PCREL] is set in the section's
+    flags, the stored [func_start_address] is PC-relative to the FDE's location
+    in memory, so [section_addr] (typically the ELF section header's [sh_addr])
+    is needed to recover the absolute PC. When the flag is unset,
+    [func_start_address] is returned unchanged. *)

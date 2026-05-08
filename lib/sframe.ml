@@ -116,6 +116,41 @@ let string_of_fre_offset_size = function
   | Off_2b -> "2B"
   | Off_4b -> "4B"
 
+let string_of_version (v : u8) =
+  Printf.sprintf "SFRAME_VERSION_%d" (Unsigned.UInt8.to_int v)
+
+let flag_names (f : flags) : string list =
+  let bits = ref [] in
+  if f.func_start_pcrel then bits := "SFRAME_F_FDE_FUNC_START_PCREL" :: !bits;
+  if f.frame_pointer then bits := "SFRAME_F_FRAME_POINTER" :: !bits;
+  if f.fde_sorted then bits := "SFRAME_F_FDE_SORTED" :: !bits;
+  !bits
+
+let string_of_cfa_base_reg = function `Sp -> "sp" | `Fp -> "fp"
+
+let format_cfa (fre : fre) : string =
+  let reg = string_of_cfa_base_reg fre.info.cfa_base_reg in
+  let off = fre.offsets.(0) in
+  if off >= 0 then Printf.sprintf "%s+%d" reg off
+  else Printf.sprintf "%s%d" reg off
+
+let resolve_func_start_pc (t : t) ~section_addr ~fde_index =
+  let h = t.header in
+  let fde = t.fdes.(fde_index) in
+  if h.preamble.flags.func_start_pcrel then
+    let version = Unsigned.UInt8.to_int h.preamble.version in
+    let fde_size =
+      if version = sframe_version_2 then fde_v2_size else fde_v1_size
+    in
+    let auxhdr_len = Unsigned.UInt8.to_int h.auxhdr_len in
+    let fde_off = Unsigned.UInt32.to_int h.fde_off in
+    let fde_addr =
+      section_addr + 28 (* preamble + main header *) + auxhdr_len
+      + fde_off + (fde_index * fde_size)
+    in
+    fde_addr + fde.func_start_address
+  else fde.func_start_address
+
 (* Sign-extend a u32 read as if it were int32_t. On 64-bit OCaml, int is
    63-bit, so the full 32-bit unsigned range fits without overflow. *)
 let sign_extend_u32 (v : u32) : int =
@@ -219,8 +254,9 @@ let parse_fde version_int (cur : Object.Buffer.cursor) : fde =
   }
 
 let parse_fre_info_byte (b : int) : fre_info =
+  (* binutils encodes SP=1, FP=0 (opposite of what docs-2.41 says). *)
   let cfa_base_reg =
-    if b land fre_info_cfa_base_reg_mask <> 0 then `Fp else `Sp
+    if b land fre_info_cfa_base_reg_mask <> 0 then `Sp else `Fp
   in
   let offset_count =
     (b land fre_info_offset_count_mask) lsr fre_info_offset_count_shift

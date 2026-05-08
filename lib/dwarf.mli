@@ -3378,9 +3378,13 @@ module SFrame : sig
   include module type of Sframe
   module Write = Sframe_write
 
-  val find_sframe_section : Object.Buffer.t -> (int * int) option
+  val find_sframe_section : Object.Buffer.t -> (int * int * int) option
   (** Locate the [.sframe] section in an ELF buffer.
-      @return Optional tuple of (section_offset, section_size). *)
+      @return
+        Optional tuple of (section_offset, section_size, section_load_addr). The
+        load address is the ELF section header's [sh_addr]; pass it to
+        {!resolve_func_start_pc} when handling [SFRAME_F_FDE_FUNC_START_PCREL].
+  *)
 
   val parse_from_buffer : Object.Buffer.t -> t option
   (** Parse the [.sframe] section from an ELF buffer.
