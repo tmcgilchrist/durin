@@ -30,6 +30,7 @@ type dwarf_section =
   | Debug_macinfo
   | Debug_cu_index
   | Debug_tu_index
+  | Sframe
 
 (** Convert Mach-O cpu_type to architecture string *)
 let string_of_cpu_type = function
@@ -198,7 +199,9 @@ let object_format_to_section_name format section =
       | Debug_str_offs_dwo -> ".debug_str_offsets.dwo"
       | Debug_macro_dwo -> ".debug_macro.dwo"
       | Debug_cu_index -> ".debug_cu_index"
-      | Debug_tu_index -> ".debug_tu_index")
+      | Debug_tu_index -> ".debug_tu_index"
+      | Sframe ->
+          failwith ".sframe is an ELF-only section, not supported on MachO")
   | Object_format.ELF -> (
       match section with
       | Debug_info -> ".debug_info"
@@ -229,7 +232,8 @@ let object_format_to_section_name format section =
       | Debug_str_offs_dwo -> ".debug_str_offsets.dwo"
       | Debug_macro_dwo -> ".debug_macro.dwo"
       | Debug_cu_index -> ".debug_cu_index"
-      | Debug_tu_index -> ".debug_tu_index")
+      | Debug_tu_index -> ".debug_tu_index"
+      | Sframe -> ".sframe")
 
 include Dwarf_abbreviation_tag
 include Dwarf_attribute
@@ -7192,4 +7196,34 @@ module CompactUnwind = struct
           let arch = detect_architecture buffer in
           Some (unwind_info, arch)
         with Invalid_compact_unwind_format _ -> None)
+end
+
+(** SFrame module integrates with the GNU SFrame stack-trace format. *)
+module SFrame = struct
+  include Sframe
+  module Write = Sframe_write
+
+  (* SFrame is ELF-only; look up the section directly so we can also
+     surface its load address ([sh_addr]), which callers need to resolve
+     [SFRAME_F_FDE_FUNC_START_PCREL]. *)
+  let find_sframe_section buffer =
+    try
+      let _, sections = Object.Elf.read_elf buffer in
+      Array.find_map
+        (fun (s : Object.Elf.section) ->
+          if s.sh_name_str = ".sframe" then
+            Some
+              ( Unsigned.UInt64.to_int s.sh_offset,
+                Unsigned.UInt64.to_int s.sh_size,
+                Unsigned.UInt64.to_int s.sh_addr )
+          else None)
+        sections
+    with _ -> None
+
+  let parse_from_buffer buffer =
+    match find_sframe_section buffer with
+    | None -> None
+    | Some (offset, size, addr) -> (
+        let cur = Object.Buffer.cursor buffer ~at:offset in
+        try Some (parse cur size, addr) with Invalid_sframe_format _ -> None)
 end

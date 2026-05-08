@@ -6,7 +6,8 @@
   dwarf_validate
   simple_debug_info
   simple_debug_line
-  gnu-dwarfdump)
+  gnu-dwarfdump
+  sframedump)
  (names
   dwprod
   objdump
@@ -14,7 +15,8 @@
   dwarf_validate
   simple_debug_info
   simple_debug_line
-  gnu_dwarfdump)
+  gnu_dwarfdump
+  sframedump)
  (libraries durin object integers cmdliner str))
 
 (executable
