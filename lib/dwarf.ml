@@ -7201,6 +7201,7 @@ end
 (** SFrame module integrates with the GNU SFrame stack-trace format. *)
 module SFrame = struct
   include Sframe
+  module Write = Sframe_write
 
   let find_sframe_section buffer =
     match find_debug_section_by_type buffer Sframe with

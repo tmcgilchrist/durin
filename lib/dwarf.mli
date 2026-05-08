@@ -3376,6 +3376,7 @@ end
     for AMD64 (little-endian) and AArch64 (both endians). *)
 module SFrame : sig
   include module type of Sframe
+  module Write = Sframe_write
 
   val find_sframe_section : Object.Buffer.t -> (int * int) option
   (** Locate the [.sframe] section in an ELF buffer.

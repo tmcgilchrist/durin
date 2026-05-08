@@ -463,6 +463,114 @@ let test_find_fde_boundaries () =
     (Dwarf.SFrame.find_fde_for_pc t 0x103f <> None);
   check bool "miss at end" true (Dwarf.SFrame.find_fde_for_pc t 0x1040 = None)
 
+(* ---- Writer roundtrip ---- *)
+
+let bytes_of_int_list (lst : int list) : bytes =
+  Bytes.of_seq (List.to_seq lst |> Seq.map (fun n -> Char.chr (n land 0xff)))
+
+let roundtrip_check label (input_bytes : int list) =
+  let buf = buffer_of_bytes input_bytes in
+  let cur = Object.Buffer.cursor buf ~at:0 in
+  let t = Dwarf.SFrame.parse cur (List.length input_bytes) in
+  let written = Dwarf.SFrame.Write.to_bytes t in
+  let expected = bytes_of_int_list input_bytes in
+  check int
+    (label ^ ": output length")
+    (List.length input_bytes) (Bytes.length written);
+  check bool (label ^ ": bytes equal") true (Bytes.equal expected written)
+
+let test_roundtrip_minimal_v2 () =
+  let bytes =
+    make_header ~version:2 ~flags_byte:0x1 ~abi:3 ~cfa_fp_off:0 ~cfa_ra_off:(-8)
+      ~auxhdr_len:0 ~num_fdes:0 ~num_fres:0 ~fre_len:0 ~fde_off:0 ~fre_off:0 ()
+  in
+  roundtrip_check "minimal V2" bytes
+
+let test_roundtrip_minimal_v1 () =
+  let bytes =
+    make_header ~version:1 ~flags_byte:0x1 ~abi:3 ~cfa_fp_off:0 ~cfa_ra_off:(-8)
+      ~auxhdr_len:0 ~num_fdes:0 ~num_fres:0 ~fre_len:0 ~fde_off:0 ~fre_off:0 ()
+  in
+  roundtrip_check "minimal V1" bytes
+
+let test_roundtrip_v2_with_pcrel_flag () =
+  (* All three flags set — exercises func_start_pcrel encoding. *)
+  let bytes =
+    make_header ~version:2 ~flags_byte:0x7 ~abi:3 ~cfa_fp_off:0 ~cfa_ra_off:(-8)
+      ~auxhdr_len:0 ~num_fdes:0 ~num_fres:0 ~fre_len:0 ~fde_off:0 ~fre_off:0 ()
+  in
+  roundtrip_check "V2 + all flags" bytes
+
+let test_roundtrip_with_aux_header () =
+  let aux = [ 0xaa; 0xbb; 0xcc; 0xdd; 0x11; 0x22; 0x33; 0x44 ] in
+  let info = fde_info_byte ~fretype:0 ~fdetype:0 ~pauth_key:0 in
+  let fde_bytes =
+    make_fde_v2 ~addr:0x1234 ~size:64 ~fre_off:0 ~num_fres:0 ~info_byte:info
+      ~rep_size:0 ()
+  in
+  let header_bytes =
+    make_header ~version:2 ~flags_byte:0x1 ~abi:3 ~cfa_fp_off:0 ~cfa_ra_off:(-8)
+      ~auxhdr_len:(List.length aux) ~num_fdes:1 ~num_fres:0 ~fre_len:0
+      ~fde_off:0 ~fre_off:20 ()
+  in
+  roundtrip_check "with aux header" (header_bytes @ aux @ fde_bytes)
+
+let test_roundtrip_v1_fde () =
+  (* V1 FDE is 17 bytes (no rep_size/padding). *)
+  let info = fde_info_byte ~fretype:1 ~fdetype:0 ~pauth_key:0 in
+  let fde_bytes =
+    make_fde_v1 ~addr:(-0x1000) ~size:0x100 ~fre_off:0 ~num_fres:0
+      ~info_byte:info ()
+  in
+  let header_bytes =
+    make_header ~version:1 ~flags_byte:0x1 ~abi:2 ~cfa_fp_off:0 ~cfa_ra_off:(-8)
+      ~auxhdr_len:0 ~num_fdes:1 ~num_fres:0 ~fre_len:0 ~fde_off:0 ~fre_off:17 ()
+  in
+  roundtrip_check "V1 with FDE" (header_bytes @ fde_bytes)
+
+let test_roundtrip_pcmask_fde_with_pauth_b () =
+  (* Exercises every nontrivial bit of the FDE info byte. *)
+  let info = fde_info_byte ~fretype:2 ~fdetype:1 ~pauth_key:1 in
+  let fde_bytes =
+    make_fde_v2 ~addr:0x4000 ~size:0x80 ~fre_off:0 ~num_fres:0 ~info_byte:info
+      ~rep_size:16 ()
+  in
+  let header_bytes =
+    make_header ~version:2 ~flags_byte:0x1 ~abi:2 ~cfa_fp_off:0 ~cfa_ra_off:(-8)
+      ~auxhdr_len:0 ~num_fdes:1 ~num_fres:0 ~fre_len:0 ~fde_off:0 ~fre_off:20 ()
+  in
+  roundtrip_check "PCMASK + KEY_B + Addr4" (header_bytes @ fde_bytes)
+
+let test_roundtrip_multi_fde_with_fres () =
+  (* Two FDEs with FREs of differing widths in the same section. *)
+  let fde_info_a = fde_info_byte ~fretype:0 ~fdetype:0 ~pauth_key:0 in
+  let fde_info_b = fde_info_byte ~fretype:2 ~fdetype:0 ~pauth_key:0 in
+  let fre_info_a =
+    fre_info_byte ~cfa_base:0 ~offset_count:1 ~offset_size:0 ~mangled_ra:false
+  in
+  let fre_info_b =
+    fre_info_byte ~cfa_base:1 ~offset_count:3 ~offset_size:2 ~mangled_ra:true
+  in
+  let fre_a = u8 0x10 @ u8 fre_info_a @ s8 (-16) in
+  let fre_b = u32 0x100 @ u8 fre_info_b @ s32 (-32) @ s32 64 @ s32 (-1) in
+  let fre_a_len = List.length fre_a in
+  let fre_pool = fre_a @ fre_b in
+  let fre_len = List.length fre_pool in
+  let fde_a =
+    make_fde_v2 ~addr:0x1000 ~size:0x40 ~fre_off:0 ~num_fres:1
+      ~info_byte:fde_info_a ~rep_size:0 ()
+  in
+  let fde_b =
+    make_fde_v2 ~addr:0x2000 ~size:0x80 ~fre_off:fre_a_len ~num_fres:1
+      ~info_byte:fde_info_b ~rep_size:0 ()
+  in
+  let header_bytes =
+    make_header ~version:2 ~flags_byte:0x1 ~abi:3 ~cfa_fp_off:0 ~cfa_ra_off:(-8)
+      ~auxhdr_len:0 ~num_fdes:2 ~num_fres:2 ~fre_len ~fde_off:0 ~fre_off:40 ()
+  in
+  roundtrip_check "multi-FDE with mixed FREs"
+    (header_bytes @ fde_a @ fde_b @ fre_pool)
+
 (* ---- Section name mapping ---- *)
 
 let test_section_name () =
@@ -541,4 +649,17 @@ let () =
         ] );
       ( "section_name",
         [ test_case "ELF/MachO mapping" `Quick test_section_name ] );
+      ( "writer_roundtrip",
+        [
+          test_case "minimal V2" `Quick test_roundtrip_minimal_v2;
+          test_case "minimal V1" `Quick test_roundtrip_minimal_v1;
+          test_case "V2 + all flags (PCREL etc.)" `Quick
+            test_roundtrip_v2_with_pcrel_flag;
+          test_case "with aux header" `Quick test_roundtrip_with_aux_header;
+          test_case "V1 with FDE" `Quick test_roundtrip_v1_fde;
+          test_case "PCMASK FDE + KEY_B" `Quick
+            test_roundtrip_pcmask_fde_with_pauth_b;
+          test_case "multi-FDE with mixed FREs" `Quick
+            test_roundtrip_multi_fde_with_fres;
+        ] );
     ]

@@ -82,6 +82,24 @@ let test_parse_from_buffer binary_path =
   | None -> fail "parse_from_buffer returned None"
   | Some t -> check bool "non-empty FDEs" true (Array.length t.fdes > 0)
 
+let test_roundtrip_fixture binary_path =
+  match Test_helpers.find_section binary_path ".sframe" with
+  | None -> fail "expected .sframe section"
+  | Some (buffer, section) ->
+      let offset = Unsigned.UInt64.to_int section.sh_offset in
+      let size = Unsigned.UInt64.to_int section.sh_size in
+      let cur = Object.Buffer.cursor ~at:offset buffer in
+      let t = Dwarf.SFrame.parse cur size in
+      let written = Dwarf.SFrame.Write.to_bytes t in
+      check int "written size matches section size" size
+        (Bytes.length written);
+      let original = Bytes.create size in
+      for i = 0 to size - 1 do
+        Bytes.set original i
+          (Char.chr (Bigarray.Array1.unsafe_get buffer (offset + i)))
+      done;
+      check bool "byte-for-byte roundtrip" true (Bytes.equal original written)
+
 let binary_path = Test_helpers.binary_path ~doc:"Path to SFrame test binary"
 
 let () =
@@ -103,4 +121,7 @@ let () =
         ] );
       ( "convenience",
         [ ("parse_from_buffer works", `Quick, test_parse_from_buffer) ] );
+      ( "roundtrip",
+        [ ("byte-for-byte fixture roundtrip", `Quick, test_roundtrip_fixture) ]
+      );
     ]
