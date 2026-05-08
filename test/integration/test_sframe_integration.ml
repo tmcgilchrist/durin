@@ -91,8 +91,7 @@ let test_roundtrip_fixture binary_path =
       let cur = Object.Buffer.cursor ~at:offset buffer in
       let t = Dwarf.SFrame.parse cur size in
       let written = Dwarf.SFrame.Write.to_bytes t in
-      check int "written size matches section size" size
-        (Bytes.length written);
+      check int "written size matches section size" size (Bytes.length written);
       let original = Bytes.create size in
       for i = 0 to size - 1 do
         Bytes.set original i

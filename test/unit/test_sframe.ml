@@ -571,6 +571,277 @@ let test_roundtrip_multi_fde_with_fres () =
   roundtrip_check "multi-FDE with mixed FREs"
     (header_bytes @ fde_a @ fde_b @ fre_pool)
 
+(* ---- Builder (emit_from_parts) ---- *)
+
+let parse_bytes (b : bytes) : Dwarf.SFrame.t =
+  let filename = Filename.temp_file "sframe_build_" ".bin" in
+  let oc = open_out_bin filename in
+  output_bytes oc b;
+  close_out oc;
+  let buffer = Object.Buffer.parse filename in
+  Sys.remove filename;
+  let cur = Object.Buffer.cursor buffer ~at:0 in
+  Dwarf.SFrame.parse cur (Bytes.length b)
+
+let no_flags : Dwarf.SFrame.flags =
+  { fde_sorted = false; frame_pointer = false; func_start_pcrel = false }
+
+let sorted_flag : Dwarf.SFrame.flags = { no_flags with fde_sorted = true }
+
+let test_builder_empty () =
+  let parts : Dwarf.SFrame.Write.section_parts =
+    {
+      version = 2;
+      flags = sorted_flag;
+      abi_arch = Dwarf.SFrame.Amd64_le;
+      cfa_fixed_fp_offset = 0;
+      cfa_fixed_ra_offset = -8;
+      aux_header = Bytes.empty;
+      fdes = [||];
+    }
+  in
+  let bytes = Dwarf.SFrame.Write.to_bytes_from_parts parts in
+  let t = parse_bytes bytes in
+  check int "no FDEs" 0 (Array.length t.fdes);
+  check int "no FREs" 0 (Unsigned.UInt32.to_int t.header.num_fres);
+  check bool "abi" true (t.header.abi_arch = Dwarf.SFrame.Amd64_le);
+  check int "ra offset" (-8) t.header.cfa_fixed_ra_offset
+
+let make_fre ~start ~cfa_base ~offsets ~size ~mangled_ra : Dwarf.SFrame.fre =
+  {
+    start_address = Unsigned.UInt32.of_int start;
+    info =
+      {
+        cfa_base_reg = cfa_base;
+        offset_count = List.length offsets;
+        offset_size = size;
+        mangled_ra;
+      };
+    offsets = Array.of_list offsets;
+  }
+
+let test_builder_single_fde_single_fre () =
+  let fre =
+    make_fre ~start:0 ~cfa_base:`Sp ~offsets:[ 16 ] ~size:Dwarf.SFrame.Off_1b
+      ~mangled_ra:false
+  in
+  let spec : Dwarf.SFrame.Write.fde_spec =
+    {
+      func_start_address = 0x1000;
+      func_size = Unsigned.UInt32.of_int 0x40;
+      fre_type = Dwarf.SFrame.Addr1;
+      fde_type = Dwarf.SFrame.Pcinc;
+      pauth_key = Dwarf.SFrame.Key_a;
+      rep_size = Unsigned.UInt8.zero;
+      fres = [| fre |];
+    }
+  in
+  let parts : Dwarf.SFrame.Write.section_parts =
+    {
+      version = 2;
+      flags = sorted_flag;
+      abi_arch = Dwarf.SFrame.Amd64_le;
+      cfa_fixed_fp_offset = 0;
+      cfa_fixed_ra_offset = -8;
+      aux_header = Bytes.empty;
+      fdes = [| spec |];
+    }
+  in
+  let bytes = Dwarf.SFrame.Write.to_bytes_from_parts parts in
+  let t = parse_bytes bytes in
+  check int "fde count" 1 (Array.length t.fdes);
+  check int "fre count" 1 (Unsigned.UInt32.to_int t.header.num_fres);
+  let fde = t.fdes.(0) in
+  check int "fde start address" 0x1000 fde.func_start_address;
+  check int "fde func size" 0x40 (Unsigned.UInt32.to_int fde.func_size);
+  let fres = Dwarf.SFrame.fres_of_fde t fde in
+  check int "fres for fde" 1 (Array.length fres);
+  let fre = fres.(0) in
+  check int "fre start" 0 (Unsigned.UInt32.to_int fre.start_address);
+  check int "fre offset" 16 fre.offsets.(0)
+
+let test_builder_multi_fde_mixed_widths () =
+  (* Two FDEs: first uses Addr1+Off_1b, second uses Addr4+Off_4b. *)
+  let fre_a =
+    make_fre ~start:0 ~cfa_base:`Sp ~offsets:[ 8 ] ~size:Dwarf.SFrame.Off_1b
+      ~mangled_ra:false
+  in
+  let fre_b1 =
+    make_fre ~start:0 ~cfa_base:`Fp ~offsets:[ -16; 32; -1 ]
+      ~size:Dwarf.SFrame.Off_4b ~mangled_ra:true
+  in
+  let fre_b2 =
+    make_fre ~start:0x100 ~cfa_base:`Sp ~offsets:[ 0; 0; 0 ]
+      ~size:Dwarf.SFrame.Off_4b ~mangled_ra:false
+  in
+  let spec_a : Dwarf.SFrame.Write.fde_spec =
+    {
+      func_start_address = 0x1000;
+      func_size = Unsigned.UInt32.of_int 0x40;
+      fre_type = Dwarf.SFrame.Addr1;
+      fde_type = Dwarf.SFrame.Pcinc;
+      pauth_key = Dwarf.SFrame.Key_a;
+      rep_size = Unsigned.UInt8.zero;
+      fres = [| fre_a |];
+    }
+  in
+  let spec_b : Dwarf.SFrame.Write.fde_spec =
+    {
+      func_start_address = 0x2000;
+      func_size = Unsigned.UInt32.of_int 0x200;
+      fre_type = Dwarf.SFrame.Addr4;
+      fde_type = Dwarf.SFrame.Pcinc;
+      pauth_key = Dwarf.SFrame.Key_a;
+      rep_size = Unsigned.UInt8.zero;
+      fres = [| fre_b1; fre_b2 |];
+    }
+  in
+  let parts : Dwarf.SFrame.Write.section_parts =
+    {
+      version = 2;
+      flags = sorted_flag;
+      abi_arch = Dwarf.SFrame.Amd64_le;
+      cfa_fixed_fp_offset = 0;
+      cfa_fixed_ra_offset = -8;
+      aux_header = Bytes.empty;
+      fdes = [| spec_a; spec_b |];
+    }
+  in
+  let bytes = Dwarf.SFrame.Write.to_bytes_from_parts parts in
+  let t = parse_bytes bytes in
+  check int "fde count" 2 (Array.length t.fdes);
+  check int "fre total" 3 (Unsigned.UInt32.to_int t.header.num_fres);
+  (* FDE 0: 1 FRE at SP, single byte offset. *)
+  let fres_a = Dwarf.SFrame.fres_of_fde t t.fdes.(0) in
+  check int "fde0 fre count" 1 (Array.length fres_a);
+  check int "fde0 fre offset" 8 fres_a.(0).offsets.(0);
+  check bool "fde0 cfa from sp" true (fres_a.(0).info.cfa_base_reg = `Sp);
+  (* FDE 1: 2 FREs at Addr4, three 4B offsets each. *)
+  let fres_b = Dwarf.SFrame.fres_of_fde t t.fdes.(1) in
+  check int "fde1 fre count" 2 (Array.length fres_b);
+  check int "fde1 fre0 offset 0" (-16) fres_b.(0).offsets.(0);
+  check int "fde1 fre0 offset 1" 32 fres_b.(0).offsets.(1);
+  check int "fde1 fre0 offset 2" (-1) fres_b.(0).offsets.(2);
+  check bool "fde1 fre0 mangled_ra" true fres_b.(0).info.mangled_ra;
+  check int "fde1 fre1 start" 0x100
+    (Unsigned.UInt32.to_int fres_b.(1).start_address)
+
+let test_builder_v1 () =
+  let spec : Dwarf.SFrame.Write.fde_spec =
+    {
+      func_start_address = 0x500;
+      func_size = Unsigned.UInt32.of_int 0x10;
+      fre_type = Dwarf.SFrame.Addr2;
+      fde_type = Dwarf.SFrame.Pcinc;
+      pauth_key = Dwarf.SFrame.Key_a;
+      rep_size = Unsigned.UInt8.zero;
+      fres = [||];
+    }
+  in
+  let parts : Dwarf.SFrame.Write.section_parts =
+    {
+      version = 1;
+      flags = no_flags;
+      abi_arch = Dwarf.SFrame.Aarch64_le;
+      cfa_fixed_fp_offset = 0;
+      cfa_fixed_ra_offset = 0;
+      aux_header = Bytes.empty;
+      fdes = [| spec |];
+    }
+  in
+  let bytes = Dwarf.SFrame.Write.to_bytes_from_parts parts in
+  let t = parse_bytes bytes in
+  check int "v1 version" 1 (Unsigned.UInt8.to_int t.header.preamble.version);
+  check int "v1 fde count" 1 (Array.length t.fdes);
+  (* V1 FDE is 17 bytes; with no FREs, fre_off should equal num_fdes * 17. *)
+  check int "v1 fre_off" 17 (Unsigned.UInt32.to_int t.header.fre_off);
+  check int "v1 fre_len" 0 (Unsigned.UInt32.to_int t.header.fre_len)
+
+let test_builder_with_aux () =
+  let aux = Bytes.of_string "AUX!" in
+  let fre =
+    make_fre ~start:0 ~cfa_base:`Sp ~offsets:[ 16 ] ~size:Dwarf.SFrame.Off_1b
+      ~mangled_ra:false
+  in
+  let spec : Dwarf.SFrame.Write.fde_spec =
+    {
+      func_start_address = 0x100;
+      func_size = Unsigned.UInt32.of_int 0x10;
+      fre_type = Dwarf.SFrame.Addr1;
+      fde_type = Dwarf.SFrame.Pcinc;
+      pauth_key = Dwarf.SFrame.Key_a;
+      rep_size = Unsigned.UInt8.zero;
+      fres = [| fre |];
+    }
+  in
+  let parts : Dwarf.SFrame.Write.section_parts =
+    {
+      version = 2;
+      flags = sorted_flag;
+      abi_arch = Dwarf.SFrame.Amd64_le;
+      cfa_fixed_fp_offset = 0;
+      cfa_fixed_ra_offset = -8;
+      aux_header = aux;
+      fdes = [| spec |];
+    }
+  in
+  let bytes = Dwarf.SFrame.Write.to_bytes_from_parts parts in
+  let t = parse_bytes bytes in
+  check int "auxhdr_len" 4 (Unsigned.UInt8.to_int t.header.auxhdr_len);
+  check int "fde present" 0x100 t.fdes.(0).func_start_address;
+  let fres = Dwarf.SFrame.fres_of_fde t t.fdes.(0) in
+  check int "fre offset survives aux" 16 fres.(0).offsets.(0)
+
+let test_builder_pcmask_with_rep_size () =
+  let fre =
+    make_fre ~start:0 ~cfa_base:`Sp ~offsets:[ 16 ] ~size:Dwarf.SFrame.Off_1b
+      ~mangled_ra:false
+  in
+  let spec : Dwarf.SFrame.Write.fde_spec =
+    {
+      func_start_address = 0x3000;
+      func_size = Unsigned.UInt32.of_int 0x80;
+      fre_type = Dwarf.SFrame.Addr1;
+      fde_type = Dwarf.SFrame.Pcmask;
+      pauth_key = Dwarf.SFrame.Key_b;
+      rep_size = Unsigned.UInt8.of_int 16;
+      fres = [| fre |];
+    }
+  in
+  let parts : Dwarf.SFrame.Write.section_parts =
+    {
+      version = 2;
+      flags = sorted_flag;
+      abi_arch = Dwarf.SFrame.Aarch64_le;
+      cfa_fixed_fp_offset = 0;
+      cfa_fixed_ra_offset = 0;
+      aux_header = Bytes.empty;
+      fdes = [| spec |];
+    }
+  in
+  let bytes = Dwarf.SFrame.Write.to_bytes_from_parts parts in
+  let t = parse_bytes bytes in
+  let fde = t.fdes.(0) in
+  check bool "fde_type Pcmask" true (fde.fde_type = Dwarf.SFrame.Pcmask);
+  check bool "pauth_key B" true (fde.pauth_key = Dwarf.SFrame.Key_b);
+  check int "rep_size" 16 (Unsigned.UInt8.to_int fde.rep_size)
+
+let test_builder_unsupported_version () =
+  let parts : Dwarf.SFrame.Write.section_parts =
+    {
+      version = 3;
+      flags = no_flags;
+      abi_arch = Dwarf.SFrame.Amd64_le;
+      cfa_fixed_fp_offset = 0;
+      cfa_fixed_ra_offset = 0;
+      aux_header = Bytes.empty;
+      fdes = [||];
+    }
+  in
+  match Dwarf.SFrame.Write.to_bytes_from_parts parts with
+  | exception Invalid_argument _ -> ()
+  | _ -> fail "expected Invalid_argument for version 3"
+
 (* ---- Section name mapping ---- *)
 
 let test_section_name () =
@@ -661,5 +932,19 @@ let () =
             test_roundtrip_pcmask_fde_with_pauth_b;
           test_case "multi-FDE with mixed FREs" `Quick
             test_roundtrip_multi_fde_with_fres;
+        ] );
+      ( "builder",
+        [
+          test_case "empty section" `Quick test_builder_empty;
+          test_case "single FDE single FRE" `Quick
+            test_builder_single_fde_single_fre;
+          test_case "multi-FDE mixed FRE widths" `Quick
+            test_builder_multi_fde_mixed_widths;
+          test_case "V1 with empty-FRE FDE" `Quick test_builder_v1;
+          test_case "with aux header" `Quick test_builder_with_aux;
+          test_case "PCMASK FDE with rep_size" `Quick
+            test_builder_pcmask_with_rep_size;
+          test_case "unsupported version rejected" `Quick
+            test_builder_unsupported_version;
         ] );
     ]
