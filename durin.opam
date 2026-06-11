@@ -11,8 +11,8 @@ bug-reports: "https://github.com/tmcgilchrist/durin/issues"
 depends: [
   "dune" {>= "3.9"}
   "ocaml" {>= "4.14"}
-  "object"
-  "integers"
+  "object" {>= "0.1"}
+  "integers" {>= "0.8"}
   "cmdliner" {with-test}
   "alcotest" {with-test}
   "qcheck-core" {with-test}
@@ -39,7 +39,3 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/tmcgilchrist/durin.git"
-pin-depends: [
-  ["integers.dev" "git+https://github.com/tmcgilchrist/ocaml-integers.git#small-signed-integers-fixes"]
-  ["object.dev" "git+https://github.com/tmcgilchrist/object.git#dc20c2d851c9fdd78b2bb75761a7482f91d36449"]
-]

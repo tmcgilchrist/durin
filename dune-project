@@ -14,8 +14,8 @@
  (tags (dwarf debug))
  (depends
   (ocaml (>= 4.14))
-  object
-  integers
+  (object (>= 0.1))
+  (integers (>= 0.8))
   (cmdliner :with-test)
   (alcotest :with-test)
   (qcheck-core :with-test)
