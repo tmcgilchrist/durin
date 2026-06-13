@@ -24,6 +24,6 @@
   (ppx_deriving_qcheck :with-test)
   (mdx :with-test)
   (patdiff :with-dev-setup)
-  (ocamlformat (and :with-dev-setup (= 0.27.0))))
+  (ocamlformat (and :with-dev-setup (= 0.28.1))))
  (synopsis "A library for reading and writing the DWARF debugging format.")
  (description "A library for reading and writing the DWARF debugging format."))

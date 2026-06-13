@@ -21,7 +21,7 @@ depends: [
   "ppx_deriving_qcheck" {with-test}
   "mdx" {with-test}
   "patdiff" {with-dev-setup}
-  "ocamlformat" {with-dev-setup & = "0.27.0"}
+  "ocamlformat" {with-dev-setup & = "0.28.1"}
   "odoc" {with-doc}
 ]
 build: [
