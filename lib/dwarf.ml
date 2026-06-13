@@ -5807,8 +5807,8 @@ module DebugNames = struct
     Array.to_list debug_names.name_table
     |> List.map (fun entry -> entry.value)
     |> List.filter (fun name ->
-           String.length name >= String.length prefix
-           && String.sub name 0 (String.length prefix) = prefix)
+        String.length name >= String.length prefix
+        && String.sub name 0 (String.length prefix) = prefix)
 
   (** Filter entries by abbreviation tag *)
   let filter_entries_by_tag (tag : abbreviation_tag)

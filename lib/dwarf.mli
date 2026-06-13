@@ -1501,8 +1501,8 @@ end
       | Some z ->
           DieZipper.children z
           |> Seq.iter (fun child ->
-                 let _die = DieZipper.current child in
-                 ())
+              let _die = DieZipper.current child in
+              ())
     ]} *)
 module DieZipper : sig
   type t

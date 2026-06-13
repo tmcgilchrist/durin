@@ -167,31 +167,32 @@ let find_function_name buffer addr =
               let rec search_die die =
                 (* Check if this DIE is a subprogram containing the address *)
                 (match die.Dwarf.DIE.tag with
-                | Dwarf.DW_TAG_subprogram | Dwarf.DW_TAG_inlined_subroutine -> (
-                    let low_pc_opt =
-                      Dwarf.DIE.find_attribute die Dwarf.DW_AT_low_pc
-                      |> Option.map (fun v -> resolve_attr_address v)
-                      |> Option.join
-                    in
-                    let high_pc_opt =
-                      match
-                        ( low_pc_opt,
-                          Dwarf.DIE.find_attribute die Dwarf.DW_AT_high_pc )
-                      with
-                      | Some lpc, Some (Dwarf.DIE.UData offset) ->
-                          Some (Unsigned.UInt64.add lpc offset)
-                      | _, Some v -> resolve_attr_address v
-                      | _ -> None
-                    in
-                    match (low_pc_opt, high_pc_opt) with
-                    | Some low_pc, Some high_pc ->
-                        if
-                          Unsigned.UInt64.compare addr low_pc >= 0
-                          && Unsigned.UInt64.compare addr high_pc < 0
-                        then get_die_name die
-                        else None
-                    | _ -> None)
-                | _ -> None)
+                  | Dwarf.DW_TAG_subprogram | Dwarf.DW_TAG_inlined_subroutine
+                    -> (
+                      let low_pc_opt =
+                        Dwarf.DIE.find_attribute die Dwarf.DW_AT_low_pc
+                        |> Option.map (fun v -> resolve_attr_address v)
+                        |> Option.join
+                      in
+                      let high_pc_opt =
+                        match
+                          ( low_pc_opt,
+                            Dwarf.DIE.find_attribute die Dwarf.DW_AT_high_pc )
+                        with
+                        | Some lpc, Some (Dwarf.DIE.UData offset) ->
+                            Some (Unsigned.UInt64.add lpc offset)
+                        | _, Some v -> resolve_attr_address v
+                        | _ -> None
+                      in
+                      match (low_pc_opt, high_pc_opt) with
+                      | Some low_pc, Some high_pc ->
+                          if
+                            Unsigned.UInt64.compare addr low_pc >= 0
+                            && Unsigned.UInt64.compare addr high_pc < 0
+                          then get_die_name die
+                          else None
+                      | _ -> None)
+                  | _ -> None)
                 |> function
                 | Some name -> Some name
                 | None ->

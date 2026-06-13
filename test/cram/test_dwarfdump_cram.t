@@ -1,17 +1,13 @@
 Test dwarfdump.ml basic functionality
 
-Set up the test environment:
-  $ cd $TESTCASE_ROOT/../..
-
 Test error handling with non-existent file:
-  $ dwarfdump --debug-line nonexistent_file.txt
-  dwarfdump: FILE argument: no 'nonexistent_file.txt' file or directory
-  Usage: dwarfdump [OPTION]… FILE
-  Try 'dwarfdump --help' for more information.
+  $ ../../example/dwarfdump.exe --debug-line nonexistent_file.txt
+  Usage: dwarfdump [--help] [OPTION]… FILE
+  dwarfdump: FILE argument: no nonexistent_file.txt file or directory
   [124]
 
 Test help flag:
-  $ dwarfdump --help=plain
+  $ ../../example/dwarfdump.exe --help=plain
   NAME
          dwarfdump - A DWARF debugging information dumper
   

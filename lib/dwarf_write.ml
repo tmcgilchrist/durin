@@ -1401,9 +1401,9 @@ let write_unit_index buf (idx : Dwarf.SplitDwarf.unit_index) =
       idx.entries;
     Hashtbl.fold (fun k () acc -> k :: acc) tbl []
     |> List.sort (fun a b ->
-           compare
-             (Dwarf.SplitDwarf.int_of_dw_sect a)
-             (Dwarf.SplitDwarf.int_of_dw_sect b))
+        compare
+          (Dwarf.SplitDwarf.int_of_dw_sect a)
+          (Dwarf.SplitDwarf.int_of_dw_sect b))
   in
   let sc = List.length columns in
   (* Build hash table *)

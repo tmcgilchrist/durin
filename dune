@@ -1,3 +1,12 @@
 (mdx
  (files lib/dwarf.mli)
  (libraries durin))
+
+; dune build @run-all-tests runs the unit tests (@runtest) and the
+; toolchain-dependent integration tests (@integration) together.
+
+(alias
+ (name run-all-tests)
+ (deps
+  (alias_rec runtest)
+  (alias_rec integration)))

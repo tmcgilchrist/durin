@@ -311,7 +311,7 @@ let parse_unwind_info (buffer : Object.Buffer.t) (section_offset : int)
     Array.to_list index_entries
     |> List.map (fun entry -> entry.lsda_index_array_section_offset)
     |> List.filter (fun offset ->
-           not (Unsigned.UInt32.equal offset Unsigned.UInt32.zero))
+        not (Unsigned.UInt32.equal offset Unsigned.UInt32.zero))
     |> List.sort_uniq Unsigned.UInt32.compare
   in
 
@@ -348,9 +348,9 @@ let parse_unwind_info (buffer : Object.Buffer.t) (section_offset : int)
   let valid_entries =
     Array.to_list index_entries
     |> List.filter (fun entry ->
-           not
-             (Unsigned.UInt32.equal entry.second_level_page_section_offset
-                Unsigned.UInt32.zero))
+        not
+          (Unsigned.UInt32.equal entry.second_level_page_section_offset
+             Unsigned.UInt32.zero))
     |> Array.of_list
   in
 
