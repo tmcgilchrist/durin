@@ -232,3 +232,17 @@
    %{exe:test_debug_names_integration.exe}
    --binary
    %{dep:../fixtures/hello_world_debug_names_linux})))
+
+(test
+ (name test_sframe_integration)
+ (deps ../fixtures/sframe_test_linux)
+ (libraries durin object alcotest cmdliner test_helpers)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_sframe_integration.exe}
+   --binary
+   %{dep:../fixtures/sframe_test_linux})))

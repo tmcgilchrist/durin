@@ -1648,6 +1648,49 @@
     "grep -q '.eh_frame_hdr' ocaml_dwarfdump_eh_frame_hdr.out || exit 1")
    (run bash -c "test -s ocaml_dwarfdump_eh_frame_hdr.out || exit 1"))))
 
+; =============================================================================
+; SFRAME COMPARISON TESTS - LINUX x86_64
+; =============================================================================
+; Diffs sframedump output against `readelf --sframe`. SFrame is currently
+; ELF-only and only the AMD64 toolchain emits .sframe by default, so this
+; suite is gated to Linux x86_64.
+
+(rule
+ (alias runtest)
+ (target ocaml_sframe.out)
+ (deps %{bin:sframedump} ../fixtures/sframe_test_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:sframedump} ../fixtures/sframe_test_linux))))
+
+(rule
+ (alias runtest)
+ (target system_sframe.out)
+ (deps ../fixtures/sframe_test_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (with-stdout-to
+   %{target}
+   (system "readelf --sframe ../fixtures/sframe_test_linux"))))
+
+(rule
+ (alias runtest)
+ (deps ocaml_sframe.out system_sframe.out)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (diff system_sframe.out ocaml_sframe.out)))
+
 ; --eh-frame-hdr comparison (C++ file)
 
 (rule
