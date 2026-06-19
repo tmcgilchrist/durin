@@ -1,3 +1,5 @@
+open Dwarf_types
+
 type attribute_encoding =
   | DW_AT_sibling
   | DW_AT_location
@@ -258,7 +260,7 @@ let attribute_encoding x =
   | 0x3e02 -> DW_AT_LLVM_sysroot
   | 0x3fe7 -> DW_AT_APPLE_omit_frame_ptr
   | 0x3fef -> DW_AT_APPLE_sdk
-  | n -> failwith (Printf.sprintf "Unknown attribute_encoding: 0x%04x" n)
+  | n -> fail (Printf.sprintf "Unknown attribute_encoding: 0x%04x" n)
 
 let string_of_attribute_encoding = function
   | DW_AT_sibling -> "DW_AT_sibling"

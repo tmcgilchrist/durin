@@ -1031,7 +1031,7 @@ let dump_debug_abbrev filename =
               else "DW_children_no"
             in
             let tag_str = Dwarf.string_of_abbreviation_tag abbrev.Dwarf.tag in
-            let tag_u64 = Dwarf.uint64_of_abbreviation_tag abbrev.Dwarf.tag in
+            let tag_u64 = Dwarf.abbreviation_tag abbrev.Dwarf.tag in
 
             Format.printf "<%5d><0x%08x><code:%4d> @[<h>%-27s@] %s@." code_int
               !current_offset code_int tag_str children_str;

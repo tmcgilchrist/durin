@@ -15,7 +15,9 @@ let buffer_of_bytes bytes =
 let test_aranges_parse_no_section () =
   let bytes = [ 0x00; 0x00; 0x00; 0x00 ] in
   let buffer = buffer_of_bytes bytes in
-  let result = try Dwarf.DebugAranges.parse buffer with Failure _ -> None in
+  let result =
+    try Dwarf.DebugAranges.parse buffer with Dwarf.Parse_error _ -> None
+  in
   check bool "returns None when no .debug_aranges section" true (result = None)
 
 let test_aranges_section_name () =

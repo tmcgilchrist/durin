@@ -63,7 +63,8 @@ let test_parse_type_units_no_section () =
   let bytes = [ 0x00; 0x00; 0x00; 0x00 ] in
   let buffer = buffer_of_bytes bytes in
   let units =
-    try Dwarf.DebugTypes.parse_type_units buffer with Failure _ -> Seq.empty
+    try Dwarf.DebugTypes.parse_type_units buffer
+    with Dwarf.Parse_error _ -> Seq.empty
   in
   let count = Seq.fold_left (fun acc _ -> acc + 1) 0 units in
   check int "no type units in non-ELF buffer" 0 count

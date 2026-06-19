@@ -552,14 +552,14 @@ let eval_to_int64 bytecode =
   | [ Dwarf.Expression.Generic v ] -> v
   | _ -> Alcotest.fail "expected single Generic on stack"
 
-(* Helper: check that evaluation raises a Failure *)
+(* Helper: check that evaluation raises a Parse_error *)
 let expect_failure bytecode msg_substring =
   let state =
     Dwarf.Expression.start_evaluation ~bytecode ~encoding:(make_encoding ())
   in
   match Dwarf.Expression.evaluate state with
   | _ -> Alcotest.fail ("expected failure: " ^ msg_substring)
-  | exception Failure m ->
+  | exception Dwarf.Parse_error { message = m; _ } ->
       let contains =
         try
           let _ = Str.search_forward (Str.regexp_string msg_substring) m 0 in
@@ -632,7 +632,7 @@ let test_error_invalid_memory_size () =
   | Dwarf.Expression.RequiresMemory _ -> (
       match Dwarf.Expression.resume_with_memory state "abc" with
       | _ -> Alcotest.fail "expected failure for 3-byte memory"
-      | exception Failure m ->
+      | exception Dwarf.Parse_error { message = m; _ } ->
           let contains =
             try
               let _ =
@@ -656,7 +656,7 @@ let test_error_deref_size_exceeds_addr_size () =
   in
   match Dwarf.Expression.evaluate state with
   | _ -> Alcotest.fail "expected failure for deref_size > addr_size"
-  | exception Failure m ->
+  | exception Dwarf.Parse_error { message = m; _ } ->
       let contains =
         try
           let _ =
@@ -682,7 +682,7 @@ let test_error_resume_register_wrong_state () =
     Dwarf.Expression.resume_with_register state (Dwarf.Expression.Generic 0L)
   with
   | _ -> Alcotest.fail "expected failure"
-  | exception Failure _ -> ()
+  | exception Dwarf.Parse_error _ -> ()
 
 let test_error_resume_memory_wrong_state () =
   let bytecode = "\x35" in
@@ -692,7 +692,7 @@ let test_error_resume_memory_wrong_state () =
   let _ = Dwarf.Expression.evaluate state in
   match Dwarf.Expression.resume_with_memory state "\x00" with
   | _ -> Alcotest.fail "expected failure"
-  | exception Failure _ -> ()
+  | exception Dwarf.Parse_error _ -> ()
 
 let test_error_resume_frame_base_wrong_state () =
   let bytecode = "\x35" in
@@ -702,7 +702,7 @@ let test_error_resume_frame_base_wrong_state () =
   let _ = Dwarf.Expression.evaluate state in
   match Dwarf.Expression.resume_with_frame_base state 0L with
   | _ -> Alcotest.fail "expected failure"
-  | exception Failure _ -> ()
+  | exception Dwarf.Parse_error _ -> ()
 
 let test_error_resume_cfa_wrong_state () =
   let bytecode = "\x35" in
@@ -712,7 +712,7 @@ let test_error_resume_cfa_wrong_state () =
   let _ = Dwarf.Expression.evaluate state in
   match Dwarf.Expression.resume_with_cfa state 0L with
   | _ -> Alcotest.fail "expected failure"
-  | exception Failure _ -> ()
+  | exception Dwarf.Parse_error _ -> ()
 
 (* ================================================================ *)
 (* Arithmetic edge case tests                                       *)

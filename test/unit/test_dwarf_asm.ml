@@ -208,7 +208,7 @@ let test_assemble_debug_info_roundtrip () =
   | None -> fail "expected die"
   | Some parsed -> (
       check int "tag" 0x11
-        (Unsigned.UInt64.to_int (Dwarf.uint64_of_abbreviation_tag parsed.tag));
+        (Unsigned.UInt64.to_int (Dwarf.abbreviation_tag parsed.tag));
       check int "attr count" 2 (List.length parsed.attributes);
       let name = List.hd parsed.attributes in
       match name.value with
@@ -256,8 +256,7 @@ let test_assemble_debug_info_with_children () =
       | Seq.Nil -> fail "expected children"
       | Seq.Cons (child_parsed, _) ->
           check int "child tag" 0x24
-            (Unsigned.UInt64.to_int
-               (Dwarf.uint64_of_abbreviation_tag child_parsed.tag));
+            (Unsigned.UInt64.to_int (Dwarf.abbreviation_tag child_parsed.tag));
           check int "child attrs" 2 (List.length child_parsed.attributes))
 
 let test_assemble_emit_all () =

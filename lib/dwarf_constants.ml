@@ -1,3 +1,5 @@
+open Dwarf_types
+
 type location_list_entry =
   | DW_LLE_end_of_list
   | DW_LLE_base_addressx
@@ -19,7 +21,7 @@ let location_list_entry = function
   | 0x06 -> DW_LLE_base_address
   | 0x07 -> DW_LLE_start_end
   | 0x08 -> DW_LLE_start_length
-  | n -> failwith (Printf.sprintf "Unknown location_list_entry: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown location_list_entry: 0x%02x" n)
 
 let int_of_location_list_entry = function
   | DW_LLE_end_of_list -> 0x00
@@ -86,7 +88,7 @@ let base_type = function
   | 0x12 -> DW_ATE_ASCII
   | 0x80 -> DW_ATE_lo_user
   | 0xff -> DW_ATE_hi_user
-  | n -> failwith (Printf.sprintf "Unknown base_type: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown base_type: 0x%02x" n)
 
 let int_of_base_type = function
   | DW_ATE_address -> 0x01
@@ -145,7 +147,7 @@ let decimal_sign = function
   | 0x03 -> DW_DS_trailing_overpunch
   | 0x04 -> DW_DS_leading_separate
   | 0x05 -> DW_DS_trailing_separate
-  | n -> failwith (Printf.sprintf "Unknown decimal_sign: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown decimal_sign: 0x%02x" n)
 
 let int_of_decimal_sign = function
   | DW_DS_unsigned -> 0x01
@@ -174,7 +176,7 @@ let endianity = function
   | 0x02 -> DW_END_little
   | 0x40 -> DW_END_lo_user
   | 0xff -> DW_END_hi_user
-  | n -> failwith (Printf.sprintf "Unknown endianity: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown endianity: 0x%02x" n)
 
 let int_of_endianity = function
   | DW_END_default -> 0x00
@@ -199,7 +201,7 @@ let accessibility = function
   | 0x01 -> DW_ACCESS_public
   | 0x02 -> DW_ACCESS_protected
   | 0x03 -> DW_ACCESS_private
-  | n -> failwith (Printf.sprintf "Unknown accessibility: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown accessibility: 0x%02x" n)
 
 let int_of_accessibility = function
   | DW_ACCESS_public -> 0x01
@@ -217,7 +219,7 @@ let visibility = function
   | 0x01 -> DW_VIS_local
   | 0x02 -> DW_VIS_exported
   | 0x03 -> DW_VIS_qualified
-  | n -> failwith (Printf.sprintf "Unknown visibility: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown visibility: 0x%02x" n)
 
 let int_of_visibility = function
   | DW_VIS_local -> 0x01
@@ -238,7 +240,7 @@ let virtuality = function
   | 0x00 -> DW_VIRTUALITY_none
   | 0x01 -> DW_VIRTUALITY_virtual
   | 0x02 -> DW_VIRTUALITY_pure_virtual
-  | n -> failwith (Printf.sprintf "Unknown virtuality: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown virtuality: 0x%02x" n)
 
 let int_of_virtuality = function
   | DW_VIRTUALITY_none -> 0x00
@@ -331,7 +333,7 @@ let dwarf_language = function
   | 0x0025 -> DW_LANG_BLISS
   | 0x8000 -> DW_LANG_lo_user
   | 0xffff -> DW_LANG_hi_user
-  | n -> failwith (Printf.sprintf "Unknown dwarf_language: 0x%04x" n)
+  | n -> fail (Printf.sprintf "Unknown dwarf_language: 0x%04x" n)
 
 let int_of_dwarf_language = function
   | DW_LANG_C89 -> 0x0001
@@ -426,7 +428,7 @@ let identifier = function
   | 0x01 -> DW_ID_up_case
   | 0x02 -> DW_ID_down_case
   | 0x03 -> DW_ID_case_insensitive
-  | n -> failwith (Printf.sprintf "Unknown identifier: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown identifier: 0x%02x" n)
 
 let int_of_identifier = function
   | DW_ID_case_sensitive -> 0x00
@@ -457,7 +459,7 @@ let calling_convention = function
   | 0x05 -> DW_CC_pass_by_value
   | 0x40 -> DW_CC_lo_user
   | 0xff -> DW_CC_hi_user
-  | n -> failwith (Printf.sprintf "Unknown calling_convention: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown calling_convention: 0x%02x" n)
 
 let int_of_calling_convention = function
   | DW_CC_normal -> 0x01
@@ -488,7 +490,7 @@ let inlined = function
   | 0x01 -> DW_INL_inlined
   | 0x02 -> DW_INL_declared_not_inlined
   | 0x03 -> DW_INL_declared_inlined
-  | n -> failwith (Printf.sprintf "Unknown inlined: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown inlined: 0x%02x" n)
 
 let int_of_inlined = function
   | DW_INL_not_inlined -> 0x00
@@ -507,7 +509,7 @@ type array_ordering = DW_ORD_row_major | DW_ORD_col_major
 let array_ordering = function
   | 0x00 -> DW_ORD_row_major
   | 0x01 -> DW_ORD_col_major
-  | n -> failwith (Printf.sprintf "Unknown array_ordering: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown array_ordering: 0x%02x" n)
 
 let int_of_array_ordering = function
   | DW_ORD_row_major -> 0x00
@@ -522,7 +524,7 @@ type discriminant = DW_DSC_label | DW_DSC_range
 let discriminant = function
   | 0x00 -> DW_DSC_label
   | 0x01 -> DW_DSC_range
-  | n -> failwith (Printf.sprintf "Unknown discriminant: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown discriminant: 0x%02x" n)
 
 let int_of_discriminant = function DW_DSC_label -> 0x00 | DW_DSC_range -> 0x01
 
@@ -545,7 +547,7 @@ let name_index_attribute = function
   | 5 -> DW_IDX_type_hash
   | 0x2000 -> DW_IDX_lo_user
   | 0x3fff -> DW_IDX_hi_user
-  | n -> failwith (Printf.sprintf "Unknown name_index_attribute: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown name_index_attribute: 0x%02x" n)
 
 let name_index_attribute_of_u64 code =
   name_index_attribute (Unsigned.UInt64.to_int code)
@@ -579,7 +581,7 @@ let defaulted_attribute = function
   | 0x00 -> DW_DEFAULTED_no
   | 0x01 -> DW_DEFAULTED_in_class
   | 0x02 -> DW_DEFAULTED_out_of_class
-  | n -> failwith (Printf.sprintf "Unknown defaulted_attribute: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown defaulted_attribute: 0x%02x" n)
 
 let int_of_defaulted_attribute = function
   | DW_DEFAULTED_no -> 0x00
@@ -610,7 +612,7 @@ let range_list_entry = function
   | 0x05 -> DW_RLE_base_address
   | 0x06 -> DW_RLE_start_end
   | 0x07 -> DW_RLE_start_length
-  | n -> failwith (Printf.sprintf "Unknown range_list_entry: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown range_list_entry: 0x%02x" n)
 
 let int_of_range_list_entry = function
   | DW_RLE_end_of_list -> 0x00

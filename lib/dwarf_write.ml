@@ -79,7 +79,7 @@ let write_address buf address_size (v : u64) =
       let v32 = Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 v) in
       write_u32_le buf v32
   | 8 -> write_u64_le buf v
-  | n -> failwith (Printf.sprintf "Unsupported address size: %d" n)
+  | n -> fail (Printf.sprintf "Unsupported address size: %d" n)
 
 let write_null_terminated_string buf s =
   Buffer.add_string buf s;
@@ -177,8 +177,7 @@ let assign_abbreviations (dies : Dwarf.DIE.t list) =
     match Hashtbl.find_opt offset_to_code offset with
     | Some code -> code
     | None ->
-        failwith
-          (Printf.sprintf "No abbreviation code for DIE offset %d" offset)
+        fail (Printf.sprintf "No abbreviation code for DIE offset %d" offset)
   in
   (abbrev_array, lookup)
 
@@ -186,7 +185,7 @@ let write_abbrev_table buf (abbrevs : Dwarf.abbrev array) =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       write_uleb128 buf a.code;
-      write_uleb128 buf (Dwarf.uint64_of_abbreviation_tag a.tag);
+      write_uleb128 buf (Dwarf.abbreviation_tag a.tag);
       write_u8 buf (Unsigned.UInt8.of_int (if a.has_children then 1 else 0));
       List.iter
         (fun (spec : Dwarf.attr_spec) ->
@@ -229,7 +228,7 @@ let abbrev_table_size (abbrevs : Dwarf.abbrev array) =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       size := !size + uleb128_size a.code;
-      size := !size + uleb128_size (Dwarf.uint64_of_abbreviation_tag a.tag);
+      size := !size + uleb128_size (Dwarf.abbreviation_tag a.tag);
       size := !size + 1;
       List.iter
         (fun (spec : Dwarf.attr_spec) ->
@@ -294,7 +293,7 @@ let write_attribute_value buf (value : Dwarf.DIE.attribute_value)
   | DW_FORM_block, Block b ->
       write_uleb128 buf (Unsigned.UInt64.of_int (String.length b));
       Buffer.add_string buf b
-  | _ -> failwith "Unsupported form/value combination"
+  | _ -> fail "Unsupported form/value combination"
 
 let attribute_value_size (value : Dwarf.DIE.attribute_value)
     (form : Dwarf.attribute_form_encoding) (enc : Dwarf.encoding) =
@@ -337,7 +336,7 @@ let attribute_value_size (value : Dwarf.DIE.attribute_value)
   | DW_FORM_block, Block b ->
       let len = String.length b in
       uleb128_size (Unsigned.UInt64.of_int len) + len
-  | _ -> failwith "Unsupported form/value combination for size"
+  | _ -> fail "Unsupported form/value combination for size"
 
 (* DIE Tree Serialisation *)
 
@@ -502,7 +501,7 @@ let write_expression buf (ops : Dwarf.dwarf_expression_operation list)
       | DW_OP_bit_piece ->
           write_uleb128 buf (Unsigned.UInt64.of_int (List.nth op.operands 0));
           write_uleb128 buf (Unsigned.UInt64.of_int (List.nth op.operands 1))
-      | _ -> failwith "Unsupported operation for write")
+      | _ -> fail "Unsupported operation for write")
     ops
 
 (* Location/Range Lists *)
@@ -692,7 +691,7 @@ let write_line_dir_entry buf fmt (h : Dwarf.DebugLine.line_program_header)
       | Dwarf.DW_LNCT_path, Dwarf.DW_FORM_line_strp ->
           let offset = add_string line_str_table dir in
           write_offset buf fmt (Unsigned.UInt64.of_int offset)
-      | _ -> failwith "Unsupported directory format")
+      | _ -> fail "Unsupported directory format")
     h.directory_entry_formats
 
 let write_line_file_entry buf fmt (h : Dwarf.DebugLine.line_program_header)
@@ -722,7 +721,7 @@ let write_line_file_entry buf fmt (h : Dwarf.DebugLine.line_program_header)
               for _ = 0 to 15 do
                 write_u8 buf (Unsigned.UInt8.of_int 0)
               done)
-      | _ -> failwith "Unsupported file entry format")
+      | _ -> fail "Unsupported file entry format")
     h.file_name_entry_formats
 
 let write_line_header_body buf fmt (h : Dwarf.DebugLine.line_program_header)
@@ -1195,7 +1194,7 @@ let write_debug_names_abbrev_table buf
   List.iter
     (fun (a : Dwarf.DebugNames.debug_names_abbrev) ->
       write_uleb128 buf a.code;
-      write_uleb128 buf (Dwarf.uint64_of_abbreviation_tag a.tag);
+      write_uleb128 buf (Dwarf.abbreviation_tag a.tag);
       List.iter
         (fun (attr, form) ->
           write_uleb128 buf
@@ -1213,7 +1212,7 @@ let debug_names_abbrev_table_size
   List.iter
     (fun (a : Dwarf.DebugNames.debug_names_abbrev) ->
       sz := !sz + uleb128_size a.code;
-      sz := !sz + uleb128_size (Dwarf.uint64_of_abbreviation_tag a.tag);
+      sz := !sz + uleb128_size (Dwarf.abbreviation_tag a.tag);
       List.iter
         (fun (attr, form) ->
           sz :=

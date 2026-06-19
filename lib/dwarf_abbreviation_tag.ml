@@ -1,3 +1,5 @@
+open Dwarf_types
+
 type abbreviation_tag =
   | DW_TAG_null
   | DW_TAG_array_type
@@ -149,9 +151,9 @@ let abbreviation_tag_of_int tag_code =
   | 0x4107 -> DW_TAG_GNU_template_parameter_pack
   | 0x4080 -> DW_TAG_lo_user
   | 0xffff -> DW_TAG_hi_user
-  | n -> failwith (Printf.sprintf "Unknown tag encoding: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown tag encoding: 0x%02x" n)
 
-let uint64_of_abbreviation_tag tag =
+let abbreviation_tag tag =
   let code =
     match tag with
     | DW_TAG_null -> 0x00
@@ -310,7 +312,7 @@ type children_determination = DW_CHILDREN_no | DW_CHILDREN_yes
 let children_determination = function
   | 0x00 -> DW_CHILDREN_no
   | 0x01 -> DW_CHILDREN_yes
-  | n -> failwith (Printf.sprintf "Unknown children_determination: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown children_determination: 0x%02x" n)
 
 let int_of_children_determination = function
   | DW_CHILDREN_no -> 0x00

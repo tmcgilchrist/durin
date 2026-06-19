@@ -1,3 +1,5 @@
+open Dwarf_types
+
 type operation_encoding =
   | DW_OP_addr (* constant address *)
   | DW_OP_deref
@@ -347,7 +349,7 @@ let operation_encoding = function
   | 0xfc -> DW_OP_constx
   | 0xfd -> DW_OP_GNU_variable_value
   | 0xff -> DW_OP_hi_user
-  | n -> failwith (Printf.sprintf "Unknown operation_encoding: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown operation_encoding: 0x%02x" n)
 
 let int_of_operation_encoding = function
   | DW_OP_addr -> 0x03

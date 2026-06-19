@@ -6,7 +6,7 @@ open Dwarf_types
     purpose and structure of the unit. The unit type determines which sections
     the unit uses and how the unit's header is formatted.
 
-    DWARF 5 specification, Table 7.5.1. *)
+    DWARF 5 specification, Table 7.2 "Unit header unit type encodings". *)
 type unit_type =
   | DW_UT_compile (* A normal compilation unit *)
   | DW_UT_type (* A type unit *)
@@ -18,7 +18,9 @@ type unit_type =
   | DW_UT_hi_user (* Reserved for user-defined types *)
 
 val unit_type_of_u8 : Unsigned.UInt8.t -> unit_type
-(** Convert a u8 value to a unit_type *)
+(** Convert a u8 value to a unit_type
+
+    @raise Parse_error if the byte is not a recognized DWARF unit type. *)
 
 val int_of_unit_type : unit_type -> int
 (** Convert a [unit_type] to its integer encoding. *)
@@ -26,7 +28,9 @@ val int_of_unit_type : unit_type -> int
 val string_of_unit_type : unit_type -> string
 (** Convert a unit_type to its string representation *)
 
-(** DWARF format discriminator. *)
+(** DWARF format discriminator.
+
+    DWARF 5 specification, section 7.4 "32-Bit and 64-Bit DWARF Formats". *)
 type dwarf_format =
   | DWARF32  (** 32-bit format with 4-byte lengths and offsets. *)
   | DWARF64  (** 64-bit format with 8-byte lengths and offsets. *)
@@ -39,12 +43,16 @@ type encoding = {
   address_size : u8;  (** Size of addresses in bytes (typically 8 for 64-bit) *)
   version : u16;  (** DWARF version number *)
 }
-(** Encoding parameters that affect how DWARF data is parsed. *)
+(** Encoding parameters that affect how DWARF data is parsed.
+
+    DWARF 5 specification, section 7.5.1 "Unit Headers". *)
 
 val parse_initial_length : Object.Buffer.cursor -> dwarf_format * u64
 (** Parse the initial_length field from a DWARF section header. Returns the
     [dwarf_format] and the actual length value. Raises an exception if the value
-    is in the reserved range 0xfffffff0-0xfffffffe. *)
+    is in the reserved range 0xfffffff0-0xfffffffe.
+
+    @raise Parse_error if the length field uses a reserved value. *)
 
 val offset_size_for_format : dwarf_format -> int
 (** Returns the size in bytes of offsets for a given DWARF format. *)
@@ -59,7 +67,7 @@ val read_offset_for_format : dwarf_format -> Object.Buffer.cursor -> u64
     of abbreviation declarations. Each declaration specifies the tag and
     attributes for a particular form of Debugging Information Entry (DIE).
 
-    DWARF 5 specification, Table 7.3. *)
+    DWARF 5 specification, Table 7.3 "Tag encodings". *)
 type abbreviation_tag =
   | DW_TAG_null
   | DW_TAG_array_type
@@ -138,10 +146,12 @@ type abbreviation_tag =
   | DW_TAG_hi_user
 
 val abbreviation_tag_of_int : u64 -> abbreviation_tag
-(** Convert a u64 to an [abbreviation_tag]. *)
+(** Convert a u64 to an [abbreviation_tag].
 
-val uint64_of_abbreviation_tag : abbreviation_tag -> u64
-(** Convert a DWARF [abbreviation_tag] tag to a u64. *)
+    @raise Parse_error if the value is not a recognized DWARF tag encoding. *)
+
+val abbreviation_tag : abbreviation_tag -> u64
+(** Convert an [abbreviation_tag] tag to a u64. *)
 
 val string_of_abbreviation_tag : abbreviation_tag -> string
 (** Convert an [abbreviation_tag] to its string representation.
@@ -155,18 +165,22 @@ val string_of_abbreviation_tag : abbreviation_tag -> string
 
 (** The encodings for the child determination byte.
 
-    DWARF 5 specification, Table 7.4. *)
+    DWARF 5 specification, Table 7.4 "Child determination encodings". *)
 type children_determination = DW_CHILDREN_no | DW_CHILDREN_yes
 
 val children_determination : int -> children_determination
-(** Convert int to [children_determination]. *)
+(** Convert int to [children_determination].
+
+    @raise Parse_error
+      if the value is not a recognized child determination code. *)
+(* TODO Use the more specific type over int. *)
 
 val int_of_children_determination : children_determination -> int
 (** Convert [children_determination] to int. *)
 
 (** The encodings for the attribute names.
 
-    DWARF 5 specification, Table 7.5. *)
+    DWARF 5 specification, Table 7.5 "Attribute encodings". *)
 type attribute_encoding =
   | DW_AT_sibling
   | DW_AT_location
@@ -294,7 +308,6 @@ type attribute_encoding =
   | DW_AT_lo_user
   | DW_AT_hi_user
   (* LLVM and Apple extensions *)
-  (* TODO Are there other common extensions to handle? *)
   | DW_AT_LLVM_sysroot
   | DW_AT_APPLE_omit_frame_ptr
   | DW_AT_APPLE_sdk
@@ -311,14 +324,16 @@ val string_of_attribute_encoding : attribute_encoding -> string
     ]} *)
 
 val attribute_encoding : u64 -> attribute_encoding
-(** Convert a u64 to an [attribute_encoding]. *)
+(** Convert a u64 to an [attribute_encoding].
+
+    @raise Parse_error if the value is not a recognized attribute encoding. *)
 
 val u64_of_attribute_encoding : attribute_encoding -> u64
 (** Convert an attribute_encoding to its numeric DWARF code. *)
 
 (** Attribute form encoding.
 
-    DWARF 5 specification, Table 7.6. *)
+    DWARF 5 specification, Table 7.6 "Attribute form encodings". *)
 type attribute_form_encoding =
   | DW_FORM_addr
   | DW_FORM_block2
@@ -383,7 +398,7 @@ val u64_of_attribute_form_encoding : attribute_form_encoding -> u64
 
 (** DWARF expression operations
 
-    DWARF 5 specification, Table 7.9. *)
+    DWARF 5 specification, Table 7.9 "DWARF operation encodings". *)
 type operation_encoding =
   | DW_OP_addr (* constant address *)
   | DW_OP_deref
@@ -556,7 +571,10 @@ type operation_encoding =
   | DW_OP_hi_user
 
 val operation_encoding : int -> operation_encoding
-(** Convert an int to an [operation_encoding]. *)
+(** Convert an int to an [operation_encoding].
+
+    @raise Parse_error
+      if the value is not a recognized DWARF operation encoding. *)
 
 val int_of_operation_encoding : operation_encoding -> int
 (** Convert an [operation_encoding] to its integer encoding. *)
@@ -569,7 +587,9 @@ type dwarf_expression_operation = {
   operands : int list;
   operand_string : string option;
 }
-(** A single decoded DWARF expression operation with its operands. *)
+(** A single decoded DWARF expression operation with its operands.
+
+    DWARF 5 specification, section 7.7.1 "DWARF Expressions". *)
 
 val parse_dwarf_expression :
   ?encoding:encoding -> string -> dwarf_expression_operation list
@@ -583,7 +603,7 @@ val string_of_dwarf_expression : dwarf_expression_operation list -> string
 
 (** Location List entry.
 
-    DWARF 5 specification, Table 7.10. *)
+    DWARF 5 specification, Table 7.10 "Location list entry encoding values". *)
 type location_list_entry =
   | DW_LLE_end_of_list
   | DW_LLE_base_addressx
@@ -596,7 +616,10 @@ type location_list_entry =
   | DW_LLE_start_length
 
 val location_list_entry : int -> location_list_entry
-(** Convert an int to a [location_list_entry]. *)
+(** Convert an int to a [location_list_entry].
+
+    @raise Parse_error
+      if the value is not a recognized location list entry kind. *)
 
 val int_of_location_list_entry : location_list_entry -> int
 (** Convert a [location_list_entry] to its integer encoding. *)
@@ -612,7 +635,7 @@ val string_of_location_list_entry : location_list_entry -> string
     Each programming language has a set of base types that are considered to be
     built into that language.
 
-    DWARF 5 specification, Table 7.11. *)
+    DWARF 5 specification, Table 7.11 "Base type encoding values". *)
 type base_type =
   | DW_ATE_address
   | DW_ATE_boolean
@@ -636,7 +659,9 @@ type base_type =
   | DW_ATE_hi_user
 
 val base_type : int -> base_type
-(** Convert an int to a [base_type]. *)
+(** Convert an int to a [base_type].
+
+    @raise Parse_error if the value is not a recognized base type encoding. *)
 
 val int_of_base_type : base_type -> int
 (** Convert a [base_type] to its integer encoding. *)
@@ -648,7 +673,7 @@ val string_of_base_type : base_type -> string
 
     The encodings of the constants used in the [DW_AT_decimal_sign] attribute.
 
-    DWARF 5 specification, Table 7.12. *)
+    DWARF 5 specification, Table 7.12 "Decimal sign encodings". *)
 type decimal_sign =
   | DW_DS_unsigned
   | DW_DS_leading_overpunch
@@ -657,7 +682,9 @@ type decimal_sign =
   | DW_DS_trailing_separate
 
 val decimal_sign : int -> decimal_sign
-(** Convert an int to a [decimal_sign]. *)
+(** Convert an int to a [decimal_sign].
+
+    @raise Parse_error if the value is not a recognized decimal sign code. *)
 
 val int_of_decimal_sign : decimal_sign -> int
 (** Convert a [decimal_sign] to its integer encoding. *)
@@ -669,7 +696,7 @@ val string_of_decimal_sign : decimal_sign -> string
 
     The encodings of the constants used in the [DW_AT_endianity] attribute.
 
-    DWARF 5 specification, Table 7.13. *)
+    DWARF 5 specification, Table 7.13 "Endianity encodings". *)
 type endianity =
   | DW_END_default
   | DW_END_big
@@ -678,7 +705,9 @@ type endianity =
   | DW_END_hi_user
 
 val endianity : int -> endianity
-(** Convert an int to an [endianity]. *)
+(** Convert an int to an [endianity].
+
+    @raise Parse_error if the value is not a recognized endianity code. *)
 
 val int_of_endianity : endianity -> int
 (** Convert an [endianity] to its integer encoding. *)
@@ -690,14 +719,16 @@ val string_of_endianity : endianity -> string
 
     The encodings of the constants used in the [DW_AT_accessibility] attribute.
 
-    DWARF 5 specification, Table 7.14. *)
+    DWARF 5 specification, Table 7.14 "Accessibility encodings". *)
 type accessibility =
   | DW_ACCESS_public
   | DW_ACCESS_protected
   | DW_ACCESS_private
 
 val accessibility : int -> accessibility
-(** Convert an int to an [accessibility]. *)
+(** Convert an int to an [accessibility].
+
+    @raise Parse_error if the value is not a recognized accessibility code. *)
 
 val int_of_accessibility : accessibility -> int
 (** Convert an [accessibility] to its integer encoding. *)
@@ -709,11 +740,13 @@ val string_of_accessibility : accessibility -> string
 
     The encoding of the constants used in the [DW_AT_visibility] attribute.
 
-    DWARF 5 specification, Table 7.15. *)
+    DWARF 5 specification, Table 7.15 "Visibility encodings". *)
 type visibility = DW_VIS_local | DW_VIS_exported | DW_VIS_qualified
 
 val visibility : int -> visibility
-(** Convert an int to a [visibility]. *)
+(** Convert an int to a [visibility].
+
+    @raise Parse_error if the value is not a recognized visibility code. *)
 
 val int_of_visibility : visibility -> int
 (** Convert a [visibility] to its integer encoding. *)
@@ -725,14 +758,16 @@ val string_of_visibility : visibility -> string
 
     The encoding of the constants used in the [DW_AT_virtuality] attribute.
 
-    DWARF 5 specification, Table 7.16. *)
+    DWARF 5 specification, Table 7.16 "Virtuality encodings". *)
 type virtuality =
   | DW_VIRTUALITY_none
   | DW_VIRTUALITY_virtual
   | DW_VIRTUALITY_pure_virtual
 
 val virtuality : int -> virtuality
-(** Convert an int to a [virtuality]. *)
+(** Convert an int to a [virtuality].
+
+    @raise Parse_error if the value is not a recognized virtuality code. *)
 
 val int_of_virtuality : virtuality -> int
 (** Convert a [virtuality] to its integer encoding. *)
@@ -744,7 +779,7 @@ val string_of_virtuality : virtuality -> string
 
     The encoding of the constants used in the [DW_AT_language] attribute.
 
-    DWARF 5 specification, Table 7.17. *)
+    DWARF 5 specification, Table 7.17 "Language encodings". *)
 type dwarf_language =
   | DW_LANG_C89
   | DW_LANG_C
@@ -788,7 +823,9 @@ type dwarf_language =
   | DW_LANG_hi_user
 
 val dwarf_language : int -> dwarf_language
-(** Convert an int to a [dwarf_language]. *)
+(** Convert an int to a [dwarf_language].
+
+    @raise Parse_error if the value is not a recognized language encoding. *)
 
 val int_of_dwarf_language : dwarf_language -> int
 (** Convert a [dwarf_language] to its integer encoding. *)
@@ -800,7 +837,7 @@ val string_of_dwarf_language : dwarf_language -> string
 
     The encoding of the constants used in the [DW_AT_identifier_case] attribute.
 
-    DWARF 5 specification, Table 7.18. *)
+    DWARF 5 specification, Table 7.18 "Identifier case encodings". *)
 type identifier =
   | DW_ID_case_sensitive
   | DW_ID_up_case
@@ -808,7 +845,9 @@ type identifier =
   | DW_ID_case_insensitive
 
 val identifier : int -> identifier
-(** Convert an int to an [identifier]. *)
+(** Convert an int to an [identifier].
+
+    @raise Parse_error if the value is not a recognized identifier case code. *)
 
 val int_of_identifier : identifier -> int
 (** Convert an [identifier] to its integer encoding. *)
@@ -821,20 +860,21 @@ val string_of_identifier : identifier -> string
     The encoding of the constants used in the [DW_AT_calling_convention]
     attribute.
 
-    DWARF 5 specification, Table 7.19. *)
+    DWARF 5 specification, Table 7.19 "Calling convention encodings". *)
 type calling_convention =
   | DW_CC_normal
   | DW_CC_program
   | DW_CC_nocall
   (* New in DWARF Version 5 *)
-  (* TODO In general label new constructors *)
   | DW_CC_pass_by_reference
   | DW_CC_pass_by_value
   | DW_CC_lo_user
   | DW_CC_hi_user
 
 val calling_convention : int -> calling_convention
-(** Convert an int to a [calling_convention]. *)
+(** Convert an int to a [calling_convention].
+
+    @raise Parse_error if the value is not a recognized calling convention. *)
 
 val int_of_calling_convention : calling_convention -> int
 (** Convert a [calling_convention] to its integer encoding. *)
@@ -845,7 +885,7 @@ val string_of_calling_convention : calling_convention -> string
 (** Inlined encoding. The encodings of the constants used in the [DW_AT_inline]
     attribute.
 
-    DWARF 5 specification, Table 7.20. *)
+    DWARF 5 specification, Table 7.20 "Inline encodings". *)
 type inlined =
   | DW_INL_not_inlined
   | DW_INL_inlined
@@ -853,7 +893,9 @@ type inlined =
   | DW_INL_declared_inlined
 
 val inlined : int -> inlined
-(** Convert an int to an [inlined]. *)
+(** Convert an int to an [inlined].
+
+    @raise Parse_error if the value is not a recognized inline code. *)
 
 val int_of_inlined : inlined -> int
 (** Convert an [inlined] to its integer encoding. *)
@@ -865,11 +907,13 @@ val string_of_inlined : inlined -> string
 
     The encoding of the constants used in the [DW_AT_ordering] attribute.
 
-    DWARF 5 specification, Table 7.21. *)
+    DWARF 5 specification, Table 7.21 "Ordering encodings". *)
 type array_ordering = DW_ORD_row_major | DW_ORD_col_major
 
 val array_ordering : int -> array_ordering
-(** Convert an int to an [array_ordering]. *)
+(** Convert an int to an [array_ordering].
+
+    @raise Parse_error if the value is not a recognized array ordering. *)
 
 val int_of_array_ordering : array_ordering -> int
 (** Convert an [array_ordering] to its integer encoding. *)
@@ -882,18 +926,21 @@ val string_of_array_ordering : array_ordering -> string
     The descriptors used in the [DW_AT_discr_list] attribute, which are encoded
     as 1-byte constants.
 
-    DWARF 5 specification, Table 7.22. *)
+    DWARF 5 specification, Table 7.22 "Discriminant descriptor encodings". *)
 type discriminant = DW_DSC_label | DW_DSC_range
 
 val discriminant : int -> discriminant
-(** Convert an int to a [discriminant]. *)
+(** Convert an int to a [discriminant].
+
+    @raise Parse_error if the value is not a recognized discriminant descriptor.
+*)
 
 val int_of_discriminant : discriminant -> int
 (** Convert a [discriminant] to its integer encoding. *)
 
 (** Name index attribute encodings. New in DWARF 5.
 
-    DWARF 5 specification, Table 7.23. *)
+    DWARF 5 specification, Table 7.23 "Name index attribute encodings". *)
 type name_index_attribute =
   | DW_IDX_null
   | DW_IDX_compile_unit
@@ -905,7 +952,9 @@ type name_index_attribute =
   | DW_IDX_hi_user
 
 val name_index_attribute : int -> name_index_attribute
-(** Convert an int to a [name_index_attribute]. *)
+(** Convert an int to a [name_index_attribute].
+
+    @raise Parse_error if the value is not a recognized name index attribute. *)
 
 val int_of_name_index_attribute : name_index_attribute -> int
 (** Convert a [name_index_attribute] to its integer encoding. *)
@@ -918,14 +967,17 @@ val string_of_name_index_attribute : name_index_attribute -> string
     The encoding of the constants used in the [DW_AT_defaulted] attribute. New
     in DWARF 5.
 
-    DWARF 5 specification, Table 7.24. *)
+    DWARF 5 specification, Table 7.24 "Defaulted attribute encodings". *)
 type defaulted_attribute =
   | DW_DEFAULTED_no
   | DW_DEFAULTED_in_class
   | DW_DEFAULTED_out_of_class
 
 val defaulted_attribute : int -> defaulted_attribute
-(** Convert an int to a [defaulted_attribute]. *)
+(** Convert an int to a [defaulted_attribute].
+
+    @raise Parse_error
+      if the value is not a recognized defaulted attribute code. *)
 
 val int_of_defaulted_attribute : defaulted_attribute -> int
 (** Convert a [defaulted_attribute] to its integer encoding. *)
@@ -937,7 +989,8 @@ val string_of_defaulted_attribute : defaulted_attribute -> string
 
     The encoding for the standard opcodes.
 
-    DWARF 5 specification, Table 7.25. *)
+    DWARF 5 specification, Table 7.25 "Line number standard opcode encodings".
+*)
 type line_number_opcode =
   | DW_LNS_copy
   | DW_LNS_advance_pc
@@ -965,7 +1018,8 @@ val string_of_line_number_opcode : line_number_opcode -> string
 
     The encoding for the extended opcodes.
 
-    DWARF 5 specification, Table 7.26. *)
+    DWARF 5 specification, Table 7.26 "Line number extended opcode encodings".
+*)
 type line_number_extended_opcode =
   | DW_LNE_end_sequence
   | DW_LNE_set_address
@@ -987,7 +1041,8 @@ val string_of_line_number_extended_opcode :
 
     The encoding for the line number header entry formats. New in DWARF 5.
 
-    DWARF 5 specification, Table 7.27. *)
+    DWARF 5 specification, Table 7.27 "Line number header entry format
+    encodings". *)
 type line_number_header_entry =
   | DW_LNCT_path
   | DW_LNCT_directory_index
@@ -1008,7 +1063,8 @@ val string_of_line_number_header_entry : line_number_header_entry -> string
 
 (** Macro information entry type. New in DWARF 5.
 
-    DWARF 5 specification, Table 7.28. *)
+    DWARF 5 specification, Table 7.28 "Macro information entry type encodings".
+*)
 type macro_info_entry_type =
   | DW_MACRO_define
   | DW_MACRO_undef
@@ -1025,7 +1081,7 @@ type macro_info_entry_type =
   | DW_MACRO_lo_user
   | DW_MACRO_hi_user
 
-val macro_info_entry_type_of_u8 : u8 -> macro_info_entry_type
+val macro_info_entry_type : u8 -> macro_info_entry_type
 (** Convert a u8 to a [macro_info_entry_type]. *)
 
 val u8_of_macro_info_entry_type : macro_info_entry_type -> u8
@@ -1040,7 +1096,7 @@ val string_of_macro_info_entry_type : macro_info_entry_type -> string
     information used by the preprocessor. Each compilation unit may have its own
     macro unit describing the macros active during compilation.
 
-    Reference: DWARF 5 specification, section 6.3 "Macro Information" *)
+    DWARF 5 specification, section 6.3 "Macro Information". *)
 module DebugMacro : sig
   type header = {
     format : dwarf_format;
@@ -1067,7 +1123,7 @@ module DebugMacro : sig
   }
   (** A complete macro unit with header and entries. *)
 
-  type section = { units : macro_unit list  (** List of macro units *) }
+  type section = { units : macro_unit list }
   (** Complete parsed .debug_macro section. *)
 
   val parse_header : Object.Buffer.cursor -> header
@@ -1075,13 +1131,18 @@ module DebugMacro : sig
 
   val parse_entry : Object.Buffer.cursor -> dwarf_format -> entry option
   (** Parse a single debug_macro entry. Returns [None] at end of entries marker.
-  *)
+
+      @raise Parse_error if a macro entry type is unknown. *)
 
   val parse_unit : Object.Buffer.cursor -> macro_unit
-  (** Parse a complete debug_macro unit (header + entries). *)
+  (** Parse a complete debug_macro unit (header + entries).
+
+      @raise Parse_error if the unit is malformed. *)
 
   val parse_section : Object.Buffer.cursor -> int -> section
-  (** Parse the entire debug_macro section. *)
+  (** Parse the entire debug_macro section.
+
+      @raise Parse_error if the section is malformed. *)
 end
 
 (** Parser for the .debug_macinfo section (DWARF 4).
@@ -1090,11 +1151,9 @@ end
     contains macro definition and undefinition information in a simpler format
     without string table indirection.
 
-    Reference: DWARF 4 specification, section 6.3 "Macro Information" *)
+    DWARF 4 specification, section 6.3 "Macro Information". *)
 module DebugMacinfo : sig
-  (** Macro info entry type codes.
-
-      DWARF 4 specification, Table 7.26. *)
+  (** Macro info entry type codes. *)
   type macinfo_type =
     | DW_MACINFO_define
     | DW_MACINFO_undef
@@ -1103,7 +1162,9 @@ module DebugMacinfo : sig
     | DW_MACINFO_vendor_ext
 
   val macinfo_type_of_int : int -> macinfo_type
-  (** Convert an int to a [macinfo_type]. *)
+  (** Convert an int to a [macinfo_type].
+
+      @raise Parse_error if the value is not a recognized macinfo type. *)
 
   val string_of_macinfo_type : macinfo_type -> string
   (** Convert a [macinfo_type] to its string representation. *)
@@ -1121,15 +1182,21 @@ module DebugMacinfo : sig
   (** Complete parsed .debug_macinfo section. *)
 
   val parse_entry : Object.Buffer.cursor -> entry option
-  (** Parse a single macinfo entry. Returns [None] at end marker. *)
+  (** Parse a single macinfo entry. Returns [None] at end marker.
+
+      @raise Parse_error if a macinfo entry type is unknown. *)
 
   val parse_section : Object.Buffer.cursor -> int -> section
   (** Parse the entire .debug_macinfo section. The [int] parameter is the
-      section size in bytes. *)
+      section size in bytes.
+
+      @raise Parse_error if the section is malformed. *)
 end
 
-(** Sections that hold DWARF information. *)
-type dwarf_section =
+(** Sections that hold DWARF information.
+
+    DWARF 5 specification, section 7.5 "Format of Debugging Information". *)
+type dwarf_section = Dwarf_types.dwarf_section =
   | Debug_info
   | Debug_abbrev
   | Debug_aranges
@@ -1160,9 +1227,22 @@ type dwarf_section =
   | Debug_cu_index
   | Debug_tu_index
 
+type parse_error = Dwarf_types.parse_error = {
+  section : dwarf_section option;
+      (** The DWARF section being parsed, if known. *)
+  offset : int option;  (** Byte offset within the section, if known. *)
+  message : string;  (** Human-readable description of the failure. *)
+}
+(** Structured description of a DWARF parsing failure.
+
+    Raised by the reader, writers and helper functions when input cannot be
+    decoded. *)
+
+exception Parse_error of parse_error
+
 (** Call frame instruction encodings.
 
-    DWARF 5 specification, Table 7.29. *)
+    DWARF 5 specification, Table 7.29 "Call frame instruction encodings". *)
 type call_frame_instruction =
   | DW_CFA_advance_loc
   | DW_CFA_offset
@@ -1201,7 +1281,7 @@ val string_of_call_frame_instruction : call_frame_instruction -> string
     describe the non-contiguous address ranges owned by a DIE, such as the code
     addresses belonging to a function that has been split by the optimiser.
 
-    DWARF 5 specification, Table 7.30. *)
+    DWARF 5 specification, Table 7.30 "Range list entry encoding values". *)
 type range_list_entry =
   | DW_RLE_end_of_list
   | DW_RLE_base_addressx
@@ -1212,12 +1292,11 @@ type range_list_entry =
   | DW_RLE_start_end
   | DW_RLE_start_length
 
-(* TODO In general we are inconsistent with our integer types. Sometimes
-   using u32, u64 or int. There is a boxed overhead for some of these types,
-   but we should use the most accurate type. *)
-
 val range_list_entry : int -> range_list_entry
-(** Convert an int to a [range_list_entry]. *)
+(** Convert an int to a [range_list_entry].
+
+    @raise Parse_error if the value is not a recognized range list entry kind.
+*)
 
 val int_of_range_list_entry : range_list_entry -> int
 (** Convert a [range_list_entry] to its integer encoding. *)
@@ -1245,7 +1324,9 @@ type attr_spec = {
 (** A single attribute specification within an abbreviation declaration.
 
     Each attribute specification pairs an attribute name with a form that
-    describes how the attribute value is encoded. *)
+    describes how the attribute value is encoded.
+
+    DWARF 5 specification, section 7.5.3 "Abbreviations Tables". *)
 
 type abbrev = {
   code : u64;  (** Abbreviation code referenced by DIEs *)
@@ -1295,9 +1376,14 @@ end
     source program.
 
     The debugging information entries are contained in the [debug_info] and/or
-    .debug_info.dwo sections of an object file. *)
+    .debug_info.dwo sections of an object file.
+
+    DWARF 5 specification, section 2.1 "The Debugging Information Entry (DIE)"
+*)
 module DIE : sig
-  (** Attribute values that can appear in DWARF Debug Information Entries *)
+  (** Attribute values that can appear in DWARF Debug Information Entries.
+
+      DWARF 5 specification, section 7.5.5 "Classes and Forms". *)
   type attribute_value =
     | String of string  (** String value from DW_FORM_string or DW_FORM_strp *)
     | IndexedString of int * string
@@ -1334,7 +1420,9 @@ module DIE : sig
         (** Defaulted status from DW_AT_defaulted attribute *)
 
   type attribute = { attr : attribute_encoding; value : attribute_value }
-  (** A DWARF attribute consisting of name and value *)
+  (** A DWARF attribute consisting of name and value.
+
+      DWARF 5 specification, section 7.5.4 "Attribute Encodings". *)
 
   type t = {
     tag : abbreviation_tag;
@@ -1379,7 +1467,10 @@ end
       etc.
     - Compilation metadata (compiler version, language, compilation directory)
     - Address ranges where the compiled code resides
-    - Line number mappings between source and machine code *)
+    - Line number mappings between source and machine code
+
+    DWARF 5 specification, Chapter 3 "Program Scope Entries" introduces the
+    concept of Unit Entries and Compilation Units. *)
 module CompileUnit : sig
   type header = {
     format : dwarf_format;
@@ -1401,11 +1492,15 @@ module CompileUnit : sig
         (** DWO id for DW_UT_skeleton and DW_UT_split_compile units *)
   }
   (** Parsed header data from a compilation unit. This contains the essential
-      metadata needed to interpret the unit's content. *)
+      metadata needed to interpret the unit's content.
+
+      DWARF 5 specification, section 7.5.1.1 "Full and Partial Compilation Unit
+      Headers". *)
 
   type t
   (** A compilation unit with parsed content. *)
 
+  (* TODO Make this into a labelled function *)
   val make : int -> int -> Object_file.t -> header -> t
   (** Create a new compilation unit. The first [int] is the section-relative
       position, the second is the absolute buffer offset. *)
@@ -1441,7 +1536,9 @@ val skip_attribute_value :
   encoding ->
   Object.Buffer.t ->
   unit
-(** Skip past a single attribute value in the buffer without allocating. *)
+(** Skip past a single attribute value in the buffer without allocating.
+
+    @raise Parse_error if the attribute form is unknown. *)
 
 val skip_die :
   Object.Buffer.cursor ->
@@ -1449,7 +1546,9 @@ val skip_die :
   encoding ->
   Object.Buffer.t ->
   unit
-(** Skip an entire DIE (attributes + children if any). *)
+(** Skip an entire DIE (attributes + children if any).
+
+    @raise Parse_error if a DIE attribute form is unknown. *)
 
 val skip_children :
   Object.Buffer.cursor ->
@@ -1457,7 +1556,9 @@ val skip_children :
   encoding ->
   Object.Buffer.t ->
   unit
-(** Skip all remaining children at the current nesting level. *)
+(** Skip all remaining children at the current nesting level.
+
+    @raise Parse_error if a DIE attribute form is unknown. *)
 
 (** Forward-only cursor for iterating over sibling DIEs at a single level.
 
@@ -1476,7 +1577,9 @@ module DieCursor : sig
       end-of-children (null entry). *)
 
   val skip_children : t -> unit
-  (** Skip remaining children at current depth. *)
+  (** Skip remaining children at current depth.
+
+      @raise Parse_error if a DIE attribute form is unknown. *)
 
   val position : t -> int
   (** Current cursor position in the buffer. *)
@@ -1484,10 +1587,10 @@ end
 
 (** Zipper-based navigator for the DIE tree.
 
-    {!DieZipper} provides a cursor that can move {!down} to the first child,
-    {!right} to the next sibling, and {!up} to the parent without re-parsing
-    already-visited nodes. Internally it maintains a breadcrumb trail of parent
-    DIEs so that upward navigation is O(1).
+    {!DieZipper} provides a cursor that can move {!DieZipper.down} to the first
+    child, {!DieZipper.right} to the next sibling, and {!DieZipper.up} to the
+    parent without re-parsing already-visited nodes. Internally it maintains a
+    breadcrumb trail of parent DIEs so that upward navigation is O(1).
 
     This is the recommended interface for interactive or selective traversal of
     the DIE tree. For simple linear iteration over siblings at a single level,
@@ -1523,22 +1626,34 @@ module DieZipper : sig
   (** Navigate to first child. None if no children. *)
 
   val right : t -> t option
-  (** Navigate to next sibling. None if last sibling. *)
+  (** Navigate to next sibling. None if last sibling.
+
+      @raise Parse_error if a DIE attribute form is unknown. *)
 
   val up : t -> t option
   (** Navigate to parent. None if at root. *)
 
   val children : t -> t Seq.t
-  (** Lazy sequence of child zippers. *)
+  (** Lazy sequence of child zippers.
+
+      @raise Parse_error
+        when the sequence is forced, if a DIE attribute form is unknown. *)
 
   val siblings : t -> t Seq.t
-  (** Lazy sequence of remaining sibling zippers. *)
+  (** Lazy sequence of remaining sibling zippers.
+
+      @raise Parse_error
+        when the sequence is forced, if a DIE attribute form is unknown. *)
 
   val fold_children : ('a -> t -> 'a) -> 'a -> t -> 'a
-  (** Fold over immediate children. *)
+  (** Fold over immediate children.
+
+      @raise Parse_error if a DIE attribute form is unknown. *)
 
   val find_child : (t -> bool) -> t -> t option
-  (** Find first child matching predicate. *)
+  (** Find first child matching predicate.
+
+      @raise Parse_error if a DIE attribute form is unknown. *)
 
   val depth : t -> int
   (** Current depth from root (root = 0). *)
@@ -1547,11 +1662,12 @@ end
 val parse_compile_unit_header :
   Object.Buffer.cursor -> span * CompileUnit.header
 (** Parse the header of a compilation unit from a buffer cursor. Returns both
-    the unit span and the parsed header with span included. *)
+    the unit span and the parsed header with span included.
+
+    @raise Parse_error if the header is malformed or the version is unsupported.
+*)
 
 (** Line number information parsing.
-
-    Reference: DWARF 5 specification, section 6.2 "Line Number Information".
 
     The line number information in DWARF 5 provides a mapping between source
     code positions (file, line, column) and machine instruction addresses. This
@@ -1575,7 +1691,7 @@ val parse_compile_unit_header :
     The header contains essential information needed to decode the line program,
     including file names, directory names, and opcode definitions.
 
-    Reference: DWARF 5 specification, section 6.2 "Line Number Information" *)
+    DWARF 5 specification, section 6.2 "Line Number Information". *)
 module DebugLine : sig
   type t = { cu : CompileUnit.t }
   (** A line program associated with a compilation unit. *)
@@ -1612,8 +1728,7 @@ module DebugLine : sig
       The directory field contains the resolved directory path rather than the
       raw directory index, making it easier to work with file paths.
 
-      Reference: DWARF 5 specification, section 6.2.4.1 "The Line Number Program
-      Header" *)
+      DWARF 5 specification, section 6.2.4 "The Line Number Program Header". *)
 
   type line_program_header = {
     format : dwarf_format;
@@ -1663,8 +1778,7 @@ module DebugLine : sig
       counts, the file and directory tables, and parameters for the line number
       state machine.
 
-      Reference: DWARF 5 specification, section 6.2.4 "The Line Number Program
-      Header" *)
+      DWARF 5 specification, section 6.2.4 "The Line Number Program Header". *)
 
   type line_table_entry = {
     address : u64;  (** Program counter address *)
@@ -1687,8 +1801,7 @@ module DebugLine : sig
       Each entry maps a program counter address to source location information
       and various flags that help debuggers understand the code structure.
 
-      Reference: DWARF 5 specification, section 6.2.2 "State Machine Registers"
-  *)
+      DWARF 5 specification, section 6.2.2 "State Machine Registers". *)
 
   val parse_line_program_header :
     Object.Buffer.cursor -> Object.Buffer.t -> line_program_header
@@ -1703,11 +1816,9 @@ module DebugLine : sig
         Complete buffer containing debug sections (needed for
         [DW_FORM_line_strp] resolution)
       @return Parsed line program header with all tables resolved
-      @raise Failure
+      @raise Parse_error
         if header format is invalid or unsupported content types are encountered
-
-      Reference: DWARF 5 specification, section 6.2.4 "The Line Number Program
-      Header" *)
+  *)
 
   val parse_line_program :
     Object.Buffer.cursor -> line_program_header -> line_table_entry Seq.t
@@ -1728,19 +1839,18 @@ module DebugLine : sig
 
       @param cursor Buffer cursor positioned after the line program header
       @param header Parsed line program header containing opcode definitions
-      @return Lazy sequence of line table entries
-
-      @raise Failure
-        if program contains invalid opcodes or malformed instructions
-
-      Reference: DWARF 5 specification, section 6.2 "Line Number Information" *)
+      @return Lazy sequence of line table entries *)
 
   val parse :
     Object.Buffer.cursor ->
     Object.Buffer.t ->
     line_program_header * line_table_entry Seq.t
   (** Parse a complete line program (header + entries). Convenience function
-      combining [parse_line_program_header] and [parse_line_program]. *)
+      combining [parse_line_program_header] and [parse_line_program].
+
+      @raise Parse_error
+        if the line program header is malformed or the version is unsupported.
+  *)
 end
 
 (** DWARF 4 location list parsing for .debug_loc section.
@@ -1753,7 +1863,7 @@ end
 
     Superseded by .debug_loclists in DWARF 5.
 
-    Reference: DWARF 4 specification, section 7.7.3 "Location Lists" *)
+    DWARF 4 specification, section 7.7.3 "Location Lists". *)
 module DebugLoc : sig
   (** A single location list entry.
 
@@ -1777,7 +1887,7 @@ end
 
     Superseded by .debug_rnglists in DWARF 5.
 
-    Reference: DWARF 4 specification, section 7.25 "Range Lists" *)
+    DWARF 4 specification, section 7.24 "Non-contiguous Address Ranges". *)
 module DebugRanges : sig
   (** A single range list entry.
 
@@ -1801,7 +1911,7 @@ end
     In DWARF 5, type units are folded into .debug_info with [DW_UT_type] unit
     headers.
 
-    Reference: DWARF 4 specification, section 7.5.1.2 "Type Unit Header" *)
+    DWARF 4 specification, section 7.5.1.2 "Type Unit Header". *)
 module DebugTypes : sig
   type type_unit_header = {
     format : dwarf_format;
@@ -1818,7 +1928,10 @@ module DebugTypes : sig
       DWARF 4 specification, section 7.5.1.2 "Type Unit Header". *)
 
   val parse_type_unit_header : Object.Buffer.cursor -> span * type_unit_header
-  (** Parse a type unit header from the .debug_types section. *)
+  (** Parse a type unit header from the .debug_types section.
+
+      @raise Parse_error
+        if the header is malformed or the version is unsupported. *)
 
   val parse_type_units : Object.Buffer.t -> (span * type_unit_header) Seq.t
   (** Iterate all type units in the .debug_types section. *)
@@ -1845,7 +1958,7 @@ val resolve_range_list :
 
     Superseded by .debug_names in DWARF 5.
 
-    Reference: DWARF 4 specification, section 6.1.1 "Lookup by Name" *)
+    DWARF 4 specification, section 6.1.1 "Lookup by Name". *)
 module DebugPubnames : sig
   type header = {
     format : dwarf_format;
@@ -1858,13 +1971,17 @@ module DebugPubnames : sig
   }
   (** Header for a pubnames set.
 
-      DWARF 4 specification, section 7.19 "Name Lookup Table". *)
+      DWARF 4 specification, section 7.19 "Name Lookup Tables". *)
 
   type entry = { offset : u64; name : string }
-  (** A name entry mapping a DIE offset to a symbol name. *)
+  (** A name entry mapping a DIE offset to a symbol name.
+
+      DWARF 4 specification, section 7.19 "Name Lookup Tables". *)
 
   val parse_header : Object.Buffer.cursor -> header
-  (** Parse the header of a pubnames set. *)
+  (** Parse the header of a pubnames set.
+
+      @raise Parse_error if the length field uses a reserved value. *)
 
   val parse_entries : Object.Buffer.cursor -> header -> entry list
   (** Parse entries following a pubnames header until a zero offset terminator.
@@ -1872,7 +1989,9 @@ module DebugPubnames : sig
 
   val parse_set : Object.Buffer.cursor -> header * entry list
   (** Parse one pubnames set (header + entries). Convenience function combining
-      [parse_header] and [parse_entries]. *)
+      [parse_header] and [parse_entries].
+
+      @raise Parse_error if the set is malformed. *)
 end
 
 (** DWARF 4 .debug_pubtypes section parsing.
@@ -1884,7 +2003,7 @@ end
 
     Superseded by .debug_names in DWARF 5.
 
-    Reference: DWARF 4 specification, section 6.1.2 "Lookup by Address" *)
+    DWARF 4 specification, section 6.1.1 "Lookup by Name". *)
 module DebugPubtypes : sig
   type header = {
     format : dwarf_format;
@@ -1897,13 +2016,17 @@ module DebugPubtypes : sig
   }
   (** Header for a pubtypes set.
 
-      DWARF 4 specification, section 7.19 "Name Lookup Table". *)
+      DWARF 4 specification, section 7.19 "Name Lookup Tables". *)
 
   type entry = { offset : u64; name : string }
-  (** A type entry mapping a DIE offset to a type name. *)
+  (** A type entry mapping a DIE offset to a type name.
+
+      DWARF 4 specification, section 7.19 "Name Lookup Tables". *)
 
   val parse_header : Object.Buffer.cursor -> header
-  (** Parse the header of a pubtypes set. *)
+  (** Parse the header of a pubtypes set.
+
+      @raise Parse_error if the length field uses a reserved value. *)
 
   val parse_entries : Object.Buffer.cursor -> header -> entry list
   (** Parse entries following a pubtypes header until a zero offset terminator.
@@ -1911,7 +2034,9 @@ module DebugPubtypes : sig
 
   val parse_set : Object.Buffer.cursor -> header * entry list
   (** Parse one pubtypes set (header + entries). Convenience function combining
-      [parse_header] and [parse_entries]. *)
+      [parse_header] and [parse_entries].
+
+      @raise Parse_error if the set is malformed. *)
 end
 
 (** Call frame information parsing for .debug_frame section.
@@ -1927,10 +2052,11 @@ end
       CIE defaults to describe register saves and the Canonical Frame Address
       (CFA) at each instruction
 
-    Reference: DWARF 5 specification, section 6.4 "Call Frame Information" *)
+    DWARF 5 specification, section 6.4 "Call Frame Information". *)
 module CallFrame : sig
   val debug_frame_cie_id : u32
   (** Distinguished CIE identifier (0xffffffff) for .debug_frame sections *)
+  (* TODO Does this need to be in the API, seems like an implementation detail? *)
 
   type common_information_entry = {
     format : dwarf_format;
@@ -1956,9 +2082,6 @@ module CallFrame : sig
   }
   (** Common Information Entry (CIE).
 
-      Reference: DWARF 5 specification, section 6.4.1 "Structure of Call Frame
-      Information".
-
       A CIE contains information shared among many Frame Description Entries
       (FDEs). There is at least one CIE in every non-empty [.debug_frame]
       section. CIEs define common parameters and initial call frame state that
@@ -1968,10 +2091,14 @@ module CallFrame : sig
       [code_alignment_factor] scales PC advance values (often set to the minimum
       instruction size), while [data_alignment_factor] scales stack offsets
       (often negative, e.g. -8 on 64-bit). The [initial_instructions] establish
-      the baseline register rules that FDEs modify. *)
+      the baseline register rules that FDEs modify.
+
+      DWARF 5 specification, section 6.4.1 "Structure of Call Frame
+      Information". *)
 
   val create_default_cie : unit -> common_information_entry
   (** Create a CIE with default values for x86-64 architecture. *)
+  (* TODO Maybe default to x86-64 but take an optional architecture here? *)
 
   type frame_description_entry = {
     format : dwarf_format;
@@ -1991,20 +2118,22 @@ module CallFrame : sig
   }
   (** Frame Description Entry (FDE).
 
-      Reference: DWARF 5 specification, section 6.4.1 "Structure of Call Frame
-      Information".
-
       An FDE contains call frame information for a specific range of program
       addresses. Each FDE references a CIE for shared parameters, then provides
       its own instructions to describe register saves and CFA changes within its
-      address range. *)
+      address range.
+
+      DWARF 5 specification, section 6.4.1 "Structure of Call Frame
+      Information". *)
 
   val parse_common_information_entry :
     Object.Buffer.cursor -> common_information_entry
   (** Parse a Common Information Entry from the [Debug_frame] section. The
-      cursor should be positioned at the start of a CIE entry. *)
+      cursor should be positioned at the start of a CIE entry.
 
-  (** Debug Frame section entry type *)
+      @raise Parse_error if the CIE is malformed. *)
+
+  (** Debug Frame section entry type. *)
   type debug_frame_entry =
     | CIE of common_information_entry  (** Common Information Entry *)
     | FDE of frame_description_entry  (** Frame Description Entry *)
@@ -2014,7 +2143,7 @@ module CallFrame : sig
     entries : debug_frame_entry list;  (** All entries in the section *)
     entry_count : int;  (** Number of CIE/FDE entries *)
   }
-  (** Debug Frame section *)
+  (** Debug Frame section. *)
 
   val parse_debug_frame_section :
     Object.Buffer.cursor -> int -> debug_frame_section
@@ -2024,7 +2153,7 @@ module CallFrame : sig
       @param section_size Size of the debug_frame section in bytes
       @return Parsed debug_frame section containing all CIE and FDE entries *)
 
-  (** CFI rule types for state machine *)
+  (** CFI rule types for state machine. *)
   type cfi_rule =
     | Rule_undefined
     | Rule_same_value
@@ -2041,7 +2170,7 @@ module CallFrame : sig
     pc_offset : int;
     state_stack : cfi_state list; (* Stack for remember_state/restore_state *)
   }
-  (** CFI state for tracking register rules *)
+  (** CFI state for tracking register rules. *)
 
   val initial_cfi_state : unit -> cfi_state
   (** Create initial CFI state with architecture defaults *)
@@ -2110,13 +2239,19 @@ module EHFrameHdr : sig
   (** Parse the .eh_frame_hdr header and search table.
 
       The second parameter is the base address of the section for relative
-      address calculations. *)
+      address calculations.
+
+      @raise Parse_error if the header uses an unknown pointer encoding. *)
 
   val parse_section : Object.Buffer.cursor -> u64 -> header
-  (** Parse complete .eh_frame_hdr section - alias for parse_header. *)
+  (** Parse complete .eh_frame_hdr section - alias for parse_header.
+
+      @raise Parse_error if the section uses an unknown pointer encoding. *)
 
   val encoding_of_u8 : int -> encoding
-  (** Convert a byte value to its corresponding encoding type *)
+  (** Convert a byte value to its corresponding encoding type
+
+      @raise Parse_error if the pointer encoding byte is unknown. *)
 end
 
 (** EH Frame parsing for .eh_frame section.
@@ -2125,7 +2260,8 @@ end
     exception handling mechanism. While similar to .debug_frame, it has some
     format differences optimized for runtime performance.
 
-    Reference: LSB specification and ELF exception handling ABI *)
+    TODO Be more concrete here about the reference, what is the name of the
+    document? Reference: LSB specification and ELF exception handling ABI *)
 module EHFrame : sig
   type eh_frame_entry =
     | EH_CIE of CallFrame.common_information_entry
@@ -2137,7 +2273,9 @@ module EHFrame : sig
     Object.Buffer.cursor -> u32 -> int -> CallFrame.common_information_entry
   (** Parse a Common Information Entry adapted for .eh_frame format.
 
-      The second parameter is the expected length from the length field. *)
+      The second parameter is the expected length from the length field.
+
+      @raise Parse_error if the CIE is malformed. *)
 
   val parse_eh_fde :
     Object.Buffer.cursor -> u32 -> int -> CallFrame.frame_description_entry
@@ -2149,7 +2287,9 @@ module EHFrame : sig
   val parse_section : Object.Buffer.cursor -> int -> section
   (** Parse the .eh_frame section.
 
-      The second parameter is the section size in bytes. *)
+      The second parameter is the section size in bytes.
+
+      @raise Parse_error if a CIE is malformed. *)
 
   val find_cie_for_fde :
     section -> u32 -> int -> CallFrame.common_information_entry option
@@ -2200,7 +2340,7 @@ end
     debug_gnu_pubnames, and debug_gnu_pubtypes sections with a more flexible and
     efficient design.
 
-    Reference: DWARF 5 specification, section 6.1 "Accelerated Access" *)
+    DWARF 5 specification, section 6.1 "Accelerated Access". *)
 module DebugNames : sig
   type name_index_header = {
     format : dwarf_format;
@@ -2226,7 +2366,7 @@ module DebugNames : sig
       of the debug_names section. It defines the sizes of the various tables and
       arrays that follow the header.
 
-      Reference: DWARF 5 specification, section 6.1.1.1 "Name Index Header" *)
+      DWARF 5 specification, section 6.1.1.4.1 "Section Header". *)
 
   type debug_str_entry = {
     offset : u32;  (** Original offset in debug_str section *)
@@ -2276,8 +2416,7 @@ module DebugNames : sig
       identical names (e.g., overloaded functions, variables in different
       scopes).
 
-      Reference: DWARF 5 specification, section 6.1.1.4.2 "Name Index Entries"
-  *)
+      DWARF 5 specification, section 6.1.1.4.8 "Entry Pool". *)
 
   type debug_names_abbrev = {
     code : u64;  (** Abbreviation code *)
@@ -2309,7 +2448,7 @@ module DebugNames : sig
   }
   (** Complete parsed debug_names section with all components resolved.
 
-      Reference: DWARF 5 specification, section 6.1.1 "Name Index Format" *)
+      DWARF 5 specification, section 6.1.1 "Lookup by Name". *)
 
   val djb2_hash : string -> u32
   (** Compute DJB2 hash value used by DWARF 5 debug_names sections *)
@@ -2332,8 +2471,7 @@ module DebugNames : sig
 
       This function parses all components of a DWARF 5 debug_names section,
       building the complete acceleration structure for efficient name-based
-      lookups. It handles the complex multi-table format and resolves all string
-      references.
+      lookups.
 
       The parsing process:
       + Read name index header with table sizes and counts
@@ -2344,22 +2482,16 @@ module DebugNames : sig
       + Decode entry pool using abbreviation table format
       + Associate entries with names and hash buckets
 
-      The parser handles:
-      - Variable-length encoding of entry pool using abbreviations
-      - String offset resolution from .debug_str section
-      - Proper sizing of all arrays based on header counts
-      - Validation of format version and field alignments
-
       @param cursor Buffer cursor positioned at start of debug_names section
       @return
         Complete debug_names_section with all tables populated and resolved
 
-      @raise Failure if section format is invalid or unsupported version
+      @raise Parse_error if section format is invalid or unsupported version
 
       Performance note: The resulting structure enables O(1) name lookups via
       the hash table, significantly faster than linear DIE scanning.
 
-      Reference: DWARF 5 specification, section 6.1.1 "Name Index Format" *)
+      DWARF 5 specification, section 6.1.1 "Lookup by Name". *)
 
   val parse_all_entries_for_name :
     Object.Buffer.t ->
@@ -2404,8 +2536,7 @@ module DebugNames : sig
   (** Find all entries (DIEs) that match a given name.
 
       This is the core name lookup function that uses the hash table to
-      efficiently locate all DIEs (Debug Information Entries) with the specified
-      name.
+      efficiently locate all DIEs with the specified name.
 
       @param buffer Object buffer containing DWARF data
       @param debug_names Parsed debug_names section
@@ -2716,18 +2847,22 @@ end
 
 (** String table parsing for .debug_str section.
 
-    This module provides support for parsing DWARF string tables, which contain
+    Provides support for parsing DWARF string tables, which contain
     null-terminated strings referenced by other sections via offsets. The string
-    table centralizes string storage and enables efficient string sharing across
-    debug information entries. *)
+    table centralises string storage and enables efficient string sharing across
+    debug information entries.
+
+    DWARF 5 specification, section 7.5 "Format of Debugging Information". *)
 module DebugStr : sig
   type string_entry = {
     offset : int;  (** Offset of string in debug_str section *)
     length : int;  (** Length of string excluding null terminator *)
     content : string;  (** The actual string content *)
   }
-  (** Individual string entry with location and content information *)
+  (** Individual string entry with location and content information. *)
 
+  (* TODO Can we load this on-demand? All the strings in the section will
+     be very large! *)
   type t = {
     entries : string_entry array;  (** Array of all strings in the section *)
     total_size : int;  (** Total size of the debug_str section *)
@@ -2739,7 +2874,7 @@ module DebugStr : sig
 
       @param buffer Object buffer containing the DWARF data
       @return Optional parsed string table, None if section not found
-      @raise Failure if section format is invalid *)
+      @raise Parse_error if section format is invalid *)
 end
 
 (** Line string table parsing for .debug_line_str section.
@@ -2747,14 +2882,16 @@ end
     This module provides support for parsing DWARF line string tables, which
     contain null-terminated strings specifically used by the line number
     program. These strings are typically file names and directory paths
-    referenced by line table entries via DW_FORM_line_strp form. *)
+    referenced by line table entries via DW_FORM_line_strp form.
+
+    DWARF 5 specification, section 6.2 "Line Number Information". *)
 module DebugLineStr : sig
   type string_entry = {
     offset : int;  (** Offset of string in debug_line_str section *)
     length : int;  (** Length of string excluding null terminator *)
     content : string;  (** The actual string content *)
   }
-  (** Individual string entry with location and content information *)
+  (** Individual string entry with location and content information. *)
 
   type t = {
     entries : string_entry array;  (** Array of all strings in the section *)
@@ -2767,17 +2904,21 @@ module DebugLineStr : sig
 
       @param buffer Object buffer containing the DWARF data
       @return Optional parsed line string table, None if section not found
-      @raise Failure if section format is invalid *)
+      @raise Parse_error if section format is invalid *)
 end
 
 val create : Object.Buffer.t -> t
 (** Create a new DWARF context from an object file *)
+(* TODO Explain why we have this type? It seems ill founded. *)
 
 val parse_compile_units : t -> CompileUnit.t Seq.t
 (** Parse all compile units from the [Debug_info] section lazily *)
 
+(* TODO This function and the two in DebugAbbrev seem like duplication? *)
 val get_abbrev_table : t -> size_t -> t * (u64, abbrev) Hashtbl.t
-(** Retrieve the abbreviation table at offset [size_t]. *)
+(** Retrieve the abbreviation table at offset [size_t].
+
+    @raise Parse_error if the abbreviation table is malformed. *)
 
 (** Abbreviation table parsing for .debug_abbrev section.
 
@@ -2788,10 +2929,14 @@ module DebugAbbrev : sig
   val parse :
     Object.Buffer.t -> Unsigned.UInt32.t -> (u64, abbrev) Hashtbl.t option
   (** Parse the abbreviation table at the given offset within the .debug_abbrev
-      section. Returns [None] if the section is not found. *)
+      section. Returns [None] if the section is not found.
+
+      @raise Parse_error if the abbreviation table is malformed. *)
 
   val parse_all : Object.Buffer.t -> (u64, abbrev) Hashtbl.t list
-  (** Parse all abbreviation tables from the .debug_abbrev section. *)
+  (** Parse all abbreviation tables from the .debug_abbrev section.
+
+      @raise Parse_error if an abbreviation table is malformed. *)
 end
 
 (** String Offset Tables parsing for .debug_str_offsets section.
@@ -2808,16 +2953,11 @@ end
     - More efficient linking when combining object files
     - Improved compression of debug information
 
-    Section structure:
-    - Header with length, version, and alignment padding
-    - Array of 32-bit offsets into the .debug_str section
-    - Each offset can be resolved to retrieve actual string content
-
     The offset table is typically referenced via DW_FORM_strx* forms in
     attribute values, where the form value is an index into this table rather
     than a direct offset into .debug_str.
 
-    Reference: DWARF 5 specification, section 7.26 "String Offsets Table" *)
+    DWARF 5 specification, section 7.26 "String Offsets Table". *)
 module DebugStrOffsets : sig
   type header = {
     format : dwarf_format;
@@ -2858,7 +2998,7 @@ module DebugStrOffsets : sig
 
       @param cursor Buffer cursor positioned at start of contribution header
       @return Parsed header structure
-      @raise Failure if header format is invalid or unsupported version *)
+      @raise Parse_error if header format is invalid or unsupported version *)
 
   val parse_offsets :
     Object.Buffer.cursor ->
@@ -2888,7 +3028,7 @@ module DebugStrOffsets : sig
       @param buffer Object buffer containing the DWARF data
       @param section_offset Offset to start of .debug_str_offsets section
       @return Complete parsed string offsets table
-      @raise Failure if section format is invalid
+      @raise Parse_error if section format is invalid
 
       Usage example:
       {@ocaml skip[
@@ -2896,8 +3036,8 @@ module DebugStrOffsets : sig
         let first_string = str_offsets.offsets.(0).resolved_string
       ]}
 
-      Performance note: String resolution is performed eagerly during parsing
-      for better cache locality and simpler API usage. *)
+      Performance note: String resolution is performed eagerly during parsing.
+  *)
 end
 
 (** Address table parsing for .debug_addr section.
@@ -2916,17 +3056,12 @@ end
     - More efficient relocation processing
     - Enhanced support for split DWARF packages
 
-    Section structure:
-    - Header with length, version, address size, and segment size
-    - Array of addresses (size determined by address_size field)
-    - Each address can be resolved using an index and optional addr_base offset
-
     This indirection is particularly valuable for position-independent code and
     shared libraries where actual addresses are determined at load time rather
     than link time. The address table allows the debug information to remain
     compact while supporting full address resolution.
 
-    Reference: DWARF 5 specification, section 7.27 "Address Table" *)
+    DWARF 5 specification, section 7.27 "Address Table". *)
 module DebugAddr : sig
   type header = {
     format : dwarf_format;
@@ -2971,7 +3106,7 @@ module DebugAddr : sig
 
       @param cursor Buffer cursor positioned at start of contribution header
       @return Parsed header structure with size information
-      @raise Failure if header format is invalid or unsupported version *)
+      @raise Parse_error if header format is invalid or unsupported version *)
 
   val parse_entries : Object.Buffer.cursor -> header -> entry array
   (** Parse the address entries following the header.
@@ -2983,7 +3118,8 @@ module DebugAddr : sig
       @param cursor Buffer cursor positioned after header
       @param header Previously parsed header for size calculation
       @return Array of address entries
-      @raise Failure if entries cannot be parsed or address sizes are invalid *)
+      @raise Parse_error
+        if entries cannot be parsed or address sizes are invalid *)
 
   val parse : Object.Buffer.t -> u64 -> t
   (** Parse a complete debug_addr contribution from buffer.
@@ -2995,7 +3131,7 @@ module DebugAddr : sig
       @param buffer Object buffer containing the DWARF data
       @param section_offset Offset to start of .debug_addr section
       @return Complete parsed address table
-      @raise Failure if section format is invalid
+      @raise Parse_error if section format is invalid
 
       Usage example:
       {@ocaml skip[
@@ -3005,7 +3141,7 @@ module DebugAddr : sig
 
       Performance note: This function parses the entire contribution eagerly.
       For large address tables, consider lazy parsing if only specific indices
-      are needed.
+      are needed. TODO Do we have a lazy parsing option in the library?
 
       Architecture note: The [address_size] field determines the width of
       addresses read from the section. This allows the same DWARF data to
@@ -3036,7 +3172,7 @@ end
     This is essential for optimized code where functions may be split across
     multiple memory regions.
 
-    Reference: DWARF 5 specification, section 6.1.2 "Address Range Table" *)
+    DWARF 5 specification, section 6.1.2 "Lookup by Address". *)
 module DebugAranges : sig
   type header = {
     format : dwarf_format;
@@ -3051,7 +3187,9 @@ module DebugAranges : sig
   (** Header structure for an address range table.
 
       Each compilation unit can have its own address range table describing the
-      non-contiguous address ranges of code belonging to that unit. *)
+      non-contiguous address ranges of code belonging to that unit.
+
+      DWARF 5 specification, section 7.21 "Address Range Table". *)
 
   type address_range = {
     start_address : u64;  (** Beginning of address range *)
@@ -3061,7 +3199,9 @@ module DebugAranges : sig
 
       Represents a contiguous range of addresses belonging to a compilation
       unit. The range covers addresses from [start_address] to
-      [start_address + length - 1]. *)
+      [start_address + length - 1].
+
+      DWARF 5 specification, section 7.21 "Address Range Table". *)
 
   type aranges_set = {
     header : header;  (** Header information *)
@@ -3070,13 +3210,19 @@ module DebugAranges : sig
   (** Complete address range table for one compilation unit.
 
       Contains header information identifying the compilation unit and a list of
-      all address ranges belonging to that unit. *)
+      all address ranges belonging to that unit.
+
+      DWARF 5 specification, section 7.21 "Address Range Table". *)
 
   val parse_header : Object.Buffer.cursor -> header
-  (** Parse the header of an aranges set. *)
+  (** Parse the header of an aranges set.
+
+      @raise Parse_error if the length field uses a reserved value. *)
 
   val parse_entries : Object.Buffer.cursor -> header -> address_range list
-  (** Parse address range entries following an aranges header. *)
+  (** Parse address range entries following an aranges header.
+
+      @raise Parse_error if an unsupported address size is encountered. *)
 
   val parse : Object.Buffer.t -> aranges_set option
   (** Parse an address range table from buffer.
@@ -3085,8 +3231,7 @@ module DebugAranges : sig
       (__debug_aranges) section naming conventions.
 
       @param buffer Object buffer containing the DWARF data
-      @return Optional parsed address range table, None if section not found
-      @raise Failure if section format is invalid *)
+      @return Optional parsed address range table, None if section not found *)
 end
 
 (** Location list parsing for .debug_loclists section.
@@ -3107,7 +3252,7 @@ end
     location expressions. This replaces the older .debug_loc section format used
     in DWARF 4 and earlier.
 
-    Reference: DWARF 5 specification, section 7.7.3 "Location Lists" *)
+    DWARF 5 specification, section 7.7.3 "Location Lists". *)
 module DebugLoclists : sig
   type header = {
     format : dwarf_format;
@@ -3120,7 +3265,9 @@ module DebugLoclists : sig
   (** Header structure for a location lists contribution.
 
       The location lists section contains location descriptions that are
-      referenced by debug information entries via DW_AT_location attributes. *)
+      referenced by debug information entries via DW_AT_location attributes.
+
+      DWARF 5 specification, section 7.29 "Location List Table". *)
 
   type location_entry =
     | LLE_end_of_list
@@ -3136,6 +3283,8 @@ module DebugLoclists : sig
             specification, section 7.7.3. Entries that describe a location carry
             a DWARF expression in [expr]. *)
 
+  (* TODO Performance / memory usage, how large is this list? Should we
+     parse this lazily? Also why do we need location_list and loclists_section? *)
   type location_list = { entries : location_entry list }
   (** A decoded location list. *)
 
@@ -3143,14 +3292,19 @@ module DebugLoclists : sig
   (** Parsed .debug_loclists section. *)
 
   val parse_header : Object.Buffer.cursor -> header
-  (** Parse the header of a loclists contribution. *)
+  (** Parse the header of a loclists contribution.
+
+      @raise Parse_error if the length field uses a reserved value. *)
 
   val parse_offset_table : Object.Buffer.cursor -> header -> u64 array
   (** Parse the offset table following a loclists header. *)
 
   val parse_location_list : Object.Buffer.cursor -> u8 -> location_list
   (** [parse_location_list cursor address_size] reads a single location list
-      from [cursor] until a DW_LLE_end_of_list. *)
+      from [cursor] until a DW_LLE_end_of_list.
+
+      @raise Parse_error if an unknown location list entry kind is encountered.
+  *)
 
   val parse : Object.Buffer.t -> loclists_section option
   (** Parse the .debug_loclists section from a buffer. Convenience function
@@ -3161,7 +3315,10 @@ module DebugLoclists : sig
     Object.Buffer.t -> u64 -> u8 -> location_list option
   (** [resolve_location_list buffer offset address_size] parses a single
       location list starting at [offset] bytes from the start of the
-      .debug_loclists section. Returns [None] if the section is absent. *)
+      .debug_loclists section. Returns [None] if the section is absent.
+
+      @raise Parse_error if an unknown location list entry kind is encountered.
+  *)
 end
 
 (** Parser for the .debug_rnglists section (DWARF 5).
@@ -3170,8 +3327,8 @@ end
     information entries via [DW_AT_ranges] attributes. It replaces .debug_ranges
     from DWARF 4.
 
-    Reference: DWARF 5 specification, section 2.17.3 "Non-Contiguous Address
-    Ranges". *)
+    DWARF 5 specification, section 2.17.3 "Non-Contiguous Address Ranges". DWARF
+    5 specification, section 7.28 "Range List Table". *)
 module DebugRnglists : sig
   type header = {
     format : dwarf_format;
@@ -3181,7 +3338,7 @@ module DebugRnglists : sig
     segment_size : u8;
     offset_entry_count : u32;
   }
-  (** Header for a range lists contribution. *)
+  (** Header for a range lists contribution.*)
 
   type range_entry =
     | RLE_end_of_list
@@ -3195,6 +3352,7 @@ module DebugRnglists : sig
         (** Range list entry kinds (DW_RLE) as defined in DWARF 5 specification,
             section 7.25. *)
 
+  (* TODO Similar to the question above, why do we need both types in the API? *)
   type range_list = { entries : range_entry list }
   (** A decoded range list. *)
 
@@ -3202,14 +3360,18 @@ module DebugRnglists : sig
   (** Parsed .debug_rnglists section. *)
 
   val parse_header : Object.Buffer.cursor -> header
-  (** Parse the header of a rnglists contribution. *)
+  (** Parse the header of a rnglists contribution.
+
+      @raise Parse_error if the length field uses a reserved value. *)
 
   val parse_offset_table : Object.Buffer.cursor -> header -> u64 array
   (** Parse the offset table following a rnglists header. *)
 
   val parse_range_list : Object.Buffer.cursor -> u8 -> range_list
   (** [parse_range_list cursor address_size] reads a single range list from
-      [cursor] until a DW_RLE_end_of_list entry. *)
+      [cursor] until a DW_RLE_end_of_list entry.
+
+      @raise Parse_error if an unknown range list entry kind is encountered. *)
 
   val parse : Object.Buffer.t -> rnglists_section option
   (** Parse the .debug_rnglists section from a buffer. Convenience function
@@ -3219,7 +3381,9 @@ module DebugRnglists : sig
   val resolve_range_list : Object.Buffer.t -> u64 -> u8 -> range_list option
   (** [resolve_range_list buffer offset address_size] parses a single range list
       starting at [offset] bytes from the start of the .debug_rnglists section.
-      Returns [None] if the section is absent. *)
+      Returns [None] if the section is absent.
+
+      @raise Parse_error if an unknown range list entry kind is encountered. *)
 end
 
 (** Split DWARF support for .dwo files and .dwp packages.
@@ -3235,7 +3399,7 @@ end
     format aggregates multiple .dwo files into a single archive with index
     tables for efficient lookup.
 
-    Reference: DWARF 5 specification, section 7.3.2 "Split DWARF" *)
+    DWARF 5 specification, section 7.3.2 "Split DWARF Object Files". *)
 module SplitDwarf : sig
   type dwo_context = {
     dwo_buffer : Object.Buffer.t;
@@ -3263,7 +3427,8 @@ module SplitDwarf : sig
 
   val dwo_abbrev_table : dwo_context -> u64 -> (u64, abbrev) Hashtbl.t
   (** Parse the abbreviation table from .debug_abbrev.dwo at the given offset.
-  *)
+
+      @raise Parse_error if the .dwo abbreviation table is malformed. *)
 
   val dwo_compile_units : dwo_context -> CompileUnit.t Seq.t
   (** Lazily parse all compilation units from .debug_info.dwo. *)
@@ -3285,14 +3450,17 @@ module SplitDwarf : sig
   val dwo_root_die : dwo_context -> CompileUnit.t -> u64 -> DIE.t option
   (** Parse and fix up the root DIE of a .dwo compilation unit. The [u64]
       parameter is the [addr_base] from the skeleton unit's [DW_AT_addr_base]
-      attribute. *)
+      attribute.
+
+      @raise Parse_error if the .dwo unit is malformed. *)
 
   (** DWARF package section identifiers.
 
       These identify the section types within a .dwp package file's contribution
       index.
 
-      DWARF 5 specification, Table 7.3.5.3. *)
+      DWARF 5 specification, Table 7.1 "DWARF package file section identifier
+      encodings". *)
   type dw_sect =
     | DW_SECT_INFO
     | DW_SECT_ABBREV
@@ -3311,14 +3479,18 @@ module SplitDwarf : sig
         (** Section contributions as (section, offset, size) *)
   }
   (** An entry from the .dwp index mapping a DWO id to its section contributions
-      within the package. *)
+      within the package.
+
+      DWARF 5 specification, section 7.3.5 "DWARF Package Files". *)
 
   type unit_index = {
     version : int;  (** Index table version *)
     unit_count : int;  (** Number of units in the index *)
     entries : index_entry array;  (** Index entries for each unit *)
   }
-  (** A parsed .dwp unit index (.debug_cu_index or .debug_tu_index). *)
+  (** A parsed .dwp unit index (.debug_cu_index or .debug_tu_index).
+
+      DWARF 5 specification, section 7.3.5 "DWARF Package Files". *)
 
   type dwp_context = {
     dwp_buffer : Object.Buffer.t;  (** Buffer containing the .dwp file *)
@@ -3343,6 +3515,8 @@ module SplitDwarf : sig
   (** Create a [dwo_context] from a .dwp package entry, populating the
       contributions list from the index entry. *)
 end
+
+(* TODO Move this into its own mli/ml files, it isn't part of the core DWARF support. *)
 
 (** CompactUnwind module for Apple's Compact Unwinding Format.
 
@@ -3380,7 +3554,7 @@ end
     with abstract register numbers.
 
     For architecture-specific register name mappings, see the Dwarf_arch module.
-*)
+    TODO Missing the DWARF reference for this module, IF one exists. *)
 module Expression : sig
   (** Architecture-independent register - just a number. Architecture modules
       map these to names. *)
@@ -3397,7 +3571,10 @@ module Expression : sig
     bit_offset : int option;
     location : value option;
   }
-  (** Location pieces for composite locations *)
+  (** Location pieces for composite locations.
+
+      DWARF 5 specification, section 2.6.1.2 "Composite Location Descriptions".
+  *)
 
   (** Results from evaluation - used for callback pattern *)
   type evaluation_result =
@@ -3437,42 +3614,58 @@ module Expression : sig
   (** Evaluate the expression until completion or until external data is needed.
 
       @param state Current evaluation state
-      @return Evaluation result indicating completion or required data *)
+      @return Evaluation result indicating completion or required data
+
+      @raise Parse_error
+        if the expression contains an invalid or unsupported operation. *)
 
   val resume_with_register : evaluation_state -> value -> evaluation_result
   (** Resume evaluation after providing a register value.
 
       @param state Current evaluation state
       @param value The register value (Generic or Address)
-      @return Next evaluation result *)
+      @return Next evaluation result
+
+      @raise Parse_error if the evaluator is not waiting for a register value.
+  *)
 
   val resume_with_memory : evaluation_state -> string -> evaluation_result
   (** Resume evaluation after providing memory contents.
 
       @param state Current evaluation state
       @param bytes The memory contents (as string)
-      @return Next evaluation result *)
+      @return Next evaluation result
+
+      @raise Parse_error
+        if the evaluator is not waiting for memory, or the read size is
+        unsupported. *)
 
   val resume_with_frame_base : evaluation_state -> int64 -> evaluation_result
   (** Resume evaluation after providing frame base address.
 
       @param state Current evaluation state
       @param address The frame base address
-      @return Next evaluation result *)
+      @return Next evaluation result
+
+      @raise Parse_error if the evaluator is not waiting for a frame base. *)
 
   val resume_with_cfa : evaluation_state -> int64 -> evaluation_result
   (** Resume evaluation after providing canonical frame address.
 
       @param state Current evaluation state
       @param address The CFA
-      @return Next evaluation result *)
+      @return Next evaluation result
+
+      @raise Parse_error if the evaluator is not waiting for a CFA. *)
 
   val resume_with_tls_address : evaluation_state -> int64 -> evaluation_result
   (** Resume evaluation after providing a TLS address.
 
       @param state Current evaluation state
       @param address The resolved TLS address
-      @return Next evaluation result *)
+      @return Next evaluation result
+
+      @raise Parse_error if the evaluator is not waiting for a TLS address. *)
 
   val resume_with_object_address :
     evaluation_state -> int64 -> evaluation_result
@@ -3480,7 +3673,10 @@ module Expression : sig
 
       @param state Current evaluation state
       @param address The object address
-      @return Next evaluation result *)
+      @return Next evaluation result
+
+      @raise Parse_error if the evaluator is not waiting for an object address.
+  *)
 
   val resume_with_indexed_address :
     evaluation_state -> int64 -> evaluation_result
@@ -3489,7 +3685,10 @@ module Expression : sig
 
       @param state Current evaluation state
       @param value The resolved address or constant value
-      @return Next evaluation result *)
+      @return Next evaluation result
+
+      @raise Parse_error if the evaluator is not waiting for an indexed address.
+  *)
 
   val resume_with_sub_expression :
     evaluation_state -> value list -> evaluation_result
@@ -3497,14 +3696,19 @@ module Expression : sig
 
       @param state Current evaluation state
       @param values The sub-expression result stack
-      @return Next evaluation result *)
+      @return Next evaluation result
+
+      @raise Parse_error if the evaluator is not waiting for a sub-expression.
+  *)
 
   val resume_with_entry_value : evaluation_state -> value -> evaluation_result
   (** Resume evaluation after computing an entry value.
 
       @param state Current evaluation state
       @param value The entry value result
-      @return Next evaluation result *)
+      @return Next evaluation result
+
+      @raise Parse_error if the evaluator is not waiting for an entry value. *)
 
   val result : evaluation_state -> value list
   (** Get the final result stack after Complete evaluation.

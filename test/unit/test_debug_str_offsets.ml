@@ -194,8 +194,13 @@ let test_debug_str_offsets_invalid_version () =
 
   (* Should raise an exception for invalid version *)
   Alcotest.check_raises "invalid_version_exception"
-    (Failure "Expected DWARF version 5, got 4") (fun () ->
-      ignore (Dwarf.DebugStrOffsets.parse_header cursor));
+    (Dwarf.Parse_error
+       {
+         section = None;
+         offset = None;
+         message = "Expected DWARF version 5, got 4";
+       })
+    (fun () -> ignore (Dwarf.DebugStrOffsets.parse_header cursor));
 
   Sys.remove filename
 

@@ -1,6 +1,6 @@
 open Dwarf_types
 
-type dwarf_section =
+type dwarf_section = Dwarf_types.dwarf_section =
   | Debug_info
   | Debug_abbrev
   | Debug_aranges
@@ -30,6 +30,18 @@ type dwarf_section =
   | Debug_macinfo
   | Debug_cu_index
   | Debug_tu_index
+
+(* Re-export the shared parse error (defined in Dwarf_types) so that
+   [Dwarf.Parse_error] remains the public name; it is the very same exception
+   raised by the reader, writers and helper modules. [fail] comes from the same
+   place via [open Dwarf_types]. *)
+type parse_error = Dwarf_types.parse_error = {
+  section : dwarf_section option;
+  offset : int option;
+  message : string;
+}
+
+exception Parse_error = Dwarf_types.Parse_error
 
 (** Convert Mach-O cpu_type to architecture string *)
 let string_of_cpu_type = function
@@ -106,7 +118,7 @@ let unit_type_of_u8 u =
   | 0x06 -> DW_UT_split_type
   | 0x80 -> DW_UT_lo_user
   | 0xff -> DW_UT_hi_user
-  | n -> failwith (Printf.sprintf "Unknown unit type: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown unit type: 0x%02x" n)
 
 let int_of_unit_type = function
   | DW_UT_compile -> 0x01
@@ -150,7 +162,7 @@ let parse_initial_length (cur : Object.Buffer.cursor) : dwarf_format * u64 =
     let actual_length = Object.Buffer.Read.u64 cur in
     (DWARF64, actual_length)
   else if first_val >= 0xfffffff0 then
-    failwith
+    fail
       (Printf.sprintf
          "Reserved initial_length value 0x%08x in range 0xfffffff0-0xfffffffe"
          first_val)
@@ -264,7 +276,7 @@ let line_number_opcode = function
   | 0x0a -> DW_LNS_set_prologue_end
   | 0x0b -> DW_LNS_set_epilogue_begin
   | 0x0c -> DW_LNS_set_isa
-  | n -> failwith (Printf.sprintf "Unknown line_number_opcode: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown line_number_opcode: 0x%02x" n)
 
 let int_of_line_number_opcode = function
   | DW_LNS_copy -> 0x01
@@ -307,8 +319,7 @@ let line_number_extended_opcode = function
   | 0x04 -> DW_LNE_set_discriminator
   | 0x80 -> DW_LNE_lo_user
   | 0xff -> DW_LNE_hi_user
-  | n ->
-      failwith (Printf.sprintf "Unknown line_number_extended_opcode: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown line_number_extended_opcode: 0x%02x" n)
 
 let int_of_line_number_extended_opcode = function
   | DW_LNE_end_sequence -> 0x01
@@ -341,7 +352,7 @@ let line_number_header_entry = function
   | 0x5 -> DW_LNCT_MD5
   | 0x2000 -> DW_LNCT_lo_user
   | 0x3fff -> DW_LNCT_hi_user
-  | n -> failwith (Printf.sprintf "Unknown line_number_header_entry: 0x%04x" n)
+  | n -> fail (Printf.sprintf "Unknown line_number_header_entry: 0x%04x" n)
 
 let int_of_line_number_header_entry = function
   | DW_LNCT_path -> 0x1
@@ -377,7 +388,7 @@ type macro_info_entry_type =
   | DW_MACRO_lo_user
   | DW_MACRO_hi_user
 
-let macro_info_entry_type_of_u8 u =
+let macro_info_entry_type u =
   match Unsigned.UInt8.to_int u with
   | 0x01 -> DW_MACRO_define
   | 0x02 -> DW_MACRO_undef
@@ -393,7 +404,7 @@ let macro_info_entry_type_of_u8 u =
   | 0x0c -> DW_MACRO_undef_strx
   | 0xe0 -> DW_MACRO_lo_user
   | 0xff -> DW_MACRO_hi_user
-  | n -> failwith (Printf.sprintf "Unknown macro_info_entry_type: 0x%02x" n)
+  | n -> fail (Printf.sprintf "Unknown macro_info_entry_type: 0x%02x" n)
 
 let u8_of_macro_info_entry_type v =
   Unsigned.UInt8.of_int
@@ -469,7 +480,7 @@ module DebugMacro = struct
     let entry_type_code = Object.Buffer.Read.u8 cur in
     if Unsigned.UInt8.to_int entry_type_code = 0 then None
     else
-      let entry_type = macro_info_entry_type_of_u8 entry_type_code in
+      let entry_type = macro_info_entry_type entry_type_code in
       let line_number, string_offset, string_value, file_index =
         match entry_type with
         | DW_MACRO_define | DW_MACRO_undef ->
@@ -559,7 +570,7 @@ module DebugMacinfo = struct
     | 0x03 -> DW_MACINFO_start_file
     | 0x04 -> DW_MACINFO_end_file
     | 0xff -> DW_MACINFO_vendor_ext
-    | n -> failwith (Printf.sprintf "Unknown macinfo_type: 0x%02x" n)
+    | n -> fail (Printf.sprintf "Unknown macinfo_type: 0x%02x" n)
 
   let string_of_macinfo_type = function
     | DW_MACINFO_define -> "DW_MACINFO_define"
@@ -1092,7 +1103,7 @@ let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) :
         in
         let operation = { opcode; operands; operand_string } in
         parse_ops next_pos (operation :: acc)
-      with Failure _ ->
+      with Failure _ | Parse_error _ ->
         (* Unknown opcode, skip *)
         parse_ops (pos + 1) acc
   in
@@ -1192,7 +1203,7 @@ module Expression = struct
   (** Pop a value from the stack *)
   let pop state =
     match state.stack with
-    | [] -> failwith "Stack underflow in DWARF expression evaluation"
+    | [] -> fail "Stack underflow in DWARF expression evaluation"
     | v :: rest ->
         state.stack <- rest;
         v
@@ -1200,7 +1211,7 @@ module Expression = struct
   (** Convert value to int64 *)
   let to_int64 = function
     | Generic v | Address v -> v
-    | ImplicitValue _ -> failwith "Cannot convert ImplicitValue to int64"
+    | ImplicitValue _ -> fail "Cannot convert ImplicitValue to int64"
 
   (** Apply address mask to a value *)
   let mask_address state value = Int64.logand value state.addr_mask
@@ -1230,7 +1241,7 @@ module Expression = struct
       let b = Char.code state.bytecode.[state.pc] in
       state.pc <- state.pc + 1;
       b)
-    else failwith "Unexpected end of expression bytecode"
+    else fail "Unexpected end of expression bytecode"
 
   (** Read 2 bytes (little-endian) from bytecode *)
   let read_u16 state =
@@ -1260,7 +1271,7 @@ module Expression = struct
   let read_u64 state =
     let ofs = state.pc in
     if ofs + 8 > String.length state.bytecode then
-      failwith "Unexpected end of expression bytecode";
+      fail "Unexpected end of expression bytecode";
     state.pc <- ofs + 8;
     int64_of_le_bytes state.bytecode ofs 8
 
@@ -1297,7 +1308,7 @@ module Expression = struct
               in
               let ofs = state.pc in
               if ofs + addr_size > String.length state.bytecode then
-                failwith "Unexpected end of expression bytecode";
+                fail "Unexpected end of expression bytecode";
               state.pc <- ofs + addr_size;
               let v = int64_of_le_bytes state.bytecode ofs addr_size in
               push state (Address v);
@@ -1351,7 +1362,7 @@ module Expression = struct
               | v :: _ ->
                   push state v;
                   evaluate_step state
-              | [] -> failwith "DW_OP_dup on empty stack")
+              | [] -> fail "DW_OP_dup on empty stack")
           | DW_OP_drop ->
               let _ = pop state in
               evaluate_step state
@@ -1359,7 +1370,7 @@ module Expression = struct
               let idx = read_u8 state in
               let rec nth l n =
                 match l with
-                | [] -> failwith "DW_OP_pick index out of range"
+                | [] -> fail "DW_OP_pick index out of range"
                 | x :: _ when n = 0 -> x
                 | _ :: rest -> nth rest (n - 1)
               in
@@ -1371,19 +1382,19 @@ module Expression = struct
               | _ :: v :: _ ->
                   push state v;
                   evaluate_step state
-              | _ -> failwith "DW_OP_over requires at least 2 stack items")
+              | _ -> fail "DW_OP_over requires at least 2 stack items")
           | DW_OP_swap -> (
               match state.stack with
               | a :: b :: rest ->
                   state.stack <- b :: a :: rest;
                   evaluate_step state
-              | _ -> failwith "DW_OP_swap requires at least 2 stack items")
+              | _ -> fail "DW_OP_swap requires at least 2 stack items")
           | DW_OP_rot -> (
               match state.stack with
               | a :: b :: c :: rest ->
                   state.stack <- c :: a :: b :: rest;
                   evaluate_step state
-              | _ -> failwith "DW_OP_rot requires at least 3 stack items")
+              | _ -> fail "DW_OP_rot requires at least 3 stack items")
           (* Arithmetic operations *)
           | DW_OP_abs ->
               let v = pop state |> to_int64 |> sign_extend state in
@@ -1397,7 +1408,7 @@ module Expression = struct
           | DW_OP_div ->
               let b = pop state |> to_int64 |> sign_extend state in
               let a = pop state |> to_int64 |> sign_extend state in
-              if b = 0L then failwith "Division by zero in DWARF expression"
+              if b = 0L then fail "Division by zero in DWARF expression"
               else (
                 push state (Generic (Int64.div a b));
                 evaluate_step state)
@@ -1410,7 +1421,7 @@ module Expression = struct
           | DW_OP_mod ->
               let b = pop state |> to_int64 in
               let a = pop state |> to_int64 in
-              if b = 0L then failwith "Modulo by zero in DWARF expression"
+              if b = 0L then fail "Modulo by zero in DWARF expression"
               else (
                 push state (Generic (Int64.unsigned_rem a b));
                 evaluate_step state)
@@ -1504,7 +1515,7 @@ module Expression = struct
               let offset = read_s16 state in
               let new_pc = state.pc + offset in
               if new_pc < 0 || new_pc > String.length state.bytecode then
-                failwith "DW_OP_skip: target out of bounds";
+                fail "DW_OP_skip: target out of bounds";
               state.pc <- new_pc;
               evaluate_step state
           | DW_OP_bra ->
@@ -1513,7 +1524,7 @@ module Expression = struct
               if v <> 0L then (
                 let new_pc = state.pc + offset in
                 if new_pc < 0 || new_pc > String.length state.bytecode then
-                  failwith "DW_OP_bra: target out of bounds";
+                  fail "DW_OP_bra: target out of bounds";
                 state.pc <- new_pc);
               evaluate_step state
           (* Memory access *)
@@ -1529,7 +1540,7 @@ module Expression = struct
                 Unsigned.UInt8.to_int state.encoding.address_size
               in
               if size > addr_size then
-                failwith
+                fail
                   (Printf.sprintf
                      "DW_OP_deref_size: size %d exceeds address size %d" size
                      addr_size);
@@ -1585,7 +1596,7 @@ module Expression = struct
           | DW_OP_implicit_value ->
               let len = read_uleb128 state in
               if state.pc + len > String.length state.bytecode then
-                failwith "DW_OP_implicit_value: block extends past bytecode";
+                fail "DW_OP_implicit_value: block extends past bytecode";
               let bytes = String.sub state.bytecode state.pc len in
               state.pc <- state.pc + len;
               push state (ImplicitValue bytes);
@@ -1653,7 +1664,7 @@ module Expression = struct
           | DW_OP_entry_value ->
               let len = read_uleb128 state in
               if state.pc + len > String.length state.bytecode then
-                failwith "DW_OP_entry_value: block extends past bytecode";
+                fail "DW_OP_entry_value: block extends past bytecode";
               let bytecode = String.sub state.bytecode state.pc len in
               state.pc <- state.pc + len;
               state.waiting_for <- Some (RequiresEntryValue { bytecode });
@@ -1664,7 +1675,7 @@ module Expression = struct
               in
               let ofs = state.pc in
               if ofs + ref_size > String.length state.bytecode then
-                failwith "DW_OP_implicit_pointer: truncated";
+                fail "DW_OP_implicit_pointer: truncated";
               state.pc <- ofs + ref_size;
               let die_offset = int64_of_le_bytes state.bytecode ofs ref_size in
               let byte_offset = read_sleb128 state in
@@ -1682,17 +1693,17 @@ module Expression = struct
               in
               let ofs = state.pc in
               if ofs + addr_size > String.length state.bytecode then
-                failwith "DW_OP_GNU_variable_value: truncated";
+                fail "DW_OP_GNU_variable_value: truncated";
               state.pc <- ofs + addr_size;
               let offset = int64_of_le_bytes state.bytecode ofs addr_size in
               state.waiting_for <- Some (RequiresSubExpression { offset });
               RequiresSubExpression { offset }
           | _ ->
-              failwith
+              fail
                 (Printf.sprintf "Unimplemented operation: %s"
                    (string_of_operation_encoding opcode))
-      with Failure msg ->
-        failwith (Printf.sprintf "Expression evaluation error: %s" msg)
+      with Failure msg | Parse_error { message = msg; _ } ->
+        fail (Printf.sprintf "Expression evaluation error: %s" msg)
 
   (** Start evaluation and run until we need external data or complete *)
   let evaluate state =
@@ -1715,9 +1726,7 @@ module Expression = struct
         push state final_value;
         state.waiting_for <- None;
         evaluate state
-    | _ ->
-        failwith
-          "resume_with_register called but not waiting for register value"
+    | _ -> fail "resume_with_register called but not waiting for register value"
 
   (** Resume evaluation after providing memory contents *)
   let resume_with_memory state bytes =
@@ -1726,12 +1735,12 @@ module Expression = struct
         let len = String.length bytes in
         (match len with
         | 1 | 2 | 4 | 8 -> ()
-        | _ -> failwith "Unsupported memory read size");
+        | _ -> fail "Unsupported memory read size");
         let value = int64_of_le_bytes bytes 0 len in
         push state (Generic value);
         state.waiting_for <- None;
         evaluate state
-    | _ -> failwith "resume_with_memory called but not waiting for memory read"
+    | _ -> fail "resume_with_memory called but not waiting for memory read"
 
   (** Resume evaluation after providing frame base *)
   let resume_with_frame_base state frame_base =
@@ -1742,8 +1751,7 @@ module Expression = struct
         push state (Generic result);
         state.waiting_for <- None;
         evaluate state
-    | _ ->
-        failwith "resume_with_frame_base called but not waiting for frame base"
+    | _ -> fail "resume_with_frame_base called but not waiting for frame base"
 
   (** Resume evaluation after providing CFA *)
   let resume_with_cfa state cfa =
@@ -1752,7 +1760,7 @@ module Expression = struct
         push state (Address cfa);
         state.waiting_for <- None;
         evaluate state
-    | _ -> failwith "resume_with_cfa called but not waiting for CFA"
+    | _ -> fail "resume_with_cfa called but not waiting for CFA"
 
   (** Resume evaluation after providing a TLS address *)
   let resume_with_tls_address state addr =
@@ -1761,9 +1769,7 @@ module Expression = struct
         push state (Address addr);
         state.waiting_for <- None;
         evaluate state
-    | _ ->
-        failwith
-          "resume_with_tls_address called but not waiting for TLS address"
+    | _ -> fail "resume_with_tls_address called but not waiting for TLS address"
 
   (** Resume evaluation after providing the object address *)
   let resume_with_object_address state addr =
@@ -1773,7 +1779,7 @@ module Expression = struct
         state.waiting_for <- None;
         evaluate state
     | _ ->
-        failwith
+        fail
           "resume_with_object_address called but not waiting for object address"
 
   (** Resume evaluation after providing an indexed address *)
@@ -1785,7 +1791,7 @@ module Expression = struct
         state.waiting_for <- None;
         evaluate state
     | _ ->
-        failwith
+        fail
           "resume_with_indexed_address called but not waiting for indexed \
            address"
 
@@ -1797,7 +1803,7 @@ module Expression = struct
         state.waiting_for <- None;
         evaluate state
     | _ ->
-        failwith
+        fail
           "resume_with_sub_expression called but not waiting for sub-expression"
 
   (** Resume evaluation after providing an entry value *)
@@ -1807,9 +1813,7 @@ module Expression = struct
         push state value;
         state.waiting_for <- None;
         evaluate state
-    | _ ->
-        failwith
-          "resume_with_entry_value called but not waiting for entry value"
+    | _ -> fail "resume_with_entry_value called but not waiting for entry value"
 
   (** Get the final result stack *)
   let result state = state.stack
@@ -1933,7 +1937,7 @@ let parse_abbrev_table (elf : Object_file.t) (offset : u32) :
   let section_offset =
     match find_debug_section_by_type elf.buffer Debug_abbrev with
     | Some (section_offset, _) -> Unsigned.UInt64.to_int section_offset
-    | None -> failwith "Could not find debug_abbrev section"
+    | None -> fail "Could not find debug_abbrev section"
   in
   let cur =
     cursor elf.buffer ~at:(section_offset + Unsigned.UInt32.to_int offset)
@@ -2534,7 +2538,7 @@ let rec skip_attribute_value (cur : Object.Buffer.cursor)
   | DW_FORM_addrx3 -> cur.position <- cur.position + 3
   | DW_FORM_addrx4 -> cur.position <- cur.position + 4
   | DW_FORM_unknown n ->
-      failwith (Printf.sprintf "skip_attribute_value: unknown form 0x%02x" n)
+      fail (Printf.sprintf "skip_attribute_value: unknown form 0x%02x" n)
   | DW_FORM_GNU_addr_index ->
       let _ = Object.Buffer.Read.uleb128 cur in
       ()
@@ -2777,7 +2781,7 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
       let address_size = Object.Buffer.Read.u8 cur in
       (DW_UT_compile, address_size, debug_abbrev_offset)
     else
-      failwith
+      fail
         (Printf.sprintf "Unsupported DWARF version: %d (only 4 and 5 supported)"
            version_int)
   in
@@ -2785,7 +2789,7 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
   (* Validate address size *)
   let addr_int = Unsigned.UInt8.to_int address_size in
   if addr_int <> 4 && addr_int <> 8 then
-    failwith (Printf.sprintf "Invalid address size: %d" addr_int);
+    fail (Printf.sprintf "Invalid address size: %d" addr_int);
 
   (* Parse extra fields based on unit type (DWARF 5 only) *)
   let type_signature, type_offset, dwo_id =
@@ -2997,7 +3001,7 @@ module DebugLine = struct
     let version = Object.Buffer.Read.u16 cur in
     let version_int = Unsigned.UInt16.to_int version in
     if version_int <> 4 && version_int <> 5 then
-      failwith
+      fail
         (Printf.sprintf
            "Unsupported line table version: %d (only 4 and 5 supported)"
            version_int);
@@ -3067,18 +3071,18 @@ module DebugLine = struct
               let offset = read_offset_for_format format cur in
               path_ref := resolve_line_strp_offset buffer offset
           | DW_LNCT_directory_index, _ ->
-              failwith
+              fail
                 "DW_LNCT_directory_index is not valid for directory entries \
                  (DWARF 5 spec)"
           | DW_LNCT_timestamp, _ ->
-              failwith
+              fail
                 "DW_LNCT_timestamp is not valid for directory entries (DWARF 5 \
                  spec)"
           | DW_LNCT_size, _ ->
-              failwith
+              fail
                 "DW_LNCT_size is not valid for directory entries (DWARF 5 spec)"
           | DW_LNCT_MD5, _ ->
-              failwith
+              fail
                 "DW_LNCT_MD5 is not valid for directory entries (DWARF 5 spec)"
           | DW_LNCT_lo_user, _ | DW_LNCT_hi_user, _ -> (
               match form with
@@ -3089,11 +3093,11 @@ module DebugLine = struct
               | DW_FORM_data8 -> ignore (Object.Buffer.Read.u64 cur)
               | DW_FORM_udata -> ignore (Object.Buffer.Read.uleb128 cur)
               | _ ->
-                  failwith
+                  fail
                     "Unsupported form for vendor-defined directory entry \
                      content type")
           | DW_LNCT_path, _form ->
-              failwith
+              fail
                 "Unsupported form for DW_LNCT_path in directory entry \
                  (expected DW_FORM_string or DW_FORM_line_strp)"
         done;
@@ -3207,11 +3211,11 @@ module DebugLine = struct
                   done
               | DW_FORM_udata -> ignore (Object.Buffer.Read.uleb128 cur)
               | _ ->
-                  failwith
+                  fail
                     "Unsupported form for vendor-defined file entry content \
                      type")
           | _content_type, _form ->
-              failwith
+              fail
                 "Invalid content_type/form combination for file entry (DWARF 5 \
                  spec)"
         done;
@@ -3434,7 +3438,7 @@ module DebugLine = struct
                 else if addr_bytes = 8 then (
                   address := Object.Buffer.Read.u64 cur;
                   bytes_read := !bytes_read + 8)
-                else failwith "Unsupported address size in DW_LNE_set_address";
+                else fail "Unsupported address size in DW_LNE_set_address";
                 next ()
             | 0x04 ->
                 (* DW_LNE_set_discriminator *)
@@ -3694,7 +3698,7 @@ module DebugTypes = struct
     let version = Object.Buffer.Read.u16 cur in
     let version_int = Unsigned.UInt16.to_int version in
     if version_int <> 4 then
-      failwith
+      fail
         (Printf.sprintf
            "Unsupported .debug_types version: %d (only 4 supported)" version_int);
     let debug_abbrev_offset = read_offset_for_format format cur in
@@ -3971,7 +3975,7 @@ module CallFrame = struct
       | DWARF64 -> Unsigned.UInt64.of_int64 0xffffffffffffffffL
     in
     if Unsigned.UInt64.compare cie_id expected_cie_id <> 0 then
-      failwith "Invalid CIE: cie_id is not the debug_frame CIE identifier";
+      fail "Invalid CIE: cie_id is not the debug_frame CIE identifier";
 
     let version = Object.Buffer.Read.u8 cur in
     let augmentation = parse_augmentation_string cur in
@@ -4574,7 +4578,7 @@ module EHFrameHdr = struct
         (* TODO Other common encodings to handle? *)
     | 0x1b -> DW_EH_PE_pcrel (* 0x10 | 0x0b = PC-relative signed 4-byte *)
     | 0x3b -> DW_EH_PE_datarel (* 0x30 | 0x0b = Data-relative signed 4-byte *)
-    | n -> failwith (Printf.sprintf "Unknown EH encoding: 0x%02x" n)
+    | n -> fail (Printf.sprintf "Unknown EH encoding: 0x%02x" n)
 
   let read_encoded_value cursor encoding _base_addr =
     match encoding with
@@ -4598,7 +4602,7 @@ module EHFrameHdr = struct
         let signed_offset = Unsigned.UInt32.to_int32 offset in
         Unsigned.UInt64.add _base_addr
           (Unsigned.UInt64.of_int64 (Int64.of_int32 signed_offset))
-    | _ -> failwith "Unsupported encoding in read_encoded_value"
+    | _ -> fail "Unsupported encoding in read_encoded_value"
 
   let parse_header cursor section_base_addr =
     let version = Object.Buffer.Read.u8 cursor in
@@ -4668,7 +4672,7 @@ module EHFrame = struct
 
     (* In .eh_frame, CIE ID is 0 (not 0xffffffff like in .debug_frame) *)
     if Unsigned.UInt32.to_int32 cie_id <> 0x00000000l then
-      failwith "Invalid EH CIE: cie_id is not 0";
+      fail "Invalid EH CIE: cie_id is not 0";
 
     let version = Object.Buffer.Read.u8 cursor in
     let augmentation = CallFrame.parse_augmentation_string cursor in
@@ -5255,7 +5259,7 @@ module DebugNames = struct
                   Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int
                   |> Unsigned.UInt64.of_int
               | _ ->
-                  failwith
+                  fail
                     ("Unsupported form in debug_names entry pool: "
                     ^ string_of_attribute_form_encoding form)
             in
@@ -5278,7 +5282,7 @@ module DebugNames = struct
             (fun k _ acc -> Unsigned.UInt64.to_int k :: acc)
             abbrev_table []
         in
-        failwith
+        fail
           (Printf.sprintf
              "Unknown abbreviation code in debug_names entry pool: %d \
               (available codes: [%s])"
@@ -6166,7 +6170,7 @@ module DebugStrOffsets = struct
 
     (* Validate DWARF version 5 *)
     if Unsigned.UInt16.to_int version != 5 then
-      failwith
+      fail
         (Printf.sprintf "Expected DWARF version 5, got %d"
            (Unsigned.UInt16.to_int version));
 
@@ -6393,7 +6397,7 @@ module DebugAddr = struct
             | 4 ->
                 Some (Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor))
             | 8 -> Some (Object.Buffer.Read.u64 cursor)
-            | _ -> failwith "Invalid segment_selector_size"
+            | _ -> fail "Invalid segment_selector_size"
           else None
         in
         let address =
@@ -6407,7 +6411,7 @@ module DebugAddr = struct
                 (Unsigned.UInt16.to_int (Object.Buffer.Read.u16 cursor))
           | 4 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
           | 8 -> Object.Buffer.Read.u64 cursor
-          | _ -> failwith "Invalid address_size"
+          | _ -> fail "Invalid address_size"
         in
         { segment; address })
 
@@ -6479,16 +6483,14 @@ module DebugAranges = struct
         match address_size with
         | 4 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
         | 8 -> Object.Buffer.Read.u64 cursor
-        | _ ->
-            failwith ("Unsupported address size: " ^ string_of_int address_size)
+        | _ -> fail ("Unsupported address size: " ^ string_of_int address_size)
       in
 
       let length =
         match address_size with
         | 4 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
         | 8 -> Object.Buffer.Read.u64 cursor
-        | _ ->
-            failwith ("Unsupported address size: " ^ string_of_int address_size)
+        | _ -> fail ("Unsupported address size: " ^ string_of_int address_size)
       in
 
       (* Skip segment selector if present *)
@@ -6661,7 +6663,7 @@ module DebugLoclists = struct
           in
           let expr = read_expr cursor in
           read_entries (LLE_start_length { start_addr; length; expr } :: acc)
-      | n -> failwith (Printf.sprintf "Unknown DW_LLE entry kind: 0x%02x" n)
+      | n -> fail (Printf.sprintf "Unknown DW_LLE entry kind: 0x%02x" n)
     in
     { entries = read_entries [] }
 
@@ -6777,7 +6779,7 @@ module DebugRnglists = struct
             Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
           in
           read_entries (RLE_start_length { start_addr; length } :: acc)
-      | n -> failwith (Printf.sprintf "Unknown DW_RLE entry kind: 0x%02x" n)
+      | n -> fail (Printf.sprintf "Unknown DW_RLE entry kind: 0x%02x" n)
     in
     { entries = read_entries [] }
 
@@ -6909,7 +6911,7 @@ module SplitDwarf = struct
     let section_offset =
       match find_debug_section_by_type buffer section_type with
       | Some (section_offset, _) -> Unsigned.UInt64.to_int section_offset
-      | None -> failwith "Could not find debug_abbrev section"
+      | None -> fail "Could not find debug_abbrev section"
     in
     let cur =
       cursor buffer ~at:(section_offset + Unsigned.UInt64.to_int offset)
