@@ -2260,8 +2260,11 @@ end
     exception handling mechanism. While similar to .debug_frame, it has some
     format differences optimized for runtime performance.
 
-    TODO Be more concrete here about the reference, what is the name of the
-    document? Reference: LSB specification and ELF exception handling ABI *)
+    The entry format reuses DWARF Call Frame Information (DWARF 5 specification,
+    section 6.4 "Call Frame Information"), but the .eh_frame section itself is
+    defined by the Linux Standard Base Core Specification, section 10.6
+    ("Exception Frames") and the System V ABI AMD64 Architecture Supplement,
+    section 4.2.4. *)
 module EHFrame : sig
   type eh_frame_entry =
     | EH_CIE of CallFrame.common_information_entry
@@ -3554,7 +3557,9 @@ end
     with abstract register numbers.
 
     For architecture-specific register name mappings, see the Dwarf_arch module.
-    TODO Missing the DWARF reference for this module, IF one exists. *)
+
+    DWARF 5 specification, section 2.5 "DWARF Expressions" and section 7.7
+    "DWARF Expressions and Location Descriptions". *)
 module Expression : sig
   (** Architecture-independent register - just a number. Architecture modules
       map these to names. *)
