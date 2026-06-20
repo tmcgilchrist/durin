@@ -25,79 +25,76 @@ let handle_errors f =
       exit 1
 
 (* Helper functions for printing unwind info sections *)
-let print_header (header : Dwarf.CompactUnwind.unwind_info_header) =
+let print_header (header : Compact_unwind.unwind_info_header) =
   Printf.printf "  Version:                                   0x%lx\n"
-    (Unsigned.UInt32.to_int32 header.Dwarf.CompactUnwind.version);
+    (Unsigned.UInt32.to_int32 header.Compact_unwind.version);
   Printf.printf "  Common encodings array section offset:     0x%lx\n"
     (Unsigned.UInt32.to_int32
-       header.Dwarf.CompactUnwind.common_encodings_array_section_offset);
+       header.Compact_unwind.common_encodings_array_section_offset);
   Printf.printf "  Number of common encodings in array:       0x%lx\n"
-    (Unsigned.UInt32.to_int32
-       header.Dwarf.CompactUnwind.common_encodings_array_count);
+    (Unsigned.UInt32.to_int32 header.Compact_unwind.common_encodings_array_count);
   Printf.printf "  Personality function array section offset: 0x%lx\n"
     (Unsigned.UInt32.to_int32
-       header.Dwarf.CompactUnwind.personality_array_section_offset);
+       header.Compact_unwind.personality_array_section_offset);
   Printf.printf "  Number of personality functions in array:  0x%lx\n"
-    (Unsigned.UInt32.to_int32 header.Dwarf.CompactUnwind.personality_array_count);
+    (Unsigned.UInt32.to_int32 header.Compact_unwind.personality_array_count);
   Printf.printf "  Index array section offset:                0x%lx\n"
-    (Unsigned.UInt32.to_int32 header.Dwarf.CompactUnwind.index_section_offset);
+    (Unsigned.UInt32.to_int32 header.Compact_unwind.index_section_offset);
   Printf.printf "  Number of indices in array:                0x%lx\n"
-    (Unsigned.UInt32.to_int32 header.Dwarf.CompactUnwind.index_count)
+    (Unsigned.UInt32.to_int32 header.Compact_unwind.index_count)
 
-let print_common_encodings (header : Dwarf.CompactUnwind.unwind_info_header)
-    (encodings : Dwarf.CompactUnwind.compact_unwind_encoding array) =
+let print_common_encodings (header : Compact_unwind.unwind_info_header)
+    (encodings : Compact_unwind.compact_unwind_encoding array) =
   Printf.printf "  Common encodings: (count = %ld)\n"
-    (Unsigned.UInt32.to_int32
-       header.Dwarf.CompactUnwind.common_encodings_array_count);
+    (Unsigned.UInt32.to_int32 header.Compact_unwind.common_encodings_array_count);
   Array.iteri
     (fun i encoding ->
       Printf.printf "    encoding[%d]: 0x%08lx\n" i
         (Unsigned.UInt32.to_int32 encoding))
     encodings
 
-let print_personalities (header : Dwarf.CompactUnwind.unwind_info_header)
+let print_personalities (header : Compact_unwind.unwind_info_header)
     (personalities : Unsigned.UInt32.t array) =
   Printf.printf "  Personality functions: (count = %ld)\n"
-    (Unsigned.UInt32.to_int32 header.Dwarf.CompactUnwind.personality_array_count);
+    (Unsigned.UInt32.to_int32 header.Compact_unwind.personality_array_count);
   Array.iteri
     (fun i personality ->
       Printf.printf "    personality[%d]: 0x%08lx\n" (i + 1)
         (Unsigned.UInt32.to_int32 personality))
     personalities
 
-let print_index_entries (header : Dwarf.CompactUnwind.unwind_info_header)
+let print_index_entries (header : Compact_unwind.unwind_info_header)
     (index_entries :
-      Dwarf.CompactUnwind.unwind_info_section_header_index_entry array) =
+      Compact_unwind.unwind_info_section_header_index_entry array) =
   Printf.printf "  Top level indices: (count = %ld)\n"
-    (Unsigned.UInt32.to_int32 header.Dwarf.CompactUnwind.index_count);
+    (Unsigned.UInt32.to_int32 header.Compact_unwind.index_count);
   Array.iteri
-    (fun i (entry : Dwarf.CompactUnwind.unwind_info_section_header_index_entry)
-       ->
+    (fun i (entry : Compact_unwind.unwind_info_section_header_index_entry) ->
       Printf.printf
         "    [%d]: function offset=0x%08lx, 2nd level page offset=0x%08lx, \
          LSDA offset=0x%08lx\n"
         i
-        (Unsigned.UInt32.to_int32 entry.Dwarf.CompactUnwind.function_offset)
+        (Unsigned.UInt32.to_int32 entry.Compact_unwind.function_offset)
         (Unsigned.UInt32.to_int32
-           entry.Dwarf.CompactUnwind.second_level_page_section_offset)
+           entry.Compact_unwind.second_level_page_section_offset)
         (Unsigned.UInt32.to_int32
-           entry.Dwarf.CompactUnwind.lsda_index_array_section_offset))
+           entry.Compact_unwind.lsda_index_array_section_offset))
     index_entries
 
 let print_lsda_descriptors
-    (lsda_descriptors : Dwarf.CompactUnwind.lsda_descriptor array) =
+    (lsda_descriptors : Compact_unwind.lsda_descriptor array) =
   Printf.printf "  LSDA descriptors:\n";
   Array.iteri
     (fun i descriptor ->
       Printf.printf "    [%d]: function offset=0x%08lx, LSDA offset=0x%08lx\n" i
-        (Unsigned.UInt32.to_int32 descriptor.Dwarf.CompactUnwind.function_offset)
-        (Unsigned.UInt32.to_int32 descriptor.Dwarf.CompactUnwind.lsda_offset))
+        (Unsigned.UInt32.to_int32 descriptor.Compact_unwind.function_offset)
+        (Unsigned.UInt32.to_int32 descriptor.Compact_unwind.lsda_offset))
     lsda_descriptors
 
 let get_encoding_ref
-    (entry : Dwarf.CompactUnwind.unwind_info_compressed_second_level_entry)
-    (common_encodings : Dwarf.CompactUnwind.compact_unwind_encoding array)
-    (page_encodings : Dwarf.CompactUnwind.compact_unwind_encoding array) =
+    (entry : Compact_unwind.unwind_info_compressed_second_level_entry)
+    (common_encodings : Compact_unwind.compact_unwind_encoding array)
+    (page_encodings : Compact_unwind.compact_unwind_encoding array) =
   if Unsigned.UInt16.to_int entry.encoding_index < Array.length common_encodings
   then common_encodings.(Unsigned.UInt16.to_int entry.encoding_index)
   else if
@@ -110,15 +107,14 @@ let get_encoding_ref
 
 let print_regular_page (page_idx : int)
     (corresponding_entry :
-      Dwarf.CompactUnwind.unwind_info_section_header_index_entry option)
-    (entries : Dwarf.CompactUnwind.unwind_info_regular_second_level_entry array)
-    =
+      Compact_unwind.unwind_info_section_header_index_entry option)
+    (entries : Compact_unwind.unwind_info_regular_second_level_entry array) =
   let page_offset, base_func_offset =
     match corresponding_entry with
     | Some entry ->
         ( Unsigned.UInt32.to_int32
-            entry.Dwarf.CompactUnwind.second_level_page_section_offset,
-          Unsigned.UInt32.to_int32 entry.Dwarf.CompactUnwind.function_offset )
+            entry.Compact_unwind.second_level_page_section_offset,
+          Unsigned.UInt32.to_int32 entry.Compact_unwind.function_offset )
     | None -> (0l, 0l)
   in
   Printf.printf
@@ -126,8 +122,7 @@ let print_regular_page (page_idx : int)
      offset=0x%08lx\n"
     page_idx page_offset base_func_offset;
   Array.iteri
-    (fun i (entry : Dwarf.CompactUnwind.unwind_info_regular_second_level_entry)
-       ->
+    (fun i (entry : Compact_unwind.unwind_info_regular_second_level_entry) ->
       Printf.printf "      [%d]: function offset=0x%08lx, encoding=0x%08lx\n" i
         (Unsigned.UInt32.to_int32 entry.function_offset)
         (Unsigned.UInt32.to_int32 entry.encoding))
@@ -135,17 +130,16 @@ let print_regular_page (page_idx : int)
 
 let print_compressed_page (page_idx : int)
     (corresponding_entry :
-      Dwarf.CompactUnwind.unwind_info_section_header_index_entry option)
-    (encoding_array : Dwarf.CompactUnwind.compact_unwind_encoding array)
-    (entries :
-      Dwarf.CompactUnwind.unwind_info_compressed_second_level_entry array)
-    (common_encodings : Dwarf.CompactUnwind.compact_unwind_encoding array) =
+      Compact_unwind.unwind_info_section_header_index_entry option)
+    (encoding_array : Compact_unwind.compact_unwind_encoding array)
+    (entries : Compact_unwind.unwind_info_compressed_second_level_entry array)
+    (common_encodings : Compact_unwind.compact_unwind_encoding array) =
   let page_offset, base_func_offset =
     match corresponding_entry with
     | Some entry ->
         ( Unsigned.UInt32.to_int32
-            entry.Dwarf.CompactUnwind.second_level_page_section_offset,
-          Unsigned.UInt32.to_int32 entry.Dwarf.CompactUnwind.function_offset )
+            entry.Compact_unwind.second_level_page_section_offset,
+          Unsigned.UInt32.to_int32 entry.Compact_unwind.function_offset )
     | None -> (0l, 0l)
   in
   Printf.printf
@@ -161,9 +155,7 @@ let print_compressed_page (page_idx : int)
         (Unsigned.UInt32.to_int32 encoding))
     encoding_array;
   Array.iteri
-    (fun i
-         (entry : Dwarf.CompactUnwind.unwind_info_compressed_second_level_entry)
-       ->
+    (fun i (entry : Compact_unwind.unwind_info_compressed_second_level_entry) ->
       let encoding_ref =
         get_encoding_ref entry common_encodings encoding_array
       in
@@ -178,11 +170,10 @@ let print_compressed_page (page_idx : int)
         (Unsigned.UInt32.to_int32 encoding_ref))
     entries
 
-let print_second_level_pages
-    (pages : Dwarf.CompactUnwind.second_level_page array)
+let print_second_level_pages (pages : Compact_unwind.second_level_page array)
     (index_entries :
-      Dwarf.CompactUnwind.unwind_info_section_header_index_entry array)
-    (common_encodings : Dwarf.CompactUnwind.compact_unwind_encoding array) =
+      Compact_unwind.unwind_info_section_header_index_entry array)
+    (common_encodings : Compact_unwind.compact_unwind_encoding array) =
   Printf.printf "  Second level indices:\n";
 
   (* Create a function to get the nth valid entry without array conversion *)
@@ -194,7 +185,7 @@ let print_second_level_pages
           Unsigned.UInt32.(
             equal
               index_entries.(idx)
-                .Dwarf.CompactUnwind.second_level_page_section_offset zero)
+                .Compact_unwind.second_level_page_section_offset zero)
       then
         if count = n then Some index_entries.(idx)
         else find_nth_valid (idx + 1) (count + 1)
@@ -206,9 +197,9 @@ let print_second_level_pages
     (fun page_idx page ->
       let corresponding_entry = get_valid_entry page_idx in
       match page with
-      | Dwarf.CompactUnwind.Regular { entries; _ } ->
+      | Compact_unwind.Regular { entries; _ } ->
           print_regular_page page_idx corresponding_entry entries
-      | Dwarf.CompactUnwind.Compressed { encoding_array; entries; _ } ->
+      | Compact_unwind.Compressed { encoding_array; entries; _ } ->
           print_compressed_page page_idx corresponding_entry encoding_array
             entries common_encodings)
     pages
@@ -223,7 +214,7 @@ let dump_unwind_info filename =
         (String.lowercase_ascii format_str);
       Printf.printf "Unwind info:\n\n";
 
-      match Dwarf.CompactUnwind.parse_from_buffer buffer with
+      match Compact_unwind.parse_from_buffer buffer with
       | None -> Printf.printf "No unwind information found\n"
       | Some (unwind_info, _arch) ->
           Printf.printf "Contents of __unwind_info section:\n";

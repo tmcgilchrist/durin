@@ -83,7 +83,7 @@ let test_eh_frame_hdr_parse_succeeds binary_path =
   | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let hdr = Dwarf.EHFrameHdr.parse_section cur section.sh_addr in
+      let hdr = Eh_frame_header.parse_section cur section.sh_addr in
       check int "version is 1" 1 (Unsigned.UInt8.to_int hdr.version)
 
 let test_eh_frame_hdr_has_entries binary_path =
@@ -92,7 +92,7 @@ let test_eh_frame_hdr_has_entries binary_path =
   | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let hdr = Dwarf.EHFrameHdr.parse_section cur section.sh_addr in
+      let hdr = Eh_frame_header.parse_section cur section.sh_addr in
       check bool "fde_count > 0" true (Unsigned.UInt32.to_int hdr.fde_count > 0);
       check bool "search_table non-empty" true
         (Array.length hdr.search_table > 0)

@@ -1745,10 +1745,10 @@ let dump_eh_frame filename =
                   | "zR" when String.length data >= 1 ->
                       let encoding = Char.code data.[0] in
                       let encoding_type =
-                        Dwarf.EHFrameHdr.encoding_of_u8 encoding
+                        Eh_frame_header.encoding_of_u8 encoding
                       in
                       let encoding_desc =
-                        Dwarf.EHFrameHdr.string_of_encoding encoding_type
+                        Eh_frame_header.string_of_encoding encoding_type
                       in
                       Printf.printf "    FDE encoding: %s (0x%02x)\n"
                         encoding_desc encoding
@@ -1841,10 +1841,10 @@ let dump_eh_frame_hdr filename =
         let section_addr = eh_frame_hdr_section.sh_addr in
 
         let cursor = Object.Buffer.cursor buffer ~at:section_offset in
-        let eh_frame_hdr = Dwarf.EHFrameHdr.parse_section cursor section_addr in
+        let eh_frame_hdr = Eh_frame_header.parse_section cursor section_addr in
 
         (* Helper function to describe encoding *)
-        let describe_encoding = Dwarf.EHFrameHdr.string_of_encoding in
+        let describe_encoding = Eh_frame_header.string_of_encoding in
 
         (* Display header information *)
         Printf.printf "version: %d\n"
@@ -1870,7 +1870,7 @@ let dump_eh_frame_hdr filename =
           "--------------------------------------------------";
         Array.iteri
           (fun i entry ->
-            let open Dwarf.EHFrameHdr in
+            let open Eh_frame_header in
             let pc_addr = Unsigned.UInt64.to_int64 entry.initial_location in
             let fde_offset = Unsigned.UInt64.to_int64 entry.fde_address in
             let description =

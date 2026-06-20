@@ -185,3 +185,13 @@ val get_unwind_mode : compact_unwind_encoding -> architecture -> unwind_mode
 
 exception Invalid_compact_unwind_format of string
 (** Exception raised when compact unwind format is invalid *)
+
+val find_unwind_info_section : Object.Buffer.t -> (int * int) option
+(** Find the __unwind_info section in a MachO binary.
+    @param buffer Object buffer containing the MachO binary
+    @return Optional tuple of (section_offset, section_size) *)
+
+val parse_from_buffer : Object.Buffer.t -> (unwind_info * architecture) option
+(** Parse compact unwind information from a MachO binary.
+    @param buffer Object buffer containing the MachO binary
+    @return Optional tuple of (unwind_info, architecture) if parsing succeeds *)

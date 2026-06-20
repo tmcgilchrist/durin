@@ -15,6 +15,8 @@ or following a worked example (see the `example/` programs).
 - [Object files and sections](./object-files.md) — which DWARF sections exist
   in ELF (Linux) versus Mach-O (macOS), what each section holds, and the
   toolchain commands for inspecting them.
+- [Module architecture](./architecture.md) — how the library's modules depend
+  on one another, as a layered diagram.
 
 ## Reference material
 

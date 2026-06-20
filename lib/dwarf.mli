@@ -2193,94 +2193,6 @@ module CallFrame : sig
       Returns list of (pc_offset, description) pairs showing CFI rules. *)
 end
 
-(** EH Frame Header parsing for .eh_frame_hdr section.
-
-    The .eh_frame_hdr section provides a sorted table for fast lookup of Frame
-    Description Entries in the .eh_frame section. This is used by the runtime
-    exception handling mechanism for efficient stack unwinding.
-
-    Reference: Linux Standards Base Core Specification, section 10.6 ("Exception
-    Frames") and the System V ABI AMD64 Architecture Supplement, section 4.2.4
-*)
-module EHFrameHdr : sig
-  (** The value format of an [.eh_frame] pointer encoding (the low nibble of the
-      encoding byte). Constructor names follow the DWARF/LSB spec. *)
-  type pe_format =
-    | DW_EH_PE_absptr  (** 0x00: a target-address-sized value. *)
-    | DW_EH_PE_uleb128  (** 0x01 *)
-    | DW_EH_PE_udata2  (** 0x02 *)
-    | DW_EH_PE_udata4  (** 0x03 *)
-    | DW_EH_PE_udata8  (** 0x04 *)
-    | DW_EH_PE_sleb128  (** 0x09 *)
-    | DW_EH_PE_sdata2  (** 0x0a *)
-    | DW_EH_PE_sdata4  (** 0x0b *)
-    | DW_EH_PE_sdata8  (** 0x0c *)
-
-  (** How an [.eh_frame] pointer value is applied (bits 4-6 of the encoding
-      byte). The spec has no name for the absolute case (0x00), it is
-      represented as [None] in {!encoding}. *)
-  type pe_application =
-    | DW_EH_PE_pcrel  (** 0x10: relative to the value's own address. *)
-    | DW_EH_PE_textrel  (** 0x20: relative to the text section. *)
-    | DW_EH_PE_datarel  (** 0x30: relative to the section base. *)
-    | DW_EH_PE_funcrel  (** 0x40: relative to the enclosing function. *)
-    | DW_EH_PE_aligned  (** 0x50: aligned to the address size. *)
-
-  (** A decoded [.eh_frame] pointer encoding byte (DWARF/LSB). The encoding is
-      composed of a {!pe_format}, an optional {!pe_application}, and an
-      [indirect] flag that combine freely; [DW_EH_PE_omit] (byte 0xff) means no
-      value is present. *)
-  type encoding =
-    | DW_EH_PE_omit
-    | DW_EH_PE_encoding of {
-        format : pe_format;
-        application : pe_application option;
-            (** [None] is the absolute application (0x00). *)
-        indirect : bool;
-            (** [DW_EH_PE_indirect] (0x80): the stored value is the address of
-                the real value. *)
-      }
-
-  type search_table_entry = { initial_location : u64; fde_address : u64 }
-
-  type header = {
-    version : u8;  (** Header version (typically 1) *)
-    eh_frame_ptr_enc : encoding;
-        (** Encoding used for the eh_frame_ptr field *)
-    fde_count_enc : encoding;  (** Encoding used for the fde_count field *)
-    table_enc : encoding;  (** Encoding used for search table entries *)
-    eh_frame_ptr : u64;  (** Pointer to the start of .eh_frame *)
-    fde_count : u32;  (** Number of FDEs in the search table *)
-    search_table : search_table_entry array;
-        (** Sorted table mapping addresses to FDEs *)
-  }
-  (** Parsed .eh_frame_hdr header with its search table. *)
-
-  val parse_header : Object.Buffer.cursor -> u64 -> header
-  (** Parse the .eh_frame_hdr header and search table.
-
-      The second parameter is the base address of the section for relative
-      address calculations.
-
-      @raise Parse_error if the header uses an unknown pointer encoding. *)
-
-  val parse_section : Object.Buffer.cursor -> u64 -> header
-  (** Parse complete .eh_frame_hdr section - alias for parse_header.
-
-      @raise Parse_error if the section uses an unknown pointer encoding. *)
-
-  val encoding_of_u8 : int -> encoding
-  (** Decode an [.eh_frame] pointer-encoding byte into its {!pe_format},
-      {!pe_application} and [indirect] components.
-
-      @raise Parse_error if the format or application nibble is not recognized.
-  *)
-
-  val string_of_encoding : encoding -> string
-  (** Human-readable description of an encoding, e.g.
-      ["PC-relative signed 4-byte"]. *)
-end
-
 (** EH Frame parsing for .eh_frame section.
 
     The .eh_frame section contains Call Frame Information used by the runtime
@@ -3555,30 +3467,6 @@ module SplitDwarf : sig
 end
 
 (* TODO Move this into its own mli/ml files, it isn't part of the core DWARF support. *)
-
-(** CompactUnwind module for Apple's Compact Unwinding Format.
-
-    This module provides support for parsing and interpreting Apple's
-    non-standard Compact Unwinding Format found in MachO binaries. The compact
-    format provides efficient stack unwinding information stored in the
-    __unwind_info section within the __TEXT segment.
-
-    This is complementary to standard DWARF CFI and is used by Apple platforms
-    for improved performance and reduced memory usage during stack unwinding. *)
-module CompactUnwind : sig
-  include module type of Compact_unwind
-
-  val find_unwind_info_section : Object.Buffer.t -> (int * int) option
-  (** Find the __unwind_info section in a MachO binary
-      @param buffer Object buffer containing the MachO binary
-      @return Optional tuple of (section_offset, section_size) *)
-
-  val parse_from_buffer : Object.Buffer.t -> (unwind_info * architecture) option
-  (** Parse compact unwind information from a MachO binary
-      @param buffer Object buffer containing the MachO binary
-      @return Optional tuple of (unwind_info, architecture) if parsing succeeds
-  *)
-end
 
 (** DWARF Expression Evaluator.
 
