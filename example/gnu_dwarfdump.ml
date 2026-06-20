@@ -1610,9 +1610,7 @@ let dump_eh_frame filename =
             ~at:(Unsigned.UInt64.to_int section.sh_offset)
         in
         let section_size = Unsigned.UInt64.to_int section.sh_size in
-        let eh_frame_section =
-          Dwarf.EHFrame.parse_section cursor section_size
-        in
+        let eh_frame_section = Eh_frame.parse_section cursor section_size in
 
         (* Separate FDE and CIE entries for display *)
         let fde_entries = ref [] in
@@ -1621,8 +1619,8 @@ let dump_eh_frame filename =
         List.iter
           (fun entry ->
             match entry with
-            | Dwarf.EHFrame.EH_FDE fde -> fde_entries := fde :: !fde_entries
-            | Dwarf.EHFrame.EH_CIE cie -> cie_entries := cie :: !cie_entries)
+            | Eh_frame.EH_FDE fde -> fde_entries := fde :: !fde_entries
+            | Eh_frame.EH_CIE cie -> cie_entries := cie :: !cie_entries)
           eh_frame_section.entries;
 
         (* Display FDE entries first (system format) *)
@@ -1660,7 +1658,7 @@ let dump_eh_frame filename =
             (* Find the corresponding CIE for this FDE using library function *)
             let corresponding_cie =
               match
-                Dwarf.EHFrame.find_cie_for_fde eh_frame_section
+                Eh_frame.find_cie_for_fde eh_frame_section
                   (Unsigned.UInt32.of_int
                      (Unsigned.UInt64.to_int fde.cie_pointer))
                   fde_offset

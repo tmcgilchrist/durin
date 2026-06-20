@@ -1784,14 +1784,14 @@ let test_write_eh_cie_roundtrip () =
   done;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let section = Dwarf.EHFrame.parse_section cur (Buffer.length buf) in
+  let section = Eh_frame.parse_section cur (Buffer.length buf) in
   let cie_entry =
     List.find
-      (function Dwarf.EHFrame.EH_CIE _ -> true | _ -> false)
+      (function Eh_frame.EH_CIE _ -> true | _ -> false)
       section.entries
   in
   match cie_entry with
-  | Dwarf.EHFrame.EH_CIE p ->
+  | Eh_frame.EH_CIE p ->
       check int "version" 1 (Unsigned.UInt8.to_int p.version);
       check string "augmentation" "" p.augmentation;
       check int "code_align" 1 (Unsigned.UInt64.to_int p.code_alignment_factor);
@@ -1836,18 +1836,17 @@ let test_write_eh_frame_cie_fde () =
     }
   in
   let buf = Buffer.create 128 in
-  Dwarf_write.write_eh_frame buf
-    [ Dwarf.EHFrame.EH_CIE cie; Dwarf.EHFrame.EH_FDE fde ];
+  Dwarf_write.write_eh_frame buf [ Eh_frame.EH_CIE cie; Eh_frame.EH_FDE fde ];
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let section = Dwarf.EHFrame.parse_section cur (Buffer.length buf) in
+  let section = Eh_frame.parse_section cur (Buffer.length buf) in
   check int "2 entries" 2 (List.length section.entries);
   (match List.nth section.entries 0 with
-  | Dwarf.EHFrame.EH_CIE p ->
+  | Eh_frame.EH_CIE p ->
       check int "cie version" 1 (Unsigned.UInt8.to_int p.version)
   | _ -> fail "first should be CIE");
   match List.nth section.entries 1 with
-  | Dwarf.EHFrame.EH_FDE p ->
+  | Eh_frame.EH_FDE p ->
       check int "fde addr_range" 0x80 (Unsigned.UInt64.to_int p.address_range)
   | _ -> fail "second should be FDE"
 
@@ -1881,14 +1880,14 @@ let test_write_eh_cie_augmented () =
   done;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let section = Dwarf.EHFrame.parse_section cur (Buffer.length buf) in
+  let section = Eh_frame.parse_section cur (Buffer.length buf) in
   let cie_entry =
     List.find
-      (function Dwarf.EHFrame.EH_CIE _ -> true | _ -> false)
+      (function Eh_frame.EH_CIE _ -> true | _ -> false)
       section.entries
   in
   match cie_entry with
-  | Dwarf.EHFrame.EH_CIE p -> (
+  | Eh_frame.EH_CIE p -> (
       check string "augmentation" "zR" p.augmentation;
       match p.augmentation_data with
       | Some d -> check int "aug data len" 1 (String.length d)

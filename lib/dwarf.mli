@@ -2191,61 +2191,17 @@ module CallFrame : sig
         Data alignment factor from CIE (scales stack offsets)
 
       Returns list of (pc_offset, description) pairs showing CFI rules. *)
-end
 
-(** EH Frame parsing for .eh_frame section.
+  val parse_augmentation_string : Object.Buffer.cursor -> string
+  (** Parse a CIE augmentation string (a NUL-terminated string). *)
 
-    The .eh_frame section contains Call Frame Information used by the runtime
-    exception handling mechanism. While similar to .debug_frame, it has some
-    format differences optimized for runtime performance.
+  val parse_augmentation_data :
+    Object.Buffer.cursor -> string -> (u64 * string) option
+  (** Parse CIE augmentation data when the augmentation string begins with 'z'.
+      Returns the [(length, data)] pair, or [None] when absent. *)
 
-    The entry format reuses DWARF Call Frame Information (DWARF 5 specification,
-    section 6.4 "Call Frame Information"), but the .eh_frame section itself is
-    defined by the Linux Standard Base Core Specification, section 10.6
-    ("Exception Frames") and the System V ABI AMD64 Architecture Supplement,
-    section 4.2.4. *)
-module EHFrame : sig
-  type eh_frame_entry =
-    | EH_CIE of CallFrame.common_information_entry
-    | EH_FDE of CallFrame.frame_description_entry
-
-  type section = { entries : eh_frame_entry list }
-
-  val parse_eh_cie :
-    Object.Buffer.cursor -> u32 -> int -> CallFrame.common_information_entry
-  (** Parse a Common Information Entry adapted for .eh_frame format.
-
-      The second parameter is the expected length from the length field.
-
-      @raise Parse_error if the CIE is malformed. *)
-
-  val parse_eh_fde :
-    Object.Buffer.cursor -> u32 -> int -> CallFrame.frame_description_entry
-  (** Parse a Frame Description Entry adapted for .eh_frame format.
-
-      The second parameter is the expected length from the length field. The
-      third parameter is the file offset where this FDE starts. *)
-
-  val parse_section : Object.Buffer.cursor -> int -> section
-  (** Parse the .eh_frame section.
-
-      The second parameter is the section size in bytes.
-
-      @raise Parse_error if a CIE is malformed. *)
-
-  val find_cie_for_fde :
-    section -> u32 -> int -> CallFrame.common_information_entry option
-  (** Find the CIE corresponding to an FDE using the cie_pointer field.
-
-      This function searches through the EH frame entries to find the CIE that
-      corresponds to the given cie_pointer. In .eh_frame format, the cie_pointer
-      is a relative offset backwards to the CIE.
-
-      Parameters:
-      - entries: List of parsed EH frame entries (CIEs and FDEs)
-      - cie_pointer: The cie_pointer field from an FDE
-
-      Returns the corresponding CIE if found, None otherwise. *)
+  val parse_instructions : Object.Buffer.cursor -> int -> string
+  (** Read [length] bytes of call frame instructions as a raw string. *)
 end
 
 (** Accelerated Name Lookup parsing for .debug_names section.

@@ -1135,8 +1135,8 @@ let write_eh_fde buf (fde : Dwarf.CallFrame.frame_description_entry)
 let write_eh_frame buf entries =
   List.iter
     (function
-      | Dwarf.EHFrame.EH_CIE cie -> write_eh_cie buf cie
-      | Dwarf.EHFrame.EH_FDE fde -> write_eh_fde buf fde 0)
+      | Eh_frame.EH_CIE cie -> write_eh_cie buf cie
+      | Eh_frame.EH_FDE fde -> write_eh_fde buf fde 0)
     entries
 
 (* .debug_aranges Writer *)
