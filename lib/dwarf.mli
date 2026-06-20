@@ -1099,7 +1099,7 @@ val string_of_macro_info_entry_type : macro_info_entry_type -> string
     DWARF 5 specification, section 6.3 "Macro Information". *)
 module DebugMacro : sig
   type header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     version : u16;  (** Version number *)
     flags : u8;  (** Flags *)
     debug_line_offset : u64 option;  (** Offset into debug_line (flags bit 1) *)
@@ -1473,7 +1473,7 @@ end
     concept of Unit Entries and Compilation Units. *)
 module CompileUnit : sig
   type header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;  (** Length of this unit excluding the length field *)
     version : u16;  (** DWARF version (4 or 5) *)
     unit_type : unit_type;
@@ -1731,7 +1731,7 @@ module DebugLine : sig
       DWARF 5 specification, section 6.2.4 "The Line Number Program Header". *)
 
   type line_program_header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;
         (** Total length of line table entry excluding the length field *)
     version : u16;  (** DWARF version number *)
@@ -1914,7 +1914,7 @@ end
     DWARF 4 specification, section 7.5.1.2 "Type Unit Header". *)
 module DebugTypes : sig
   type type_unit_header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;  (** Length of this unit excluding the length field *)
     version : u16;  (** DWARF version number *)
     debug_abbrev_offset : u64;  (** Offset into .debug_abbrev section *)
@@ -1961,7 +1961,7 @@ val resolve_range_list :
     DWARF 4 specification, section 6.1.1 "Lookup by Name". *)
 module DebugPubnames : sig
   type header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;  (** Length of this set excluding the length field *)
     version : u16;  (** DWARF version number (typically 2) *)
     debug_info_offset : u64;
@@ -2006,7 +2006,7 @@ end
     DWARF 4 specification, section 6.1.1 "Lookup by Name". *)
 module DebugPubtypes : sig
   type header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;  (** Length of this set excluding the length field *)
     version : u16;  (** DWARF version number (typically 2) *)
     debug_info_offset : u64;
@@ -2203,22 +2203,43 @@ end
     Frames") and the System V ABI AMD64 Architecture Supplement, section 4.2.4
 *)
 module EHFrameHdr : sig
+  (** The value format of an [.eh_frame] pointer encoding (the low nibble of the
+      encoding byte). Constructor names follow the DWARF/LSB spec. *)
+  type pe_format =
+    | DW_EH_PE_absptr  (** 0x00: a target-address-sized value. *)
+    | DW_EH_PE_uleb128  (** 0x01 *)
+    | DW_EH_PE_udata2  (** 0x02 *)
+    | DW_EH_PE_udata4  (** 0x03 *)
+    | DW_EH_PE_udata8  (** 0x04 *)
+    | DW_EH_PE_sleb128  (** 0x09 *)
+    | DW_EH_PE_sdata2  (** 0x0a *)
+    | DW_EH_PE_sdata4  (** 0x0b *)
+    | DW_EH_PE_sdata8  (** 0x0c *)
+
+  (** How an [.eh_frame] pointer value is applied (bits 4-6 of the encoding
+      byte). The spec has no name for the absolute case (0x00), it is
+      represented as [None] in {!encoding}. *)
+  type pe_application =
+    | DW_EH_PE_pcrel  (** 0x10: relative to the value's own address. *)
+    | DW_EH_PE_textrel  (** 0x20: relative to the text section. *)
+    | DW_EH_PE_datarel  (** 0x30: relative to the section base. *)
+    | DW_EH_PE_funcrel  (** 0x40: relative to the enclosing function. *)
+    | DW_EH_PE_aligned  (** 0x50: aligned to the address size. *)
+
+  (** A decoded [.eh_frame] pointer encoding byte (DWARF/LSB). The encoding is
+      composed of a {!pe_format}, an optional {!pe_application}, and an
+      [indirect] flag that combine freely; [DW_EH_PE_omit] (byte 0xff) means no
+      value is present. *)
   type encoding =
-    | DW_EH_PE_absptr
     | DW_EH_PE_omit
-    | DW_EH_PE_uleb128
-    | DW_EH_PE_udata2
-    | DW_EH_PE_udata4
-    | DW_EH_PE_udata8
-    | DW_EH_PE_sleb128
-    | DW_EH_PE_sdata2
-    | DW_EH_PE_sdata4
-    | DW_EH_PE_sdata8
-    | DW_EH_PE_pcrel
-    | DW_EH_PE_datarel
-    | DW_EH_PE_funcrel
-    | DW_EH_PE_aligned
-    | DW_EH_PE_indirect
+    | DW_EH_PE_encoding of {
+        format : pe_format;
+        application : pe_application option;
+            (** [None] is the absolute application (0x00). *)
+        indirect : bool;
+            (** [DW_EH_PE_indirect] (0x80): the stored value is the address of
+                the real value. *)
+      }
 
   type search_table_entry = { initial_location : u64; fde_address : u64 }
 
@@ -2249,9 +2270,15 @@ module EHFrameHdr : sig
       @raise Parse_error if the section uses an unknown pointer encoding. *)
 
   val encoding_of_u8 : int -> encoding
-  (** Convert a byte value to its corresponding encoding type
+  (** Decode an [.eh_frame] pointer-encoding byte into its {!pe_format},
+      {!pe_application} and [indirect] components.
 
-      @raise Parse_error if the pointer encoding byte is unknown. *)
+      @raise Parse_error if the format or application nibble is not recognized.
+  *)
+
+  val string_of_encoding : encoding -> string
+  (** Human-readable description of an encoding, e.g.
+      ["PC-relative signed 4-byte"]. *)
 end
 
 (** EH Frame parsing for .eh_frame section.
@@ -2346,7 +2373,7 @@ end
     DWARF 5 specification, section 6.1 "Accelerated Access". *)
 module DebugNames : sig
   type name_index_header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;
         (** Total length of name index excluding the length field *)
     version : u16;  (** Version number (5 for DWARF 5) *)
@@ -2971,7 +2998,7 @@ end
     DWARF 5 specification, section 7.26 "String Offsets Table". *)
 module DebugStrOffsets : sig
   type header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;
         (** Length of this contribution excluding the length field *)
     version : u16;  (** DWARF version number (typically 5) *)
@@ -3075,7 +3102,7 @@ end
     DWARF 5 specification, section 7.27 "Address Table". *)
 module DebugAddr : sig
   type header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;
         (** Length of this contribution excluding length field *)
     version : u16;  (** DWARF version number (typically 5) *)
@@ -3186,7 +3213,7 @@ end
     DWARF 5 specification, section 6.1.2 "Lookup by Address". *)
 module DebugAranges : sig
   type header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;
         (** Length of this aranges set excluding the length field *)
     version : u16;  (** DWARF version number (typically 2) *)
@@ -3266,7 +3293,7 @@ end
     DWARF 5 specification, section 7.7.3 "Location Lists". *)
 module DebugLoclists : sig
   type header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;  (** Length of the location lists contribution *)
     version : u16;  (** Version identifier (DWARF 5) *)
     address_size : u8;  (** Size of addresses in bytes *)
@@ -3342,7 +3369,7 @@ end
     5 specification, section 7.28 "Range List Table". *)
 module DebugRnglists : sig
   type header = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     unit_length : u64;
     version : u16;
     address_size : u8;

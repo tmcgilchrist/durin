@@ -172,7 +172,8 @@ let parse_initial_length (cur : Object.Buffer.cursor) : dwarf_format * u64 =
 
 let offset_size_for_format = function DWARF32 -> 4 | DWARF64 -> 8
 
-let read_offset_for_format (format : dwarf_format) (cur : Object.Buffer.cursor) =
+let read_offset_for_format (format : dwarf_format) (cur : Object.Buffer.cursor)
+    =
   let open Object.Buffer in
   match format with
   | DWARF32 -> Read.u32 cur |> Unsigned.UInt64.of_uint32
@@ -488,40 +489,24 @@ module DebugMacro = struct
       let line_number, string_offset, string_value, file_index =
         match entry_type with
         | DW_MACRO_define | DW_MACRO_undef ->
-            let line =
-              Read.uleb128 cur |> Unsigned.UInt32.of_int
-            in
-            let str =
-              Read.zero_string cur () |> Option.value ~default:""
-            in
+            let line = Read.uleb128 cur |> Unsigned.UInt32.of_int in
+            let str = Read.zero_string cur () |> Option.value ~default:"" in
             (Some line, None, Some str, None)
         | DW_MACRO_define_strp | DW_MACRO_undef_strp ->
-            let line =
-              Read.uleb128 cur |> Unsigned.UInt32.of_int
-            in
+            let line = Read.uleb128 cur |> Unsigned.UInt32.of_int in
             let str_offset = read_offset_for_format format cur in
             (Some line, Some str_offset, None, None)
         | DW_MACRO_define_sup | DW_MACRO_undef_sup ->
-            let line =
-              Read.uleb128 cur |> Unsigned.UInt32.of_int
-            in
+            let line = Read.uleb128 cur |> Unsigned.UInt32.of_int in
             let str_offset = read_offset_for_format format cur in
             (Some line, Some str_offset, None, None)
         | DW_MACRO_define_strx | DW_MACRO_undef_strx ->
-            let line =
-              Read.uleb128 cur |> Unsigned.UInt32.of_int
-            in
-            let str_offset =
-              Read.uleb128 cur |> Unsigned.UInt64.of_int
-            in
+            let line = Read.uleb128 cur |> Unsigned.UInt32.of_int in
+            let str_offset = Read.uleb128 cur |> Unsigned.UInt64.of_int in
             (Some line, Some str_offset, None, None)
         | DW_MACRO_start_file ->
-            let line =
-              Read.uleb128 cur |> Unsigned.UInt32.of_int
-            in
-            let file_idx =
-              Read.uleb128 cur |> Unsigned.UInt32.of_int
-            in
+            let line = Read.uleb128 cur |> Unsigned.UInt32.of_int in
+            let file_idx = Read.uleb128 cur |> Unsigned.UInt32.of_int in
             (Some line, None, None, Some file_idx)
         | DW_MACRO_end_file -> (None, None, None, None)
         | DW_MACRO_import | DW_MACRO_import_sup ->
@@ -534,7 +519,8 @@ module DebugMacro = struct
   let parse_unit (cur : Object.Buffer.cursor) =
     let header = parse_header cur in
     let entries = ref [] in
-    let rec loop () =           (* TODO Can this be done with a fold? *)
+    let rec loop () =
+      (* TODO Can this be done with a fold? *)
       match parse_entry cur header.format with
       | None -> List.rev !entries
       | Some entry ->
@@ -548,7 +534,8 @@ module DebugMacro = struct
     let start_pos = cur.position in
     let end_pos = start_pos + section_size in
     let units = ref [] in
-    let rec loop () = (* TODO Can this be done with a fold? *)
+    let rec loop () =
+      (* TODO Can this be done with a fold? *)
       if cur.position >= end_pos then List.rev !units
       else
         let u = parse_unit cur in
@@ -590,7 +577,8 @@ module DebugMacinfo = struct
     constant : u64 option;
   }
 
-  type section = { entries : entry list } (* TODO How large is this list, should it be lazily parsed? *)
+  type section = { entries : entry list }
+  (* TODO How large is this list, should it be lazily parsed? *)
 
   let parse_entry (cur : Object.Buffer.cursor) =
     let open Object.Buffer in
@@ -601,24 +589,16 @@ module DebugMacinfo = struct
       let line_number, string_value, file_index, constant =
         match entry_type with
         | DW_MACINFO_define | DW_MACINFO_undef ->
-            let line =
-              Read.uleb128 cur |> Unsigned.UInt32.of_int
-            in
+            let line = Read.uleb128 cur |> Unsigned.UInt32.of_int in
             let str = Read.zero_string cur () |> Option.value ~default:"" in
             (Some line, Some str, None, None)
         | DW_MACINFO_start_file ->
-            let line =
-              Read.uleb128 cur |> Unsigned.UInt32.of_int
-            in
-            let file_idx =
-              Read.uleb128 cur |> Unsigned.UInt32.of_int
-            in
+            let line = Read.uleb128 cur |> Unsigned.UInt32.of_int in
+            let file_idx = Read.uleb128 cur |> Unsigned.UInt32.of_int in
             (Some line, None, Some file_idx, None)
         | DW_MACINFO_end_file -> (None, None, None, None)
         | DW_MACINFO_vendor_ext ->
-            let const =
-              Read.uleb128 cur |> Unsigned.UInt64.of_int
-            in
+            let const = Read.uleb128 cur |> Unsigned.UInt64.of_int in
             let str = Read.zero_string cur () |> Option.value ~default:"" in
             (None, Some str, None, Some const)
       in
@@ -634,7 +614,8 @@ module DebugMacinfo = struct
   let parse_section (cur : Object.Buffer.cursor) section_size =
     let end_pos = cur.position + section_size in
     let entries = ref [] in
-    let rec loop () = (* TODO Can this be done with a fold? *)
+    let rec loop () =
+      (* TODO Can this be done with a fold? *)
       if cur.position >= end_pos then List.rev !entries
       else
         match parse_entry cur with
@@ -977,8 +958,11 @@ let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) =
               let ref_size =
                 match encoding with
                 | Some enc when Unsigned.UInt16.to_int enc.version <= 4 -> 4
-                | Some enc -> ( (* TODO Does this exist elsewhere? *)
-                    match enc.format with DWARF32 -> 4 | DWARF64 -> 8)
+                | Some enc -> (
+                    (* TODO Does this exist elsewhere? *)
+                    match enc.format with
+                    | DWARF32 -> 4
+                    | DWARF64 -> 8)
                 | None -> 4
               in
               if pos + ref_size < String.length expr_bytes then
@@ -4515,9 +4499,17 @@ end
 
 (** EH Frame Header (.eh_frame_hdr section) - ELF exception handling support *)
 module EHFrameHdr = struct
-  type encoding =
-    | DW_EH_PE_absptr (* 0x00 *)
-    | DW_EH_PE_omit (* 0xff *)
+  (* An .eh_frame pointer encoding is a single byte made of two independent
+     nibbles plus a flag (DWARF/LSB):
+     - the low nibble (0x0f) selects the value [format];
+     - bits 4-6 (0x70) select how the value is [applied];
+     - bit 7 (0x80) is the [indirect] flag: the stored value is the address of
+       the real value;
+     - the whole byte 0xff (omit) means no value is present.
+     The two nibbles combine freely, so they must be decoded separately rather
+     than enumerated as whole-byte cases. *)
+  type pe_format =
+    | DW_EH_PE_absptr (* 0x00: target-address-sized *)
     | DW_EH_PE_uleb128 (* 0x01 *)
     | DW_EH_PE_udata2 (* 0x02 *)
     | DW_EH_PE_udata4 (* 0x03 *)
@@ -4526,11 +4518,21 @@ module EHFrameHdr = struct
     | DW_EH_PE_sdata2 (* 0x0a *)
     | DW_EH_PE_sdata4 (* 0x0b *)
     | DW_EH_PE_sdata8 (* 0x0c *)
-    | DW_EH_PE_pcrel (* 0x10 - PC relative *)
-    | DW_EH_PE_datarel (* 0x30 - data relative *)
-    | DW_EH_PE_funcrel (* 0x40 - function relative *)
-    | DW_EH_PE_aligned (* 0x50 - aligned *)
-    | DW_EH_PE_indirect (* 0x80 - indirect *)
+
+  type pe_application =
+    | DW_EH_PE_pcrel (* 0x10: relative to the value's own address *)
+    | DW_EH_PE_textrel (* 0x20: relative to the text section *)
+    | DW_EH_PE_datarel (* 0x30: relative to the section base *)
+    | DW_EH_PE_funcrel (* 0x40: relative to the enclosing function *)
+    | DW_EH_PE_aligned (* 0x50: aligned to the address size *)
+
+  type encoding =
+    | DW_EH_PE_omit
+    | DW_EH_PE_encoding of {
+        format : pe_format;
+        application : pe_application option; (* None = absolute (0x00) *)
+        indirect : bool; (* DW_EH_PE_indirect, 0x80 *)
+      }
 
   type search_table_entry = {
     initial_location : u64; (* PC value *)
@@ -4547,52 +4549,109 @@ module EHFrameHdr = struct
     search_table : search_table_entry array;
   }
 
-  let encoding_of_u8 = function
-    | 0x00 -> DW_EH_PE_absptr
-    | 0xff -> DW_EH_PE_omit
-    | 0x01 -> DW_EH_PE_uleb128
-    | 0x02 -> DW_EH_PE_udata2
-    | 0x03 -> DW_EH_PE_udata4
-    | 0x04 -> DW_EH_PE_udata8
-    | 0x09 -> DW_EH_PE_sleb128
-    | 0x0a -> DW_EH_PE_sdata2
-    | 0x0b -> DW_EH_PE_sdata4
-    | 0x0c -> DW_EH_PE_sdata8
-    | 0x10 -> DW_EH_PE_pcrel
-    | 0x30 -> DW_EH_PE_datarel
-    | 0x40 -> DW_EH_PE_funcrel
-    | 0x50 -> DW_EH_PE_aligned
-    | 0x80 ->
-        DW_EH_PE_indirect
-        (* Handle common combined encodings *)
-        (* TODO Other common encodings to handle? *)
-    | 0x1b -> DW_EH_PE_pcrel (* 0x10 | 0x0b = PC-relative signed 4-byte *)
-    | 0x3b -> DW_EH_PE_datarel (* 0x30 | 0x0b = Data-relative signed 4-byte *)
-    | n -> fail (Printf.sprintf "Unknown EH encoding: 0x%02x" n)
+  let encoding_of_u8 byte =
+    if byte = 0xff then DW_EH_PE_omit
+    else
+      let format =
+        match byte land 0x0f with
+        | 0x00 -> DW_EH_PE_absptr
+        | 0x01 -> DW_EH_PE_uleb128
+        | 0x02 -> DW_EH_PE_udata2
+        | 0x03 -> DW_EH_PE_udata4
+        | 0x04 -> DW_EH_PE_udata8
+        | 0x09 -> DW_EH_PE_sleb128
+        | 0x0a -> DW_EH_PE_sdata2
+        | 0x0b -> DW_EH_PE_sdata4
+        | 0x0c -> DW_EH_PE_sdata8
+        | n ->
+            fail (Printf.sprintf "Unknown EH pointer encoding format: 0x%x" n)
+      in
+      let application =
+        match byte land 0x70 with
+        | 0x00 -> None
+        | 0x10 -> Some DW_EH_PE_pcrel
+        | 0x20 -> Some DW_EH_PE_textrel
+        | 0x30 -> Some DW_EH_PE_datarel
+        | 0x40 -> Some DW_EH_PE_funcrel
+        | 0x50 -> Some DW_EH_PE_aligned
+        | n ->
+            fail
+              (Printf.sprintf "Unknown EH pointer encoding application: 0x%02x"
+                 n)
+      in
+      DW_EH_PE_encoding { format; application; indirect = byte land 0x80 <> 0 }
 
-  let read_encoded_value cursor encoding _base_addr =
+  let string_of_pe_format = function
+    | DW_EH_PE_absptr -> "absolute pointer"
+    | DW_EH_PE_uleb128 -> "unsigned LEB128"
+    | DW_EH_PE_udata2 -> "unsigned 2-byte"
+    | DW_EH_PE_udata4 -> "unsigned 4-byte"
+    | DW_EH_PE_udata8 -> "unsigned 8-byte"
+    | DW_EH_PE_sleb128 -> "signed LEB128"
+    | DW_EH_PE_sdata2 -> "signed 2-byte"
+    | DW_EH_PE_sdata4 -> "signed 4-byte"
+    | DW_EH_PE_sdata8 -> "signed 8-byte"
+
+  let string_of_pe_application = function
+    | DW_EH_PE_pcrel -> "PC-relative "
+    | DW_EH_PE_textrel -> "text-relative "
+    | DW_EH_PE_datarel -> "data-relative "
+    | DW_EH_PE_funcrel -> "function-relative "
+    | DW_EH_PE_aligned -> "aligned "
+
+  let string_of_encoding = function
+    | DW_EH_PE_omit -> "omit"
+    | DW_EH_PE_encoding { format; application; indirect } ->
+        Printf.sprintf "%s%s%s"
+          (if indirect then "indirect " else "")
+          (match application with
+          | None -> ""
+          | Some a -> string_of_pe_application a)
+          (string_of_pe_format format)
+
+  (* Read one value described by [encoding]. PC-relative encodings are resolved
+     against the value's own position in the buffer; data-relative encodings
+     against [base_addr] (the section base). *)
+  let read_encoded_value cursor encoding base_addr =
     match encoding with
-    | DW_EH_PE_absptr -> Object.Buffer.Read.u64 cursor
-    | DW_EH_PE_udata4 ->
-        Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
-    | DW_EH_PE_sdata4 ->
-        let value = Object.Buffer.Read.u32 cursor in
-        let signed_value = Unsigned.UInt32.to_int32 value in
-        Unsigned.UInt64.of_int64 (Int64.of_int32 signed_value)
-    | DW_EH_PE_pcrel ->
-        (* PC-relative: value is relative to current position *)
-        let current_pos = Unsigned.UInt64.of_int cursor.position in
-        let offset = Object.Buffer.Read.u32 cursor in
-        let signed_offset = Unsigned.UInt32.to_int32 offset in
-        Unsigned.UInt64.add current_pos
-          (Unsigned.UInt64.of_int64 (Int64.of_int32 signed_offset))
-    | DW_EH_PE_datarel ->
-        (* Data-relative: value is relative to section base *)
-        let offset = Object.Buffer.Read.u32 cursor in
-        let signed_offset = Unsigned.UInt32.to_int32 offset in
-        Unsigned.UInt64.add _base_addr
-          (Unsigned.UInt64.of_int64 (Int64.of_int32 signed_offset))
-    | _ -> fail "Unsupported encoding in read_encoded_value"
+    | DW_EH_PE_omit -> fail "Cannot read a DW_EH_PE_omit-encoded value"
+    | DW_EH_PE_encoding { indirect = true; _ } ->
+        fail "Indirect EH pointer encodings are not supported"
+    | DW_EH_PE_encoding { format; application; indirect = false } -> (
+        let value_pos = cursor.Object.Buffer.position in
+        let raw =
+          match format with
+          | DW_EH_PE_absptr -> Object.Buffer.Read.u64 cursor
+          | DW_EH_PE_uleb128 ->
+              Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+          | DW_EH_PE_udata2 ->
+              Unsigned.UInt64.of_int
+                (Unsigned.UInt16.to_int (Object.Buffer.Read.u16 cursor))
+          | DW_EH_PE_udata4 ->
+              Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
+          | DW_EH_PE_udata8 -> Object.Buffer.Read.u64 cursor
+          | DW_EH_PE_sleb128 ->
+              Unsigned.UInt64.of_int64
+                (Int64.of_int (Object.Buffer.Read.sleb128 cursor))
+          | DW_EH_PE_sdata2 ->
+              let v = Unsigned.UInt16.to_int (Object.Buffer.Read.u16 cursor) in
+              let signed = if v >= 0x8000 then v - 0x10000 else v in
+              Unsigned.UInt64.of_int64 (Int64.of_int signed)
+          | DW_EH_PE_sdata4 ->
+              let v = Object.Buffer.Read.u32 cursor in
+              Unsigned.UInt64.of_int64
+                (Int64.of_int32 (Unsigned.UInt32.to_int32 v))
+          | DW_EH_PE_sdata8 -> Object.Buffer.Read.u64 cursor
+        in
+        match application with
+        | None -> raw
+        | Some DW_EH_PE_pcrel ->
+            Unsigned.UInt64.add (Unsigned.UInt64.of_int value_pos) raw
+        | Some DW_EH_PE_datarel -> Unsigned.UInt64.add base_addr raw
+        | Some (DW_EH_PE_textrel | DW_EH_PE_funcrel) ->
+            fail "Text- and function-relative EH encodings are not supported"
+        | Some DW_EH_PE_aligned ->
+            fail "Aligned EH pointer encodings are not supported")
 
   let parse_header cursor section_base_addr =
     let version = Object.Buffer.Read.u8 cursor in
@@ -6416,10 +6475,8 @@ module DebugAranges = struct
         done;
 
       (* Check for terminating null entry *)
-      if
-        Unsigned.UInt64.(equal start_address zero
-        && equal length zero)
-      then List.rev acc
+      if Unsigned.UInt64.(equal start_address zero && equal length zero) then
+        List.rev acc
       else
         let range = { start_address; length } in
         read_ranges (range :: acc)
@@ -6433,10 +6490,7 @@ module DebugAranges = struct
     | None -> None
     | Some (section_offset, _section_size) -> (
         try
-          let cur =
-            cursor buffer
-              ~at:(Unsigned.UInt64.to_int section_offset)
-          in
+          let cur = cursor buffer ~at:(Unsigned.UInt64.to_int section_offset) in
           let header = parse_header cur in
           (* For ELF files, debug_info_offset points to the compilation unit header start.
              The cu_die_offset displayed should be the offset where the actual DIE starts.
@@ -6479,7 +6533,8 @@ module DebugAranges = struct
 end
 
 module DebugLoclists = struct
-  type header = {               (* TODO Add brief info on the fields *)
+  type header = {
+    (* TODO Add brief info on the fields *)
     format : dwarf_format;
     unit_length : u64;
     version : u16;
@@ -6550,18 +6605,12 @@ module DebugLoclists = struct
           read_entries (LLE_startx_endx { start_index; end_index; expr } :: acc)
       | 0x03 ->
           let start_index = Read.uleb128 cur in
-          let length =
-            Unsigned.UInt64.of_int (Read.uleb128 cur)
-          in
+          let length = Unsigned.UInt64.of_int (Read.uleb128 cur) in
           let expr = read_expr cur in
           read_entries (LLE_startx_length { start_index; length; expr } :: acc)
       | 0x04 ->
-          let start_offset =
-            Unsigned.UInt64.of_int (Read.uleb128 cur)
-          in
-          let end_offset =
-            Unsigned.UInt64.of_int (Read.uleb128 cur)
-          in
+          let start_offset = Unsigned.UInt64.of_int (Read.uleb128 cur) in
+          let end_offset = Unsigned.UInt64.of_int (Read.uleb128 cur) in
           let expr = read_expr cur in
           read_entries
             (LLE_offset_pair { start_offset; end_offset; expr } :: acc)
@@ -6578,9 +6627,7 @@ module DebugLoclists = struct
           read_entries (LLE_start_end { start_addr; end_addr; expr } :: acc)
       | 0x08 ->
           let start_addr = read_addr cur address_size in
-          let length =
-            Unsigned.UInt64.of_int (Read.uleb128 cur)
-          in
+          let length = Unsigned.UInt64.of_int (Read.uleb128 cur) in
           let expr = read_expr cur in
           read_entries (LLE_start_length { start_addr; length; expr } :: acc)
       | n -> fail (Printf.sprintf "Unknown DW_LLE entry kind: 0x%02x" n)
@@ -6658,8 +6705,7 @@ module DebugRnglists = struct
     let open Object.Buffer in
     let addr_sz = Unsigned.UInt8.to_int address_size in
     if addr_sz = 4 then
-      Unsigned.UInt64.of_int
-        (Unsigned.UInt32.to_int (Read.u32 cur))
+      Unsigned.UInt64.of_int (Unsigned.UInt32.to_int (Read.u32 cur))
     else Read.u64 cur
 
   let parse_range_list cur address_size =
@@ -6677,17 +6723,11 @@ module DebugRnglists = struct
           read_entries (RLE_startx_endx { start_index; end_index } :: acc)
       | 0x03 ->
           let start_index = Read.uleb128 cur in
-          let length =
-            Unsigned.UInt64.of_int (Read.uleb128 cur)
-          in
+          let length = Unsigned.UInt64.of_int (Read.uleb128 cur) in
           read_entries (RLE_startx_length { start_index; length } :: acc)
       | 0x04 ->
-          let start_offset =
-            Unsigned.UInt64.of_int (Read.uleb128 cur)
-          in
-          let end_offset =
-            Unsigned.UInt64.of_int (Read.uleb128 cur)
-          in
+          let start_offset = Unsigned.UInt64.of_int (Read.uleb128 cur) in
+          let end_offset = Unsigned.UInt64.of_int (Read.uleb128 cur) in
           read_entries (RLE_offset_pair { start_offset; end_offset } :: acc)
       | 0x05 ->
           let address = read_addr cur address_size in
@@ -6698,9 +6738,7 @@ module DebugRnglists = struct
           read_entries (RLE_start_end { start_addr; end_addr } :: acc)
       | 0x07 ->
           let start_addr = read_addr cur address_size in
-          let length =
-            Unsigned.UInt64.of_int (Read.uleb128 cur)
-          in
+          let length = Unsigned.UInt64.of_int (Read.uleb128 cur) in
           read_entries (RLE_start_length { start_addr; length } :: acc)
       | n -> fail (Printf.sprintf "Unknown DW_RLE entry kind: 0x%02x" n)
     in
@@ -6898,7 +6936,7 @@ module SplitDwarf = struct
               | Some id when Unsigned.UInt64.equal id dwo_id -> Some ctx
               | _ -> None)
           | _ -> None)
-    with _ -> None              (* TODO Be more specific about exceptions here, *)
+    with _ -> None (* TODO Be more specific about exceptions here, *)
 
   let fixup_dwo_attribute ctx format addr_base (attr : DIE.attribute) =
     match attr.value with

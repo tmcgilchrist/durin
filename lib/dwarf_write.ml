@@ -447,6 +447,7 @@ let write_4byte_le buf v =
 
 let write_expression buf (ops : Dwarf.dwarf_expression_operation list)
     (_enc : Dwarf.encoding) =
+  (* TODO Why is _enc ignored here? In writing an expression surely we should consider the encoding.  *)
   List.iter
     (fun (op : Dwarf.dwarf_expression_operation) ->
       write_op_byte buf op.opcode;

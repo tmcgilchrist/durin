@@ -1748,12 +1748,7 @@ let dump_eh_frame filename =
                         Dwarf.EHFrameHdr.encoding_of_u8 encoding
                       in
                       let encoding_desc =
-                        match encoding_type with
-                        | Dwarf.EHFrameHdr.DW_EH_PE_pcrel ->
-                            "PC-relative signed 4-byte"
-                        | DW_EH_PE_datarel -> "data-relative signed 4-byte"
-                        | DW_EH_PE_sdata4 -> "signed 4-byte"
-                        | _ -> "unknown encoding"
+                        Dwarf.EHFrameHdr.string_of_encoding encoding_type
                       in
                       Printf.printf "    FDE encoding: %s (0x%02x)\n"
                         encoding_desc encoding
@@ -1849,14 +1844,7 @@ let dump_eh_frame_hdr filename =
         let eh_frame_hdr = Dwarf.EHFrameHdr.parse_section cursor section_addr in
 
         (* Helper function to describe encoding *)
-        let describe_encoding = function
-          | Dwarf.EHFrameHdr.DW_EH_PE_absptr -> "absolute pointer"
-          | DW_EH_PE_omit -> "omit"
-          | DW_EH_PE_udata4 -> "unsigned 4-byte"
-          | DW_EH_PE_pcrel -> "PC-relative signed 4-byte"
-          | DW_EH_PE_datarel -> "data-relative signed 4-byte"
-          | _ -> "other"
-        in
+        let describe_encoding = Dwarf.EHFrameHdr.string_of_encoding in
 
         (* Display header information *)
         Printf.printf "version: %d\n"

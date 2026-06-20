@@ -17,6 +17,12 @@
   (run %{exe:test_dwarf_expression.exe})))
 
 (test
+ (name test_eh_frame_encoding)
+ (libraries durin alcotest)
+ (action
+  (run %{exe:test_eh_frame_encoding.exe})))
+
+(test
  (name test_expression_evaluator)
  (libraries durin alcotest)
  (action

@@ -75,12 +75,11 @@ module Encoding = struct
   let personality_index_shift = 28
 
   let get_personality_index encoding =
-    Int32.(to_int
-      (shift_right_logical
-         (logand
-            (Unsigned.UInt32.to_int32 encoding)
-            personality_index_mask)
-         personality_index_shift))
+    Int32.(
+      to_int
+        (shift_right_logical
+           (logand (Unsigned.UInt32.to_int32 encoding) personality_index_mask)
+           personality_index_shift))
 
   let has_lsda (encoding : compact_unwind_encoding) =
     Int32.logand (Unsigned.UInt32.to_int32 encoding) has_lsda_mask <> 0l
@@ -230,8 +229,7 @@ let parse_compressed_page (buffer : Object.Buffer.t) page_start_offset =
   in
 
   (* Seek to entries array (relative to page start) *)
-  seek cur
-    (page_start_offset + Unsigned.UInt16.to_int header.entry_page_offset);
+  seek cur (page_start_offset + Unsigned.UInt16.to_int header.entry_page_offset);
   let entries =
     Array.init (Unsigned.UInt16.to_int header.entry_count) (fun _ ->
         parse_compressed_entry cur)
@@ -307,8 +305,7 @@ let parse_unwind_info (buffer : Object.Buffer.t) section_offset =
     | [] -> [||]
     | [ _ ] -> [||] (* Single offset likely means no real LSDA data *)
     | smallest_offset :: _ ->
-        seek cursor
-          (section_offset + Unsigned.UInt32.to_int smallest_offset);
+        seek cursor (section_offset + Unsigned.UInt32.to_int smallest_offset);
         (* Read LSDA entries with sentinel termination - limit to 4 based on system output *)
         let rec read_lsda_entries acc_entries count =
           if count >= 4 then
@@ -334,9 +331,7 @@ let parse_unwind_info (buffer : Object.Buffer.t) section_offset =
   let valid_entries =
     Array.to_list index_entries
     |> List.filter (fun entry ->
-        not
-          (Unsigned.UInt32.(equal entry.second_level_page_section_offset
-             zero)))
+        not Unsigned.UInt32.(equal entry.second_level_page_section_offset zero))
     |> Array.of_list
   in
 

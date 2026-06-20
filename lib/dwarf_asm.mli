@@ -15,6 +15,8 @@ val emit_section : Format.formatter -> string -> unit
 
 (** {2 DWARF-specific Emission} *)
 
+(* TODO These DWARF specific functions should have API details,
+   explaining what they're for. *)
 val emit_initial_length :
   Format.formatter ->
   Dwarf.dwarf_format ->
