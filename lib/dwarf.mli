@@ -2908,6 +2908,14 @@ module DebugLineStr : sig
       @param buffer Object buffer containing the DWARF data
       @return Optional parsed line string table, None if section not found
       @raise Parse_error if section format is invalid *)
+
+  val iter : (string_entry -> unit) -> t -> unit
+  (** Iterate over every string entry in the section. *)
+
+  val find_string_at_offset : t -> int -> string option
+  (** [find_string_at_offset t offset] returns the string whose entry begins at
+      [offset] in the [.debug_line_str] section, or [None] if no entry matches.
+  *)
 end
 
 val create : Object.Buffer.t -> t

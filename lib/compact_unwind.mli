@@ -164,11 +164,10 @@ val parse_compressed_second_level_header :
     @return Parsed compressed page header
     @raise Invalid_compact_unwind_format on parsing errors *)
 
-val parse_unwind_info : Object.Buffer.t -> int -> int -> unwind_info
+val parse_unwind_info : Object.Buffer.t -> int -> unwind_info
 (** Parse complete unwind info section from buffer
-    @param buffer The object buffer containing the binary
+    @param buffer The object buffer containing the MachO binary
     @param section_offset Offset to __unwind_info section
-    @param section_size Size of the section in bytes
     @return Parsed unwind information structure
     @raise Invalid_compact_unwind_format on parsing errors *)
 

@@ -76,7 +76,7 @@ let string_of_elf_machine = function
   | _ -> "unknown"
 
 (** Detect file format and architecture from buffer *)
-let detect_format_and_arch (buf : Object.Buffer.t) : string =
+let detect_format_and_arch (buf : Object.Buffer.t) =
   let format = Object_format.detect_format buf in
   match format with
   | ELF -> (
@@ -97,6 +97,7 @@ let detect_format_and_arch (buf : Object.Buffer.t) : string =
       let header, _commands = Object.Macho.read buf in
       let arch_str = string_of_cpu_type header.cpu_type in
       Printf.sprintf "Mach-O %s" arch_str
+  | _ -> "Unknown"
 
 type unit_type =
   | DW_UT_compile
@@ -156,10 +157,11 @@ type encoding = {
     DIE attributes. *)
 
 let parse_initial_length (cur : Object.Buffer.cursor) : dwarf_format * u64 =
-  let first_four = Object.Buffer.Read.u32 cur in
+  let open Object.Buffer in
+  let first_four = Read.u32 cur in
   let first_val = Unsigned.UInt32.to_int first_four in
   if first_val = 0xffffffff then
-    let actual_length = Object.Buffer.Read.u64 cur in
+    let actual_length = Read.u64 cur in
     (DWARF64, actual_length)
   else if first_val >= 0xfffffff0 then
     fail
@@ -170,11 +172,11 @@ let parse_initial_length (cur : Object.Buffer.cursor) : dwarf_format * u64 =
 
 let offset_size_for_format = function DWARF32 -> 4 | DWARF64 -> 8
 
-let read_offset_for_format (format : dwarf_format) (cur : Object.Buffer.cursor)
-    : u64 =
+let read_offset_for_format (format : dwarf_format) (cur : Object.Buffer.cursor) =
+  let open Object.Buffer in
   match format with
-  | DWARF32 -> Object.Buffer.Read.u32 cur |> Unsigned.UInt64.of_uint32
-  | DWARF64 -> Object.Buffer.Read.u64 cur
+  | DWARF32 -> Read.u32 cur |> Unsigned.UInt64.of_uint32
+  | DWARF64 -> Read.u64 cur
 
 type object_format = Object_format.format
 
@@ -242,6 +244,7 @@ let object_format_to_section_name format section =
       | Debug_macro_dwo -> ".debug_macro.dwo"
       | Debug_cu_index -> ".debug_cu_index"
       | Debug_tu_index -> ".debug_tu_index")
+  | _ -> fail "Unsupported object file format for DWARF section names"
 
 include Dwarf_abbreviation_tag
 include Dwarf_attribute
@@ -460,9 +463,10 @@ module DebugMacro = struct
   type macro_unit = { header : header; entries : entry list }
   type section = { units : macro_unit list }
 
-  let parse_header (cur : Object.Buffer.cursor) : header =
-    let version = Object.Buffer.Read.u16 cur in
-    let flags = Object.Buffer.Read.u8 cur in
+  let parse_header (cur : Object.Buffer.cursor) =
+    let open Object.Buffer in
+    let version = Read.u16 cur in
+    let flags = Read.u8 cur in
     let flags_int = Unsigned.UInt8.to_int flags in
     let format = if flags_int land 0x01 <> 0 then DWARF64 else DWARF32 in
     let debug_line_offset =
@@ -475,9 +479,9 @@ module DebugMacro = struct
     in
     { format; version; flags; debug_line_offset; debug_str_offsets_offset }
 
-  let parse_entry (cur : Object.Buffer.cursor) (format : dwarf_format) :
-      entry option =
-    let entry_type_code = Object.Buffer.Read.u8 cur in
+  let parse_entry (cur : Object.Buffer.cursor) (format : dwarf_format) =
+    let open Object.Buffer in
+    let entry_type_code = Read.u8 cur in
     if Unsigned.UInt8.to_int entry_type_code = 0 then None
     else
       let entry_type = macro_info_entry_type entry_type_code in
@@ -485,38 +489,38 @@ module DebugMacro = struct
         match entry_type with
         | DW_MACRO_define | DW_MACRO_undef ->
             let line =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              Read.uleb128 cur |> Unsigned.UInt32.of_int
             in
             let str =
-              Object.Buffer.Read.zero_string cur () |> Option.value ~default:""
+              Read.zero_string cur () |> Option.value ~default:""
             in
             (Some line, None, Some str, None)
         | DW_MACRO_define_strp | DW_MACRO_undef_strp ->
             let line =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              Read.uleb128 cur |> Unsigned.UInt32.of_int
             in
             let str_offset = read_offset_for_format format cur in
             (Some line, Some str_offset, None, None)
         | DW_MACRO_define_sup | DW_MACRO_undef_sup ->
             let line =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              Read.uleb128 cur |> Unsigned.UInt32.of_int
             in
             let str_offset = read_offset_for_format format cur in
             (Some line, Some str_offset, None, None)
         | DW_MACRO_define_strx | DW_MACRO_undef_strx ->
             let line =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              Read.uleb128 cur |> Unsigned.UInt32.of_int
             in
             let str_offset =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
+              Read.uleb128 cur |> Unsigned.UInt64.of_int
             in
             (Some line, Some str_offset, None, None)
         | DW_MACRO_start_file ->
             let line =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              Read.uleb128 cur |> Unsigned.UInt32.of_int
             in
             let file_idx =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              Read.uleb128 cur |> Unsigned.UInt32.of_int
             in
             (Some line, None, None, Some file_idx)
         | DW_MACRO_end_file -> (None, None, None, None)
@@ -527,10 +531,10 @@ module DebugMacro = struct
       in
       Some { entry_type; line_number; string_offset; string_value; file_index }
 
-  let parse_unit (cur : Object.Buffer.cursor) : macro_unit =
+  let parse_unit (cur : Object.Buffer.cursor) =
     let header = parse_header cur in
     let entries = ref [] in
-    let rec loop () =
+    let rec loop () =           (* TODO Can this be done with a fold? *)
       match parse_entry cur header.format with
       | None -> List.rev !entries
       | Some entry ->
@@ -540,12 +544,11 @@ module DebugMacro = struct
     let entries_list = loop () in
     { header; entries = entries_list }
 
-  let parse_section (cur : Object.Buffer.cursor) (section_size : int) : section
-      =
+  let parse_section (cur : Object.Buffer.cursor) section_size =
     let start_pos = cur.position in
     let end_pos = start_pos + section_size in
     let units = ref [] in
-    let rec loop () =
+    let rec loop () = (* TODO Can this be done with a fold? *)
       if cur.position >= end_pos then List.rev !units
       else
         let u = parse_unit cur in
@@ -587,10 +590,11 @@ module DebugMacinfo = struct
     constant : u64 option;
   }
 
-  type section = { entries : entry list }
+  type section = { entries : entry list } (* TODO How large is this list, should it be lazily parsed? *)
 
-  let parse_entry (cur : Object.Buffer.cursor) : entry option =
-    let type_code = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
+  let parse_entry (cur : Object.Buffer.cursor) =
+    let open Object.Buffer in
+    let type_code = Read.u8 cur |> Unsigned.UInt8.to_int in
     if type_code = 0 then None
     else
       let entry_type = macinfo_type_of_int type_code in
@@ -598,27 +602,25 @@ module DebugMacinfo = struct
         match entry_type with
         | DW_MACINFO_define | DW_MACINFO_undef ->
             let line =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              Read.uleb128 cur |> Unsigned.UInt32.of_int
             in
-            let str = Object.Buffer.Read.zero_string cur () in
-            let str_val = match str with Some s -> s | None -> "" in
-            (Some line, Some str_val, None, None)
+            let str = Read.zero_string cur () |> Option.value ~default:"" in
+            (Some line, Some str, None, None)
         | DW_MACINFO_start_file ->
             let line =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              Read.uleb128 cur |> Unsigned.UInt32.of_int
             in
             let file_idx =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt32.of_int
+              Read.uleb128 cur |> Unsigned.UInt32.of_int
             in
             (Some line, None, Some file_idx, None)
         | DW_MACINFO_end_file -> (None, None, None, None)
         | DW_MACINFO_vendor_ext ->
             let const =
-              Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
+              Read.uleb128 cur |> Unsigned.UInt64.of_int
             in
-            let str = Object.Buffer.Read.zero_string cur () in
-            let str_val = match str with Some s -> s | None -> "" in
-            (None, Some str_val, None, Some const)
+            let str = Read.zero_string cur () |> Option.value ~default:"" in
+            (None, Some str, None, Some const)
       in
       Some
         {
@@ -629,11 +631,10 @@ module DebugMacinfo = struct
           constant;
         }
 
-  let parse_section (cur : Object.Buffer.cursor) (section_size : int) : section
-      =
+  let parse_section (cur : Object.Buffer.cursor) section_size =
     let end_pos = cur.position + section_size in
     let entries = ref [] in
-    let rec loop () =
+    let rec loop () = (* TODO Can this be done with a fold? *)
       if cur.position >= end_pos then List.rev !entries
       else
         match parse_entry cur with
@@ -706,7 +707,6 @@ let string_of_call_frame_instruction = function
   | DW_CFA_lo_user -> "DW_CFA_lo_user"
   | DW_CFA_hi_user -> "DW_CFA_hi_user"
 
-(* CFI instruction decoder *)
 let decode_cfa_opcode = function
   | 0x00 -> DW_CFA_nop
   | 0x01 -> DW_CFA_set_loc
@@ -739,6 +739,7 @@ let decode_cfa_opcode = function
   | _ -> DW_CFA_nop (* Unknown instruction, treat as nop *)
 
 (* Helper functions for parsing ULEB128/SLEB128 values *)
+
 (* Read ULEB128 from string at position *)
 let read_uleb128_from_string str pos =
   let rec read_uleb acc shift pos =
@@ -780,8 +781,7 @@ type dwarf_expression_operation = {
   operand_string : string option;
 }
 
-let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) :
-    dwarf_expression_operation list =
+let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) =
   let rec parse_ops pos acc =
     if pos >= String.length expr_bytes then List.rev acc
     else
@@ -948,7 +948,7 @@ let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) :
               else ([], Some "[truncated]", pos + 1)
           (* DW_OP_call_ref - calls a DIE reference (address-sized) *)
           | DW_OP_call_ref ->
-              (* For now, assume 8-byte addresses - should be architecture dependent *)
+              (* For now, assume 8-byte addresses - TODO should be architecture dependent *)
               if pos + 8 < String.length expr_bytes then
                 let b1 = Int64.of_int (Char.code expr_bytes.[pos + 1]) in
                 let b2 = Int64.of_int (Char.code expr_bytes.[pos + 2]) in
@@ -977,7 +977,7 @@ let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) :
               let ref_size =
                 match encoding with
                 | Some enc when Unsigned.UInt16.to_int enc.version <= 4 -> 4
-                | Some enc -> (
+                | Some enc -> ( (* TODO Does this exist elsewhere? *)
                     match enc.format with DWARF32 -> 4 | DWARF64 -> 8)
                 | None -> 4
               in
@@ -1109,7 +1109,7 @@ let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) :
   in
   parse_ops 0 []
 
-let string_of_dwarf_operation (op : dwarf_expression_operation) : string =
+let string_of_dwarf_operation (op : dwarf_expression_operation) =
   let opcode_name = string_of_operation_encoding op.opcode in
   match (op.operands, op.operand_string) with
   | [], None -> opcode_name
@@ -1121,8 +1121,7 @@ let string_of_dwarf_operation (op : dwarf_expression_operation) : string =
       let operand_strs = List.map string_of_int operands in
       Printf.sprintf "%s(%s,%s)" opcode_name (String.concat "," operand_strs) s
 
-let string_of_dwarf_expression (ops : dwarf_expression_operation list) : string
-    =
+let string_of_dwarf_expression (ops : dwarf_expression_operation list) =
   String.concat " " (List.map string_of_dwarf_operation ops)
 
 (** DWARF Expression Evaluator *)
@@ -1184,8 +1183,7 @@ module Expression = struct
     else sub (shift_left one (8 * address_size)) one
 
   (** Start a new expression evaluation *)
-  let start_evaluation ~(bytecode : string) ~(encoding : encoding) :
-      evaluation_state =
+  let start_evaluation ~(bytecode : string) ~(encoding : encoding) =
     let address_size = Unsigned.UInt8.to_int encoding.address_size in
     {
       bytecode;
@@ -1623,6 +1621,9 @@ module Expression = struct
                   evaluate_step state
               | Address _ as addr ->
                   push state addr;
+                  evaluate_step state
+              | ImplicitValue _ as v ->
+                  push state v;
                   evaluate_step state)
           | DW_OP_form_tls_address ->
               let addr = pop state |> to_int64 in
@@ -1822,8 +1823,9 @@ module Expression = struct
   let pieces state = state.pieces
 end
 
+(* TODO Why wrap this as a struct with a record with a buffer? *)
 module Object_file = struct
-  type t = { buffer : Buffer.t; format : Object_format.format }
+  type t = { buffer : Buffer.t }
 end
 
 type attr_spec = {
@@ -1883,11 +1885,11 @@ let find_debug_section_by_type buffer section_type =
                       section.sec_size )
                 else None)
               dwarf_segment.seg_sections)
+    | _ -> None
   with _ -> None
 
-open Object.Buffer
-
 let parse_abbrev_table_from_cursor cur =
+  let open Object.Buffer in
   let table = Hashtbl.create 100 in
   let rec parse_abbrevs () =
     let code = Read.uleb128 cur in
@@ -1934,6 +1936,7 @@ let parse_abbrev_table_from_cursor cur =
 
 let parse_abbrev_table (elf : Object_file.t) (offset : u32) :
     (u64, abbrev) Hashtbl.t =
+  let open Object.Buffer in
   let section_offset =
     match find_debug_section_by_type elf.buffer Debug_abbrev with
     | Some (section_offset, _) -> Unsigned.UInt64.to_int section_offset
@@ -2634,7 +2637,6 @@ module DieZipper = struct
     parent_die : DIE.t;
     parent_has_children : bool;
     parent_children_pos : int;
-    siblings_resume_pos : int;
   }
 
   type t = {
@@ -2679,7 +2681,6 @@ module DieZipper = struct
               parent_die = t.die;
               parent_has_children = t.has_children;
               parent_children_pos = t.children_pos;
-              siblings_resume_pos = 0;
             }
           in
           Some
@@ -2760,7 +2761,6 @@ end
    Perhaps this belongs in a consumer? *)
 type t = {
   abbrev_tables_ : (size_t, (u64, abbrev) Hashtbl.t) Hashtbl.t;
-  compile_units_ : CompileUnit.t Array.t;
   object_ : Object_file.t;
 }
 
@@ -2838,17 +2838,6 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
       type_offset;
       dwo_id;
     } )
-
-let parse_compile_unit (object_file : Object_file.t)
-    (cur : Object.Buffer.cursor) : CompileUnit.t =
-  (* Start by parsing just the header to get size *)
-  let start = cur.position in
-
-  (* Reset cursor to start for consistent parsing *)
-  Object.Buffer.seek cur start;
-
-  let _unit_span, parsed = parse_compile_unit_header cur in
-  CompileUnit.make 0 start object_file parsed
 
 let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
   match find_debug_section_by_type dwarf.object_.buffer Debug_info with
@@ -4094,40 +4083,41 @@ module CallFrame = struct
   (** Debug Frame section *)
 
   (** Parse debug_frame section from cursor *)
-  let parse_debug_frame_section cursor section_size =
-    let section_end = cursor.position + section_size in
+  let parse_debug_frame_section cur section_size =
+    let open Object.Buffer in
+    let section_end = cur.position + section_size in
     let entries = ref [] in
     let entry_count = ref 0 in
 
     try
-      while cursor.position < section_end do
-        let start_pos = cursor.position in
+      while cur.position < section_end do
+        let start_pos = cur.position in
         (* Peek at first 4 bytes to check for zero terminator or DWARF64 marker *)
-        let first_word = Object.Buffer.Read.u32 cursor in
+        let first_word = Read.u32 cur in
         let first_word_int = Unsigned.UInt32.to_int first_word in
 
         if first_word_int = 0 then (
           (* Zero length indicates end of section *)
           entries := Zero_terminator start_pos :: !entries;
-          cursor.position <- section_end (* End parsing *))
+          cur.position <- section_end (* End parsing *))
         else
           (* Determine format and read ID field *)
-          cursor.position <- start_pos;
-        let _format, _length = parse_initial_length cursor in
-        let _id_pos = cursor.position in
-        let id = Object.Buffer.Read.u32 cursor in
+          cur.position <- start_pos;
+        let _format, _length = parse_initial_length cur in
+        let _id_pos = cur.position in
+        let id = Read.u32 cur in
 
         (* Reset cursor to parse the full entry *)
-        cursor.position <- start_pos;
+        cur.position <- start_pos;
 
         if Unsigned.UInt32.compare id debug_frame_cie_id = 0 then (
           (* This is a Common Information Entry (CIE) *)
-          let cie = parse_common_information_entry cursor in
+          let cie = parse_common_information_entry cur in
           entries := CIE cie :: !entries;
           incr entry_count)
         else
           (* This is a Frame Description Entry (FDE) *)
-          let fde = parse_frame_description_entry cursor start_pos in
+          let fde = parse_frame_description_entry cur start_pos in
           entries := FDE fde :: !entries;
           incr entry_count
       done;
@@ -4829,37 +4819,38 @@ module EHFrame = struct
       offset = Unsigned.UInt64.of_int fde_offset;
     }
 
-  let parse_section cursor section_size =
-    let section_start = cursor.position in
+  let parse_section cur section_size =
+    let open Object.Buffer in
+    let section_start = cur.position in
     (* Track section start for relative offsets *)
-    let section_end = cursor.position + section_size in
+    let section_end = cur.position + section_size in
     let entries = ref [] in
 
-    while cursor.position < section_end do
-      let start_pos = cursor.position in
-      let length = Object.Buffer.Read.u32 cursor in
+    while cur.position < section_end do
+      let start_pos = cur.position in
+      let length = Object.Buffer.Read.u32 cur in
       let length_int = Unsigned.UInt32.to_int length in
 
       if length_int = 0 then
         (* Zero terminator *)
-        cursor.position <- section_end
+        cur.position <- section_end
       else
-        let id = Object.Buffer.Read.u32 cursor in
-        (* Reset cursor to parse full entry *)
-        cursor.position <- start_pos;
+        let id = Object.Buffer.Read.u32 cur in
+        (* Reset cur to parse full entry *)
+        cur.position <- start_pos;
 
         if Unsigned.UInt32.to_int32 id = 0x00000000l then
           (* This is a CIE in .eh_frame format (id = 0 instead of 0xffffffff) *)
           let cie_section_offset = start_pos - section_start in
-          let cie = parse_eh_cie cursor length cie_section_offset in
+          let cie = parse_eh_cie cur length cie_section_offset in
           entries := EH_CIE cie :: !entries
         else
           (* This is an FDE - parse it to get address ranges *)
-          cursor.position <- start_pos;
+          cur.position <- start_pos;
         (* Reset to start of entry *)
         let fde_section_offset = start_pos - section_start in
         (* Calculate section-relative offset *)
-        let fde = parse_eh_fde cursor length fde_section_offset in
+        let fde = parse_eh_fde cur length fde_section_offset in
         entries := EH_FDE fde :: !entries
     done;
 
@@ -5038,37 +5029,6 @@ module DebugNames = struct
     in
     for i = 0 to Array.length arr - 1 do
       arr.(i) <- Object.Buffer.Read.u64 cur
-    done;
-    arr
-
-  (** Parse name table as array of debug_str_entry with offset tracking *)
-  let parse_name_table_with_offsets (cur : Object.Buffer.cursor) (count : u32) :
-      debug_str_entry array =
-    let arr =
-      Array.make
-        (Unsigned.UInt32.to_int count)
-        { offset = Unsigned.UInt32.zero; value = "" }
-    in
-    for i = 0 to Array.length arr - 1 do
-      let start_pos = cur.position in
-      let value =
-        match Object.Buffer.Read.zero_string cur () with
-        | Some s -> s
-        | None -> ""
-      in
-      arr.(i) <- { offset = Unsigned.UInt32.of_int start_pos; value }
-    done;
-    arr
-
-  (** Parse name table as array of null-terminated strings *)
-  let parse_name_table (cur : Object.Buffer.cursor) (count : u32) : string array
-      =
-    let arr = Array.make (Unsigned.UInt32.to_int count) "" in
-    for i = 0 to Array.length arr - 1 do
-      arr.(i) <-
-        (match Object.Buffer.Read.zero_string cur () with
-        | Some s -> s
-        | None -> "")
     done;
     arr
 
@@ -5288,45 +5248,6 @@ module DebugNames = struct
               (available codes: [%s])"
              (Unsigned.UInt64.to_int abbrev_code)
              (String.concat "; " (List.map string_of_int available_codes)))
-
-  (** Parse entry pool using entry_offsets to locate individual entries *)
-  let parse_entry_pool_with_offsets (buffer : Object.Buffer.t)
-      (entry_pool_start : int) (entry_offsets : u32 array)
-      (abbrev_table : (u64, debug_names_abbrev) Hashtbl.t) :
-      name_index_entry array =
-    Array.mapi
-      (fun i offset ->
-        let absolute_offset =
-          entry_pool_start + Unsigned.UInt32.to_int offset
-        in
-
-        if i < 4 then (
-          (* Only try to parse first few entries for debugging *)
-          (* Scan forward from the offset to find the first non-null byte *)
-          let rec find_entry_start pos max_scan =
-            if max_scan <= 0 then pos
-            else
-              let test_cur = Object.Buffer.cursor buffer ~at:pos in
-              let byte = Object.Buffer.Read.u8 test_cur in
-              if Unsigned.UInt8.to_int byte = 0 then
-                find_entry_start (pos + 1) (max_scan - 1)
-              else pos
-          in
-
-          let actual_entry_start = find_entry_start absolute_offset 20 in
-          if actual_entry_start <> absolute_offset then
-            ignore (absolute_offset, actual_entry_start);
-
-          let cur = Object.Buffer.cursor buffer ~at:actual_entry_start in
-          parse_single_entry cur abbrev_table)
-        else
-          {
-            (* For now, return dummy entry for other entries *)
-            name_offset = Unsigned.UInt32.of_int 0;
-            die_offset = Unsigned.UInt32.of_int 0;
-            attributes = [];
-          })
-      entry_offsets
 
   (** Parse a complete debug_names section *)
   let parse_debug_names_section (cur : Object.Buffer.cursor)
@@ -6079,19 +6000,12 @@ let get_abbrev_table t (offset : size_t) =
       (t, a)
 
 let create buffer =
-  let format = Object_format.detect_format buffer in
-  let object_ = Object_file.{ buffer; format } in
-  { abbrev_tables_ = Hashtbl.create 10; compile_units_ = [||]; object_ }
-
-(* TODO Change the type of t.compile_units_ *)
-let get_compile_units t =
-  let compile_units = parse_compile_units t |> List.of_seq |> Array.of_list in
-  { t with compile_units_ = compile_units }
+  let object_ = Object_file.{ buffer } in
+  { abbrev_tables_ = Hashtbl.create 10; object_ }
 
 module DebugAbbrev = struct
   let parse buffer offset =
-    let format = Object_format.detect_format buffer in
-    let object_ = Object_file.{ buffer; format } in
+    let object_ = Object_file.{ buffer } in
     match find_debug_section_by_type buffer Debug_abbrev with
     | None -> None
     | Some _ -> Some (parse_abbrev_table object_ offset)
@@ -6100,8 +6014,7 @@ module DebugAbbrev = struct
     match find_debug_section_by_type buffer Debug_abbrev with
     | None -> []
     | Some (section_offset, section_size) ->
-        let format = Object_format.detect_format buffer in
-        let object_ = Object_file.{ buffer; format } in
+        let object_ = Object_file.{ buffer } in
         let section_start = Unsigned.UInt64.to_int section_offset in
         let section_end = section_start + Unsigned.UInt64.to_int section_size in
         let tables = ref [] in
@@ -6345,13 +6258,14 @@ module DebugAddr = struct
 
   type t = { header : header; entries : entry array }
 
-  let parse_header cursor =
-    let start_pos = cursor.position in
-    let format, unit_length = parse_initial_length cursor in
-    let version = Object.Buffer.Read.u16 cursor in
-    let address_size = Object.Buffer.Read.u8 cursor in
-    let segment_selector_size = Object.Buffer.Read.u8 cursor in
-    let end_pos = cursor.position in
+  let parse_header cur =
+    let open Object.Buffer in
+    let start_pos = cur.position in
+    let format, unit_length = parse_initial_length cur in
+    let version = Read.u16 cur in
+    let address_size = Read.u8 cur in
+    let segment_selector_size = Read.u8 cur in
+    let end_pos = cur.position in
     let span =
       {
         start = Unsigned.UInt64.of_int start_pos;
@@ -6439,14 +6353,15 @@ module DebugAranges = struct
   type address_range = { start_address : u64; length : u64 }
   type aranges_set = { header : header; ranges : address_range list }
 
-  let parse_header cursor =
-    let start_pos = cursor.position in
-    let format, unit_length = parse_initial_length cursor in
-    let version = Object.Buffer.Read.u16 cursor in
-    let debug_info_offset = read_offset_for_format format cursor in
-    let address_size = Object.Buffer.Read.u8 cursor in
-    let segment_size = Object.Buffer.Read.u8 cursor in
-    let end_pos = cursor.position in
+  let parse_header cur =
+    let open Object.Buffer in
+    let start_pos = cur.position in
+    let format, unit_length = parse_initial_length cur in
+    let version = Read.u16 cur in
+    let debug_info_offset = read_offset_for_format format cur in
+    let address_size = Read.u8 cur in
+    let segment_size = Read.u8 cur in
+    let end_pos = cur.position in
 
     (* Calculate header span *)
     let span =
@@ -6466,7 +6381,8 @@ module DebugAranges = struct
       span;
     }
 
-  let parse_entries cursor header =
+  let parse_entries cur header =
+    let open Object.Buffer in
     let address_size = Unsigned.UInt8.to_int header.address_size in
     let segment_size = Unsigned.UInt8.to_int header.segment_size in
 
@@ -6474,35 +6390,35 @@ module DebugAranges = struct
        The header size is tracked in span. For proper alignment with 8-byte addresses (16-byte alignment),
        we observe that 4 bytes of padding are needed in practice. *)
     for _i = 0 to 3 do
-      ignore (Object.Buffer.Read.u8 cursor)
+      ignore (Read.u8 cur)
     done;
 
     let rec read_ranges acc =
       (* Read address and length based on address_size *)
       let start_address =
         match address_size with
-        | 4 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
-        | 8 -> Object.Buffer.Read.u64 cursor
+        | 4 -> Unsigned.UInt64.of_uint32 (Read.u32 cur)
+        | 8 -> Read.u64 cur
         | _ -> fail ("Unsupported address size: " ^ string_of_int address_size)
       in
 
       let length =
         match address_size with
-        | 4 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cursor)
-        | 8 -> Object.Buffer.Read.u64 cursor
+        | 4 -> Unsigned.UInt64.of_uint32 (Read.u32 cur)
+        | 8 -> Read.u64 cur
         | _ -> fail ("Unsupported address size: " ^ string_of_int address_size)
       in
 
       (* Skip segment selector if present *)
       if segment_size > 0 then
         for _i = 0 to segment_size - 1 do
-          ignore (Object.Buffer.Read.u8 cursor)
+          ignore (Read.u8 cur)
         done;
 
       (* Check for terminating null entry *)
       if
-        Unsigned.UInt64.equal start_address Unsigned.UInt64.zero
-        && Unsigned.UInt64.equal length Unsigned.UInt64.zero
+        Unsigned.UInt64.(equal start_address zero
+        && equal length zero)
       then List.rev acc
       else
         let range = { start_address; length } in
@@ -6510,16 +6426,18 @@ module DebugAranges = struct
     in
     read_ranges []
 
+  (* TODO This takes Buffer.t perhaps it should just be Object.Buffer ?  *)
   let parse buffer : aranges_set option =
+    let open Object.Buffer in
     match find_debug_section_by_type buffer Debug_aranges with
     | None -> None
     | Some (section_offset, _section_size) -> (
         try
-          let cursor =
-            Object.Buffer.cursor buffer
+          let cur =
+            cursor buffer
               ~at:(Unsigned.UInt64.to_int section_offset)
           in
-          let header = parse_header cursor in
+          let header = parse_header cur in
           (* For ELF files, debug_info_offset points to the compilation unit header start.
              The cu_die_offset displayed should be the offset where the actual DIE starts.
              Calculate this as: base offset + header size *)
@@ -6534,7 +6452,7 @@ module DebugAranges = struct
               | Some (debug_info_section_offset, _) -> (
                   try
                     let cursor =
-                      Object.Buffer.cursor buffer
+                      cursor buffer
                         ~at:(Unsigned.UInt64.to_int debug_info_section_offset)
                     in
                     let _span, cu_header = parse_compile_unit_header cursor in
@@ -6552,7 +6470,7 @@ module DebugAranges = struct
           let display_header =
             { header with debug_info_offset = cu_die_offset }
           in
-          let ranges = parse_entries cursor header in
+          let ranges = parse_entries cur header in
           Some { header = display_header; ranges }
         with exn ->
           Printf.eprintf "Error parsing debug_aranges section: %s\n"
@@ -6560,9 +6478,8 @@ module DebugAranges = struct
           None)
 end
 
-(** Location Lists (.debug_loclists section) - DWARF 5 Section 7.7.3 *)
 module DebugLoclists = struct
-  type header = {
+  type header = {               (* TODO Add brief info on the fields *)
     format : dwarf_format;
     unit_length : u64;
     version : u16;
@@ -6585,12 +6502,13 @@ module DebugLoclists = struct
   type location_list = { entries : location_entry list }
   type loclists_section = { header : header; offset_table : u64 array }
 
-  let parse_header cursor =
-    let format, unit_length = parse_initial_length cursor in
-    let version = Object.Buffer.Read.u16 cursor in
-    let address_size = Object.Buffer.Read.u8 cursor in
-    let segment_size = Object.Buffer.Read.u8 cursor in
-    let offset_entry_count = Object.Buffer.Read.u32 cursor in
+  let parse_header cur =
+    let open Object.Buffer in
+    let format, unit_length = parse_initial_length cur in
+    let version = Read.u16 cur in
+    let address_size = Read.u8 cur in
+    let segment_size = Read.u8 cur in
+    let offset_entry_count = Read.u32 cur in
     {
       format;
       unit_length;
@@ -6605,63 +6523,65 @@ module DebugLoclists = struct
     Array.init count (fun _i -> read_offset_for_format header.format cursor)
 
   let read_addr cursor address_size =
-    let addr_sz = Unsigned.UInt8.to_int address_size in
-    if addr_sz = 4 then
+    let address_size = Unsigned.UInt8.to_int address_size in
+    if address_size = 4 then
       Unsigned.UInt64.of_int
         (Unsigned.UInt32.to_int (Object.Buffer.Read.u32 cursor))
     else Object.Buffer.Read.u64 cursor
 
-  let read_expr cursor =
-    let len = Object.Buffer.Read.uleb128 cursor in
-    Object.Buffer.Read.fixed_string cursor len
+  let read_expr cur =
+    let open Object.Buffer in
+    let len = Read.uleb128 cur in
+    Read.fixed_string cur len
 
-  let parse_location_list cursor address_size =
+  let parse_location_list cur address_size =
+    let open Object.Buffer in
     let rec read_entries acc =
-      let kind = Unsigned.UInt8.to_int (Object.Buffer.Read.u8 cursor) in
+      let kind = Unsigned.UInt8.to_int (Read.u8 cur) in
       match kind with
       | 0x00 -> List.rev (LLE_end_of_list :: acc)
       | 0x01 ->
-          let index = Object.Buffer.Read.uleb128 cursor in
+          let index = Read.uleb128 cur in
           read_entries (LLE_base_addressx { index } :: acc)
       | 0x02 ->
-          let start_index = Object.Buffer.Read.uleb128 cursor in
-          let end_index = Object.Buffer.Read.uleb128 cursor in
-          let expr = read_expr cursor in
+          let start_index = Read.uleb128 cur in
+          let end_index = Read.uleb128 cur in
+          let expr = read_expr cur in
           read_entries (LLE_startx_endx { start_index; end_index; expr } :: acc)
       | 0x03 ->
-          let start_index = Object.Buffer.Read.uleb128 cursor in
+          let start_index = Read.uleb128 cur in
           let length =
-            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+            Unsigned.UInt64.of_int (Read.uleb128 cur)
           in
-          let expr = read_expr cursor in
+          let expr = read_expr cur in
           read_entries (LLE_startx_length { start_index; length; expr } :: acc)
       | 0x04 ->
           let start_offset =
-            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+            Unsigned.UInt64.of_int (Read.uleb128 cur)
           in
           let end_offset =
-            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+            Unsigned.UInt64.of_int (Read.uleb128 cur)
           in
-          let expr = read_expr cursor in
+          let expr = read_expr cur in
           read_entries
             (LLE_offset_pair { start_offset; end_offset; expr } :: acc)
       | 0x05 ->
-          let expr = read_expr cursor in
+          let expr = read_expr cur in
           read_entries (LLE_default_location { expr } :: acc)
       | 0x06 ->
-          let address = read_addr cursor address_size in
+          let address = read_addr cur address_size in
           read_entries (LLE_base_address { address } :: acc)
       | 0x07 ->
-          let start_addr = read_addr cursor address_size in
-          let end_addr = read_addr cursor address_size in
-          let expr = read_expr cursor in
+          let start_addr = read_addr cur address_size in
+          let end_addr = read_addr cur address_size in
+          let expr = read_expr cur in
           read_entries (LLE_start_end { start_addr; end_addr; expr } :: acc)
       | 0x08 ->
-          let start_addr = read_addr cursor address_size in
+          let start_addr = read_addr cur address_size in
           let length =
-            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+            Unsigned.UInt64.of_int (Read.uleb128 cur)
           in
-          let expr = read_expr cursor in
+          let expr = read_expr cur in
           read_entries (LLE_start_length { start_addr; length; expr } :: acc)
       | n -> fail (Printf.sprintf "Unknown DW_LLE entry kind: 0x%02x" n)
     in
@@ -6714,12 +6634,13 @@ module DebugRnglists = struct
   type range_list = { entries : range_entry list }
   type rnglists_section = { header : header; offset_table : u64 array }
 
-  let parse_header cursor =
-    let format, unit_length = parse_initial_length cursor in
-    let version = Object.Buffer.Read.u16 cursor in
-    let address_size = Object.Buffer.Read.u8 cursor in
-    let segment_size = Object.Buffer.Read.u8 cursor in
-    let offset_entry_count = Object.Buffer.Read.u32 cursor in
+  let parse_header cur =
+    let open Object.Buffer in
+    let format, unit_length = parse_initial_length cur in
+    let version = Read.u16 cur in
+    let address_size = Read.u8 cur in
+    let segment_size = Read.u8 cur in
+    let offset_entry_count = Read.u32 cur in
     {
       format;
       unit_length;
@@ -6733,50 +6654,52 @@ module DebugRnglists = struct
     let count = Unsigned.UInt32.to_int header.offset_entry_count in
     Array.init count (fun _i -> read_offset_for_format header.format cursor)
 
-  let read_addr cursor address_size =
+  let read_addr cur address_size =
+    let open Object.Buffer in
     let addr_sz = Unsigned.UInt8.to_int address_size in
     if addr_sz = 4 then
       Unsigned.UInt64.of_int
-        (Unsigned.UInt32.to_int (Object.Buffer.Read.u32 cursor))
-    else Object.Buffer.Read.u64 cursor
+        (Unsigned.UInt32.to_int (Read.u32 cur))
+    else Read.u64 cur
 
-  let parse_range_list cursor address_size =
+  let parse_range_list cur address_size =
+    let open Object.Buffer in
     let rec read_entries acc =
-      let kind = Unsigned.UInt8.to_int (Object.Buffer.Read.u8 cursor) in
+      let kind = Unsigned.UInt8.to_int (Read.u8 cur) in
       match kind with
       | 0x00 -> List.rev (RLE_end_of_list :: acc)
       | 0x01 ->
-          let index = Object.Buffer.Read.uleb128 cursor in
+          let index = Read.uleb128 cur in
           read_entries (RLE_base_addressx { index } :: acc)
       | 0x02 ->
-          let start_index = Object.Buffer.Read.uleb128 cursor in
-          let end_index = Object.Buffer.Read.uleb128 cursor in
+          let start_index = Read.uleb128 cur in
+          let end_index = Read.uleb128 cur in
           read_entries (RLE_startx_endx { start_index; end_index } :: acc)
       | 0x03 ->
-          let start_index = Object.Buffer.Read.uleb128 cursor in
+          let start_index = Read.uleb128 cur in
           let length =
-            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+            Unsigned.UInt64.of_int (Read.uleb128 cur)
           in
           read_entries (RLE_startx_length { start_index; length } :: acc)
       | 0x04 ->
           let start_offset =
-            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+            Unsigned.UInt64.of_int (Read.uleb128 cur)
           in
           let end_offset =
-            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+            Unsigned.UInt64.of_int (Read.uleb128 cur)
           in
           read_entries (RLE_offset_pair { start_offset; end_offset } :: acc)
       | 0x05 ->
-          let address = read_addr cursor address_size in
+          let address = read_addr cur address_size in
           read_entries (RLE_base_address { address } :: acc)
       | 0x06 ->
-          let start_addr = read_addr cursor address_size in
-          let end_addr = read_addr cursor address_size in
+          let start_addr = read_addr cur address_size in
+          let end_addr = read_addr cur address_size in
           read_entries (RLE_start_end { start_addr; end_addr } :: acc)
       | 0x07 ->
-          let start_addr = read_addr cursor address_size in
+          let start_addr = read_addr cur address_size in
           let length =
-            Unsigned.UInt64.of_int (Object.Buffer.Read.uleb128 cursor)
+            Unsigned.UInt64.of_int (Read.uleb128 cur)
           in
           read_entries (RLE_start_length { start_addr; length } :: acc)
       | n -> fail (Printf.sprintf "Unknown DW_RLE entry kind: 0x%02x" n)
@@ -6808,7 +6731,7 @@ module DebugRnglists = struct
 end
 
 let lookup_address_in_debug_addr (buffer : Object.Buffer.t) (_addr_base : u64)
-    (index : int) : u64 option =
+    (index : int) =
   (* Find the debug_addr section *)
   match find_debug_section_by_type buffer Debug_addr with
   | None -> None
@@ -6825,7 +6748,7 @@ let lookup_address_in_debug_addr (buffer : Object.Buffer.t) (_addr_base : u64)
       with _ -> None)
 
 let resolve_address_index (buffer : Object.Buffer.t) (index : int)
-    (addr_base : u64) : u64 =
+    (addr_base : u64) =
   (* Try to resolve address index using debug_addr section *)
   match lookup_address_in_debug_addr buffer addr_base index with
   | Some address -> address
@@ -6853,7 +6776,7 @@ module SplitDwarf = struct
     | Debug_macro -> Debug_macro_dwo
     | other -> other
 
-  let find_section ctx section_type =
+  let find_section (ctx : dwo_context) (section_type : dwarf_section) =
     match section_type with
     | Debug_addr -> find_debug_section_by_type ctx.parent_buffer Debug_addr
     | s -> (
@@ -6876,7 +6799,8 @@ module SplitDwarf = struct
             | None -> find_debug_section_by_type ctx.dwo_buffer s))
 
   let resolve_string_index_dwo (dwo_buffer : Object.Buffer.t)
-      (format : dwarf_format) (index : int) : string =
+      (format : dwarf_format) (index : int) =
+    let open Object.Buffer in
     match
       ( find_debug_section_by_type dwo_buffer Debug_str_offs_dwo,
         find_debug_section_by_type dwo_buffer Debug_str_dwo )
@@ -6908,6 +6832,7 @@ module SplitDwarf = struct
 
   let parse_abbrev_table_from_section (buffer : Object.Buffer.t)
       (section_type : dwarf_section) (offset : u64) : (u64, abbrev) Hashtbl.t =
+    let open Object.Buffer in
     let section_offset =
       match find_debug_section_by_type buffer section_type with
       | Some (section_offset, _) -> Unsigned.UInt64.to_int section_offset
@@ -6922,6 +6847,7 @@ module SplitDwarf = struct
     parse_abbrev_table_from_section ctx.dwo_buffer Debug_abbrev_dwo offset
 
   let dwo_compile_units ctx =
+    let open Object.Buffer in
     match find_debug_section_by_type ctx.dwo_buffer Debug_info_dwo with
     | None -> Seq.empty
     | Some (section_offset, section_size) ->
@@ -6935,13 +6861,7 @@ module SplitDwarf = struct
               in
               let cur = cursor ctx.dwo_buffer ~at:absolute_pos in
               let _unit_span, parsed_header = parse_compile_unit_header cur in
-              let obj =
-                Object_file.
-                  {
-                    buffer = ctx.dwo_buffer;
-                    format = Object_format.detect_format ctx.dwo_buffer;
-                  }
-              in
+              let obj = Object_file.{ buffer = ctx.dwo_buffer } in
               let unit =
                 CompileUnit.make cursor_pos absolute_pos obj parsed_header
               in
@@ -6961,8 +6881,9 @@ module SplitDwarf = struct
         parse_units 0
 
   let load_dwo ~parent_buffer ~dwo_path ~dwo_id =
+    let open Object.Buffer in
     try
-      let dwo_buffer = Object.Buffer.parse dwo_path in
+      let dwo_buffer = parse dwo_path in
       let ctx = { dwo_buffer; parent_buffer; dwo_id; contributions = [] } in
       match find_debug_section_by_type dwo_buffer Debug_info_dwo with
       | None -> None
@@ -6977,7 +6898,7 @@ module SplitDwarf = struct
               | Some id when Unsigned.UInt64.equal id dwo_id -> Some ctx
               | _ -> None)
           | _ -> None)
-    with _ -> None
+    with _ -> None              (* TODO Be more specific about exceptions here, *)
 
   let fixup_dwo_attribute ctx format addr_base (attr : DIE.attribute) =
     match attr.value with
@@ -6999,6 +6920,7 @@ module SplitDwarf = struct
       }
 
   let dwo_root_die ctx cu addr_base =
+    let open Object.Buffer in
     let abbrev =
       dwo_abbrev_table ctx cu.CompileUnit.header.debug_abbrev_offset
     in
@@ -7066,6 +6988,7 @@ module SplitDwarf = struct
   }
 
   let parse_unit_index buffer section_type =
+    let open Object.Buffer in
     match find_debug_section_by_type buffer section_type with
     | None -> None
     | Some (section_offset, _) -> (
@@ -7186,11 +7109,9 @@ module CompactUnwind = struct
   let parse_from_buffer buffer =
     match find_unwind_info_section buffer with
     | None -> None
-    | Some (section_offset, section_size) -> (
+    | Some (section_offset, _section_size) -> (
         try
-          let unwind_info =
-            parse_unwind_info buffer section_offset section_size
-          in
+          let unwind_info = parse_unwind_info buffer section_offset in
           let arch = detect_architecture buffer in
           Some (unwind_info, arch)
         with Invalid_compact_unwind_format _ -> None)

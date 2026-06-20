@@ -1,7 +1,4 @@
 (library
  (name durin)
  (package durin)
- ; TODO Hiding some infelicities here!
- (flags
-  (:standard -w -8-32-69))
  (libraries object integers str))
