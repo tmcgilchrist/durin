@@ -1118,7 +1118,9 @@ let write_eh_fde buf (fde : Dwarf.CallFrame.frame_description_entry)
   in
   let body_len = 4 + 4 + 4 + aug_data_sz + String.length fde.instructions in
   write_u32_le buf (Unsigned.UInt32.of_int body_len);
-  let cie_ptr = fde_start + 4 + 4 - cie_offset in
+  (* .eh_frame cie_pointer is relative to the cie_pointer field itself, which
+     sits 4 bytes into the FDE (after the length field). *)
+  let cie_ptr = fde_start + 4 - cie_offset in
   write_u32_le buf (Unsigned.UInt32.of_int cie_ptr);
   let il_field_pos = fde_start + 4 + 4 in
   let il_raw = Unsigned.UInt64.to_int fde.initial_location - il_field_pos in

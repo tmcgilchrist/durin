@@ -1845,10 +1845,24 @@ let test_write_eh_frame_cie_fde () =
   | Eh_frame.EH_CIE p ->
       check int "cie version" 1 (Unsigned.UInt8.to_int p.version)
   | _ -> fail "first should be CIE");
-  match List.nth section.entries 1 with
-  | Eh_frame.EH_FDE p ->
-      check int "fde addr_range" 0x80 (Unsigned.UInt64.to_int p.address_range)
-  | _ -> fail "second should be FDE"
+  let fde' =
+    match List.nth section.entries 1 with
+    | Eh_frame.EH_FDE p -> p
+    | _ -> fail "second should be FDE"
+  in
+  check int "fde addr_range" 0x80 (Unsigned.UInt64.to_int fde'.address_range);
+  (* The FDE's cie_pointer must resolve back to the CIE (at section offset 0).
+     This catches an off-by-N in the cie_pointer arithmetic in either the
+     reader or the writer. *)
+  match
+    Eh_frame.find_cie_for_fde section
+      (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int fde'.cie_pointer))
+      (Unsigned.UInt64.to_int fde'.offset)
+  with
+  | Some cie' ->
+      check int "FDE resolves to CIE at offset 0" 0
+        (Unsigned.UInt64.to_int cie'.offset)
+  | None -> fail "FDE should resolve to its CIE"
 
 let test_write_eh_cie_augmented () =
   let aug_data = "\x1b" in
