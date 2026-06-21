@@ -58,6 +58,72 @@ let test_implicit_pointer_dwarf64_encoding () =
        ~name:"implicit_pointer_dwarf64" ~expected:"DW_OP_implicit_pointer"
        "\xa0\x2a\x00\x00\x00\x00\x00\x00\x00\x00" ()
 
+(* 32-bit target: 4-byte addresses. *)
+let addr32_encoding : Dwarf.encoding =
+  {
+    format = DWARF32;
+    address_size = Unsigned.UInt8.of_int 4;
+    version = Unsigned.UInt16.of_int 5;
+  }
+
+(* DW_OP_addr (0x03) consumes [address_size] operand bytes, so a 4-byte-address
+   expression followed by DW_OP_lit0 (0x30) must parse as two operations. With
+   the old hardcoded 8 it would over-read and mis-parse. *)
+let test_addr_size_4 () =
+  let parsed =
+    Dwarf.parse_dwarf_expression ~encoding:addr32_encoding
+      "\x03\x01\x02\x03\x04\x30"
+  in
+  Alcotest.(check int) "DW_OP_addr(4) + lit0" 2 (List.length parsed)
+
+let test_addr_size_8 () =
+  let parsed =
+    Dwarf.parse_dwarf_expression ~encoding:dwarf4_encoding
+      "\x03\x01\x02\x03\x04\x05\x06\x07\x08\x30"
+  in
+  Alcotest.(check int) "DW_OP_addr(8) + lit0" 2 (List.length parsed)
+
+(* DW_OP_call_ref (0x9a) operand is DWARF-offset sized: 4 in 32-bit, 8 in
+   64-bit DWARF. *)
+let test_call_ref_dwarf32 () =
+  let parsed =
+    Dwarf.parse_dwarf_expression ~encoding:dwarf4_encoding
+      "\x9a\x01\x02\x03\x04\x30"
+  in
+  Alcotest.(check int) "call_ref(32) + lit0" 2 (List.length parsed)
+
+let test_call_ref_dwarf64 () =
+  let parsed =
+    Dwarf.parse_dwarf_expression ~encoding:dwarf5_64_encoding
+      "\x9a\x01\x02\x03\x04\x05\x06\x07\x08\x30"
+  in
+  Alcotest.(check int) "call_ref(64) + lit0" 2 (List.length parsed)
+
+(* The writer must emit address-/offset-sized operands per the encoding. *)
+let test_write_addr_size () =
+  let op : Dwarf.dwarf_expression_operation =
+    { opcode = DW_OP_addr; operands = [ 0x1234 ]; operand_string = None }
+  in
+  let b4 = Stdlib.Buffer.create 16 in
+  Dwarf_write.write_expression b4 [ op ] addr32_encoding;
+  Alcotest.(check int) "DW_OP_addr writes 1+4 bytes" 5 (Stdlib.Buffer.length b4);
+  let b8 = Stdlib.Buffer.create 16 in
+  Dwarf_write.write_expression b8 [ op ] dwarf4_encoding;
+  Alcotest.(check int) "DW_OP_addr writes 1+8 bytes" 9 (Stdlib.Buffer.length b8)
+
+let test_write_call_ref_size () =
+  let op : Dwarf.dwarf_expression_operation =
+    { opcode = DW_OP_call_ref; operands = [ 0x40 ]; operand_string = None }
+  in
+  let b32 = Stdlib.Buffer.create 16 in
+  Dwarf_write.write_expression b32 [ op ] dwarf4_encoding;
+  Alcotest.(check int)
+    "call_ref writes 1+4 in DWARF32" 5 (Stdlib.Buffer.length b32);
+  let b64 = Stdlib.Buffer.create 16 in
+  Dwarf_write.write_expression b64 [ op ] dwarf5_64_encoding;
+  Alcotest.(check int)
+    "call_ref writes 1+8 in DWARF64" 9 (Stdlib.Buffer.length b64)
+
 let () =
   Alcotest.run "DWARF_Expression"
     [
@@ -134,5 +200,14 @@ let () =
           ( "implicit_pointer_dwarf64",
             `Quick,
             test_implicit_pointer_dwarf64_encoding );
+        ] );
+      ( "address_sizing",
+        [
+          ("addr_size_4", `Quick, test_addr_size_4);
+          ("addr_size_8", `Quick, test_addr_size_8);
+          ("call_ref_dwarf32", `Quick, test_call_ref_dwarf32);
+          ("call_ref_dwarf64", `Quick, test_call_ref_dwarf64);
+          ("write_addr_size", `Quick, test_write_addr_size);
+          ("write_call_ref_size", `Quick, test_write_call_ref_size);
         ] );
     ]

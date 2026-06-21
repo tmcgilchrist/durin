@@ -446,12 +446,18 @@ let write_4byte_le buf v =
   Buffer.add_char buf (Char.chr ((v lsr 24) land 0xff))
 
 let write_expression buf (ops : Dwarf.dwarf_expression_operation list)
-    (_enc : Dwarf.encoding) =
-  (* TODO Why is _enc ignored here? In writing an expression surely we should consider the encoding.  *)
+    (enc : Dwarf.encoding) =
+  let addr_size = Unsigned.UInt8.to_int enc.address_size in
   List.iter
     (fun (op : Dwarf.dwarf_expression_operation) ->
       write_op_byte buf op.opcode;
       match op.opcode with
+      | DW_OP_addr ->
+          write_address buf addr_size
+            (Unsigned.UInt64.of_int (List.hd op.operands))
+      | DW_OP_call_ref ->
+          write_offset buf enc.format
+            (Unsigned.UInt64.of_int (List.hd op.operands))
       | DW_OP_deref | DW_OP_dup | DW_OP_drop | DW_OP_over | DW_OP_swap
       | DW_OP_rot | DW_OP_xderef | DW_OP_abs | DW_OP_and | DW_OP_div
       | DW_OP_minus | DW_OP_mod | DW_OP_mul | DW_OP_neg | DW_OP_not | DW_OP_or

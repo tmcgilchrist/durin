@@ -763,6 +763,19 @@ type dwarf_expression_operation = {
 }
 
 let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) =
+  (* DW_OP_addr operands are target-address sized; DW_OP_call_ref operands are
+     DWARF-offset sized (4 in 32-bit DWARF, 8 in 64-bit). Without an encoding we
+     fall back to 8 bytes, the historical default. *)
+  let addr_size =
+    match encoding with
+    | Some e -> Unsigned.UInt8.to_int e.address_size
+    | None -> 8
+  in
+  let offset_size =
+    match encoding with
+    | Some e -> ( match e.format with DWARF32 -> 4 | DWARF64 -> 8)
+    | None -> 8
+  in
   let rec parse_ops pos acc =
     if pos >= String.length expr_bytes then List.rev acc
     else
@@ -842,12 +855,11 @@ let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) =
               else ([], None, pos + 1)
           (* Address operand (architecture dependent size) *)
           | DW_OP_addr ->
-              (* For now, assume 8-byte addresses *)
-              if pos + 8 < String.length expr_bytes then
-                let addr_bytes = String.sub expr_bytes (pos + 1) 8 in
+              if pos + addr_size < String.length expr_bytes then
+                let addr_bytes = String.sub expr_bytes (pos + 1) addr_size in
                 ( [],
                   Some (Printf.sprintf "0x%s" (String.escaped addr_bytes)),
-                  pos + 9 )
+                  pos + 1 + addr_size )
               else ([], None, pos + 1)
           (* ULEB128 operands *)
           | DW_OP_constu | DW_OP_plus_uconst | DW_OP_regx | DW_OP_piece
@@ -927,31 +939,20 @@ let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) =
                 let value_str = Int64.to_string operand in
                 ([], Some value_str, pos + 9)
               else ([], Some "[truncated]", pos + 1)
-          (* DW_OP_call_ref - calls a DIE reference (address-sized) *)
+          (* DW_OP_call_ref - DIE reference, offset-sized (4 in 32-bit DWARF,
+             8 in 64-bit) *)
           | DW_OP_call_ref ->
-              (* For now, assume 8-byte addresses - TODO should be architecture dependent *)
-              if pos + 8 < String.length expr_bytes then
-                let b1 = Int64.of_int (Char.code expr_bytes.[pos + 1]) in
-                let b2 = Int64.of_int (Char.code expr_bytes.[pos + 2]) in
-                let b3 = Int64.of_int (Char.code expr_bytes.[pos + 3]) in
-                let b4 = Int64.of_int (Char.code expr_bytes.[pos + 4]) in
-                let b5 = Int64.of_int (Char.code expr_bytes.[pos + 5]) in
-                let b6 = Int64.of_int (Char.code expr_bytes.[pos + 6]) in
-                let b7 = Int64.of_int (Char.code expr_bytes.[pos + 7]) in
-                let b8 = Int64.of_int (Char.code expr_bytes.[pos + 8]) in
-                let die_ref =
-                  Int64.(
-                    logor b1
-                      (logor (shift_left b2 8)
-                         (logor (shift_left b3 16)
-                            (logor (shift_left b4 24)
-                               (logor (shift_left b5 32)
-                                  (logor (shift_left b6 40)
-                                     (logor (shift_left b7 48)
-                                        (shift_left b8 56))))))))
-                in
-                let ref_str = Printf.sprintf "0x%Lx" die_ref in
-                ([], Some ref_str, pos + 9)
+              if pos + offset_size < String.length expr_bytes then (
+                let die_ref = ref 0L in
+                for i = offset_size - 1 downto 0 do
+                  die_ref :=
+                    Int64.logor
+                      (Int64.shift_left !die_ref 8)
+                      (Int64.of_int (Char.code expr_bytes.[pos + 1 + i]))
+                done;
+                ( [],
+                  Some (Printf.sprintf "0x%Lx" !die_ref),
+                  pos + 1 + offset_size ))
               else ([], Some "[truncated]", pos + 1)
           (* DW_OP_implicit_pointer - DIE reference + signed offset *)
           | DW_OP_implicit_pointer ->
