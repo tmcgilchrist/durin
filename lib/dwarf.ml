@@ -3834,7 +3834,13 @@ end
 
 (** Call frame information parsing for Debug_frame section *)
 module CallFrame = struct
-  let debug_frame_cie_id = Unsigned.UInt32.of_int32 0xffffffffl
+  (* The distinguished CIE_id that marks a .debug_frame entry as a CIE rather
+     than an FDE (an FDE stores a real CIE offset here instead). It is all-ones,
+     sized by the DWARF format. Internal to parsing -- not part of the API. *)
+  let debug_frame_cie_id = function
+    | DWARF32 ->
+        Unsigned.UInt64.of_uint32 (Unsigned.UInt32.of_int32 0xffffffffl)
+    | DWARF64 -> Unsigned.UInt64.of_int64 0xffffffffffffffffL
 
   type common_information_entry = {
     format : dwarf_format;
@@ -3940,15 +3946,8 @@ module CallFrame = struct
     let format, length = parse_initial_length cur in
     let cie_id = read_offset_for_format format cur in
 
-    (* Verify this is actually a CIE (cie_id should be 0xffffffff for DWARF32,
-       0xffffffffffffffff for DWARF64) *)
-    let expected_cie_id =
-      match format with
-      | DWARF32 ->
-          Unsigned.UInt64.of_uint32 (Unsigned.UInt32.of_int32 0xffffffffl)
-      | DWARF64 -> Unsigned.UInt64.of_int64 0xffffffffffffffffL
-    in
-    if Unsigned.UInt64.compare cie_id expected_cie_id <> 0 then
+    (* Verify this is actually a CIE, not an FDE. *)
+    if Unsigned.UInt64.compare cie_id (debug_frame_cie_id format) <> 0 then
       fail "Invalid CIE: cie_id is not the debug_frame CIE identifier";
 
     let version = Object.Buffer.Read.u8 cur in
@@ -4012,11 +4011,12 @@ module CallFrame = struct
 
   (** Parse a Frame Description Entry from the Debug_frame section *)
   let parse_frame_description_entry (cur : Object.Buffer.cursor)
-      (start_pos : int) : frame_description_entry =
+      (start_pos : int) =
+    let open Object.Buffer in
     let format, length = parse_initial_length cur in
     let cie_pointer = read_offset_for_format format cur in
-    let initial_location = Object.Buffer.Read.u64 cur in
-    let address_range = Object.Buffer.Read.u64 cur in
+    let initial_location = Read.u64 cur in
+    let address_range = Read.u64 cur in
 
     (* Calculate remaining bytes for instructions.
        length is the number of bytes after the initial_length field.
@@ -4088,14 +4088,13 @@ module CallFrame = struct
         else
           (* Determine format and read ID field *)
           cur.position <- start_pos;
-        let _format, _length = parse_initial_length cur in
-        let _id_pos = cur.position in
-        let id = Read.u32 cur in
+        let format, _length = parse_initial_length cur in
+        let id = read_offset_for_format format cur in
 
         (* Reset cursor to parse the full entry *)
         cur.position <- start_pos;
 
-        if Unsigned.UInt32.compare id debug_frame_cie_id = 0 then (
+        if Unsigned.UInt64.compare id (debug_frame_cie_id format) = 0 then (
           (* This is a Common Information Entry (CIE) *)
           let cie = parse_common_information_entry cur in
           entries := CIE cie :: !entries;

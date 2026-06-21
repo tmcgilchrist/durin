@@ -2891,6 +2891,46 @@ let test_debug_frame_dwarf64 () =
         (Unsigned.UInt64.to_int64 p.initial_location)
   | _ -> fail "second entry should be FDE"
 
+(* A DWARF64 FDE whose cie_pointer has all-ones low 32 bits must still be
+   classified as an FDE. The section parser must compare the full 8-byte
+   CIE_id against the 64-bit sentinel, not just its first four bytes -- those
+   alone equal the 32-bit sentinel and would mis-classify the FDE as a CIE. *)
+let test_debug_frame_dwarf64_fde_low32_allones () =
+  let cie =
+    { (Dwarf.CallFrame.create_default_cie ()) with format = Dwarf.DWARF64 }
+  in
+  let fde : Dwarf.CallFrame.frame_description_entry =
+    {
+      format = Dwarf.DWARF64;
+      length = Unsigned.UInt64.of_int 0;
+      cie_pointer = Unsigned.UInt64.of_int 0xFFFFFFFF;
+      initial_location = Unsigned.UInt64.of_int 0x401000;
+      address_range = Unsigned.UInt64.of_int 0x80;
+      augmentation_length = None;
+      augmentation_data = None;
+      instructions = "";
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_frame buf
+    [ Dwarf.CallFrame.CIE cie; Dwarf.CallFrame.FDE fde ];
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let section =
+    Dwarf.CallFrame.parse_debug_frame_section cur (Buffer.length buf)
+  in
+  check int "entry_count" 2 section.entry_count;
+  (match List.nth section.entries 0 with
+  | Dwarf.CallFrame.CIE _ -> ()
+  | _ -> fail "first entry should be CIE");
+  match List.nth section.entries 1 with
+  | Dwarf.CallFrame.FDE p ->
+      check int64 "fde cie_pointer preserved" 0xFFFFFFFFL
+        (Unsigned.UInt64.to_int64 p.cie_pointer)
+  | _ -> fail "second entry should be FDE (not mis-classified as CIE)"
+
 let test_aranges_dwarf64 () =
   let header : Dwarf.DebugAranges.header =
     {
@@ -3343,6 +3383,8 @@ let () =
           test_case "debug_info" `Quick test_debug_info_dwarf64;
           test_case "cie" `Quick test_cie_dwarf64;
           test_case "debug_frame" `Quick test_debug_frame_dwarf64;
+          test_case "debug_frame_fde_low32_allones" `Quick
+            test_debug_frame_dwarf64_fde_low32_allones;
           test_case "aranges" `Quick test_aranges_dwarf64;
           test_case "debug_addr" `Quick test_debug_addr_dwarf64;
           test_case "debug_str_offsets" `Quick test_debug_str_offsets_dwarf64;

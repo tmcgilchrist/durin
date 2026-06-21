@@ -1030,10 +1030,11 @@ let write_cie buf (cie : Dwarf.CallFrame.common_information_entry) =
     + String.length cie.initial_instructions
   in
   write_initial_length buf fmt body_len;
+  (* cie_id marks a .debug_frame entry as a CIE rather than an FDE. *)
+  let cie_id = 0xffffffffffffffffL in
   (match fmt with
-  | Dwarf.DWARF32 -> write_u32_le buf (Unsigned.UInt32.of_int32 0xffffffffl)
-  | Dwarf.DWARF64 ->
-      write_u64_le buf (Unsigned.UInt64.of_int64 0xffffffffffffffffL));
+  | Dwarf.DWARF32 -> write_u32_le buf (Unsigned.UInt32.of_int64 cie_id)
+  | Dwarf.DWARF64 -> write_u64_le buf (Unsigned.UInt64.of_int64 cie_id));
   write_u8 buf cie.version;
   write_null_terminated_string buf cie.augmentation;
   write_u8 buf cie.address_size;

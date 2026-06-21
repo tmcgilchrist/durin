@@ -2054,10 +2054,6 @@ end
 
     DWARF 5 specification, section 6.4 "Call Frame Information". *)
 module CallFrame : sig
-  val debug_frame_cie_id : u32
-  (** Distinguished CIE identifier (0xffffffff) for .debug_frame sections *)
-  (* TODO Does this need to be in the API, seems like an implementation detail? *)
-
   type common_information_entry = {
     format : dwarf_format;
     length : u64;
