@@ -1742,11 +1742,9 @@ let dump_eh_frame filename =
                   match cie.augmentation with
                   | "zR" when String.length data >= 1 ->
                       let encoding = Char.code data.[0] in
-                      let encoding_type =
-                        Eh_frame_header.encoding_of_u8 encoding
-                      in
+                      let encoding_type = Eh_encoding.encoding_of_u8 encoding in
                       let encoding_desc =
-                        Eh_frame_header.string_of_encoding encoding_type
+                        Eh_encoding.string_of_encoding encoding_type
                       in
                       Printf.printf "    FDE encoding: %s (0x%02x)\n"
                         encoding_desc encoding
@@ -1842,7 +1840,7 @@ let dump_eh_frame_hdr filename =
         let eh_frame_hdr = Eh_frame_header.parse_section cursor section_addr in
 
         (* Helper function to describe encoding *)
-        let describe_encoding = Eh_frame_header.string_of_encoding in
+        let describe_encoding = Eh_encoding.string_of_encoding in
 
         (* Display header information *)
         Printf.printf "version: %d\n"

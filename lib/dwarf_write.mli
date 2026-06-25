@@ -189,7 +189,15 @@ val write_debug_frame :
 val write_eh_cie : Buffer.t -> Dwarf.CallFrame.common_information_entry -> unit
 
 val write_eh_fde :
-  Buffer.t -> Dwarf.CallFrame.frame_description_entry -> int -> unit
+  Buffer.t ->
+  Dwarf.CallFrame.frame_description_entry ->
+  Eh_encoding.encoding ->
+  int ->
+  unit
+(** [write_eh_fde buf fde encoding cie_offset] writes an FDE. [encoding] is the
+    pointer encoding for [initial_location] declared by the owning CIE (see
+    {!Eh_frame.fde_encoding_of_cie}); [cie_offset] is that CIE's byte offset in
+    the section. {!write_eh_frame} supplies both automatically. *)
 
 val write_eh_frame : Buffer.t -> Eh_frame.eh_frame_entry list -> unit
 

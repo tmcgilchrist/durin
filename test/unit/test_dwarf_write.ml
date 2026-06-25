@@ -1910,6 +1910,61 @@ let test_write_eh_cie_augmented () =
       | None -> fail "expected augmentation data")
   | _ -> fail "expected EH_CIE"
 
+let test_write_eh_frame_zr_roundtrip () =
+  (* A spec-compliant CIE announces the FDE pointer encoding via 'R'. Byte 0x1b
+     is DW_EH_PE_pcrel | DW_EH_PE_sdata4, what GCC/Clang emit on x86-64. The
+     writer must encode initial_location/address_range to match that encoding,
+     and the reader must decode them back to the original values. *)
+  let aug_data = "\x1b" in
+  let cie : Dwarf.CallFrame.common_information_entry =
+    {
+      format = Dwarf.DWARF32;
+      length = Unsigned.UInt64.of_int 0;
+      cie_id = Unsigned.UInt64.of_int 0;
+      version = Unsigned.UInt8.of_int 1;
+      augmentation = "zR";
+      address_size = Unsigned.UInt8.of_int 8;
+      segment_selector_size = Unsigned.UInt8.of_int 0;
+      code_alignment_factor = Unsigned.UInt64.of_int 1;
+      data_alignment_factor = Signed.Int64.of_int (-8);
+      return_address_register = Unsigned.UInt64.of_int 16;
+      augmentation_length =
+        Some (Unsigned.UInt64.of_int (String.length aug_data));
+      augmentation_data = Some aug_data;
+      initial_instructions = "";
+      span =
+        { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 0 };
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let fde : Dwarf.CallFrame.frame_description_entry =
+    {
+      format = Dwarf.DWARF32;
+      length = Unsigned.UInt64.of_int 0;
+      cie_pointer = Unsigned.UInt64.of_int 0;
+      initial_location = Unsigned.UInt64.of_int 0x401000;
+      address_range = Unsigned.UInt64.of_int 0x80;
+      augmentation_length = Some (Unsigned.UInt64.of_int 0);
+      augmentation_data = Some "";
+      instructions = "";
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_eh_frame buf [ Eh_frame.EH_CIE cie; Eh_frame.EH_FDE fde ];
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let section = Eh_frame.parse_section cur (Buffer.length buf) in
+  let fde' =
+    match List.nth section.entries 1 with
+    | Eh_frame.EH_FDE p -> p
+    | _ -> fail "second should be FDE"
+  in
+  check int "initial_location" 0x401000
+    (Unsigned.UInt64.to_int fde'.initial_location);
+  check int "address_range" 0x80 (Unsigned.UInt64.to_int fde'.address_range)
+
 (* Stage 13: .debug_aranges tests *)
 
 let make_aranges_header ?(addr_sz = 8) ?(debug_info_off = 0) () :
@@ -3338,6 +3393,8 @@ let () =
           test_case "eh cie roundtrip" `Quick test_write_eh_cie_roundtrip;
           test_case "eh frame cie+fde" `Quick test_write_eh_frame_cie_fde;
           test_case "eh cie augmented" `Quick test_write_eh_cie_augmented;
+          test_case "eh frame zR roundtrip" `Quick
+            test_write_eh_frame_zr_roundtrip;
         ] );
       ( "aranges",
         [

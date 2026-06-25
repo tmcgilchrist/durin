@@ -1114,25 +1114,75 @@ let write_eh_cie buf (cie : Dwarf.CallFrame.common_information_entry) =
   | _ -> ());
   Buffer.add_string buf cie.initial_instructions
 
+(* Symmetric counterpart of Eh_encoding.read_encoded_value: write [target] into
+   [buf] using [encoding]. [value_pos] is the offset, in the final section, at
+   which the value will sit; PC-relative encodings are stored relative to it. We
+   have no section base, so data-relative values are stored relative to 0, which
+   matches how the reader resolves them. *)
+let write_encoded_value buf encoding ~value_pos target =
+  match encoding with
+  | Eh_encoding.DW_EH_PE_omit -> ()
+  | Eh_encoding.DW_EH_PE_encoding { indirect = true; _ } ->
+      fail "Indirect EH pointer encodings are not supported"
+  | Eh_encoding.DW_EH_PE_encoding { format; application; indirect = false } -> (
+      let raw =
+        match application with
+        | None | Some Eh_encoding.DW_EH_PE_datarel -> target
+        | Some Eh_encoding.DW_EH_PE_pcrel -> target - value_pos
+        | Some
+            ( Eh_encoding.DW_EH_PE_textrel | Eh_encoding.DW_EH_PE_funcrel
+            | Eh_encoding.DW_EH_PE_aligned ) ->
+            fail
+              "Text-, function-relative and aligned EH encodings are not \
+               supported"
+      in
+      match format with
+      | DW_EH_PE_absptr | DW_EH_PE_udata8 | DW_EH_PE_sdata8 ->
+          write_u64_le buf (Unsigned.UInt64.of_int raw)
+      | DW_EH_PE_udata4 | DW_EH_PE_sdata4 ->
+          write_u32_le buf (Unsigned.UInt32.of_int (raw land 0xffffffff))
+      | DW_EH_PE_udata2 | DW_EH_PE_sdata2 ->
+          write_u16_le buf (Unsigned.UInt16.of_int (raw land 0xffff))
+      | DW_EH_PE_uleb128 -> write_uleb128 buf (Unsigned.UInt64.of_int raw)
+      | DW_EH_PE_sleb128 -> write_sleb128 buf (Signed.Int64.of_int raw))
+
 let write_eh_fde buf (fde : Dwarf.CallFrame.frame_description_entry)
-    (cie_offset : int) =
+    fde_encoding (cie_offset : int) =
   let fde_start = Buffer.length buf in
+  (* address_range uses the same value format as initial_location but is an
+     absolute length, so its application is dropped (mirrors the reader). *)
+  let length_encoding =
+    match fde_encoding with
+    | Eh_encoding.DW_EH_PE_encoding { format; indirect; _ } ->
+        Eh_encoding.DW_EH_PE_encoding { format; application = None; indirect }
+    | Eh_encoding.DW_EH_PE_omit -> fde_encoding
+  in
+  (* Encode initial_location and address_range into a temporary buffer so the
+     length field can be sized; both sit after the 4-byte length and 4-byte
+     cie_pointer fields. *)
+  let fields = Buffer.create 16 in
+  let il_pos = fde_start + 4 + 4 in
+  write_encoded_value fields fde_encoding ~value_pos:il_pos
+    (Unsigned.UInt64.to_int fde.initial_location);
+  write_encoded_value fields length_encoding
+    ~value_pos:(il_pos + Buffer.length fields)
+    (Unsigned.UInt64.to_int fde.address_range);
   let aug_data_sz =
     match (fde.augmentation_length, fde.augmentation_data) with
     | Some len, Some data -> uleb128_size len + String.length data
     | _ -> 0
   in
-  let body_len = 4 + 4 + 4 + aug_data_sz + String.length fde.instructions in
+  let body_len =
+    4 (* cie_pointer *) + Buffer.length fields
+    + aug_data_sz
+    + String.length fde.instructions
+  in
   write_u32_le buf (Unsigned.UInt32.of_int body_len);
   (* .eh_frame cie_pointer is relative to the cie_pointer field itself, which
      sits 4 bytes into the FDE (after the length field). *)
   let cie_ptr = fde_start + 4 - cie_offset in
   write_u32_le buf (Unsigned.UInt32.of_int cie_ptr);
-  let il_field_pos = fde_start + 4 + 4 in
-  let il_raw = Unsigned.UInt64.to_int fde.initial_location - il_field_pos in
-  write_u32_le buf (Unsigned.UInt32.of_int il_raw);
-  write_u32_le buf
-    (Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 fde.address_range));
+  Buffer.add_buffer buf fields;
   (match (fde.augmentation_length, fde.augmentation_data) with
   | Some len, Some data ->
       write_uleb128 buf len;
@@ -1140,11 +1190,24 @@ let write_eh_fde buf (fde : Dwarf.CallFrame.frame_description_entry)
   | _ -> ());
   Buffer.add_string buf fde.instructions
 
+(* Each FDE is written with the pointer encoding declared by the CIE that owns
+   it (via its 'R' augmentation), so the section is self-describing and reads
+   back identically. The cie_pointer is computed from that CIE's byte offset. *)
 let write_eh_frame buf entries =
+  let current_cie = ref None in
   List.iter
     (function
-      | Eh_frame.EH_CIE cie -> write_eh_cie buf cie
-      | Eh_frame.EH_FDE fde -> write_eh_fde buf fde 0)
+      | Eh_frame.EH_CIE cie ->
+          let cie_offset = Buffer.length buf in
+          write_eh_cie buf cie;
+          current_cie := Some (cie_offset, Eh_frame.fde_encoding_of_cie cie)
+      | Eh_frame.EH_FDE fde ->
+          let cie_offset, fde_encoding =
+            match !current_cie with
+            | Some pair -> pair
+            | None -> (0, Eh_frame.default_fde_encoding)
+          in
+          write_eh_fde buf fde fde_encoding cie_offset)
     entries
 
 (* .debug_aranges Writer *)

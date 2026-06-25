@@ -18,6 +18,17 @@ type eh_frame_entry =
 
 type section = { entries : eh_frame_entry list }
 
+val default_fde_encoding : Eh_encoding.encoding
+(** The FDE pointer encoding assumed for a CIE whose augmentation string has no
+    ['R'] letter: an absolute, address-sized pointer (the DWARF/LSB default).
+    Shared by the reader and the writer so such CIEs round-trip. *)
+
+val fde_encoding_of_cie :
+  Dwarf.CallFrame.common_information_entry -> Eh_encoding.encoding
+(** The pointer encoding used for an FDE's [initial_location], as announced by
+    the ['R'] letter in the owning CIE's augmentation string and data. Falls
+    back to {!default_fde_encoding} when no ['R'] is present. *)
+
 val parse_eh_cie :
   Object.Buffer.cursor -> u32 -> int -> Dwarf.CallFrame.common_information_entry
 (** Parse a Common Information Entry adapted for [.eh_frame] format.
@@ -27,11 +38,15 @@ val parse_eh_cie :
     @raise Dwarf.Parse_error if the CIE is malformed. *)
 
 val parse_eh_fde :
-  Object.Buffer.cursor -> u32 -> int -> Dwarf.CallFrame.frame_description_entry
+  Object.Buffer.cursor ->
+  Eh_encoding.encoding ->
+  int ->
+  Dwarf.CallFrame.frame_description_entry
 (** Parse a Frame Description Entry adapted for [.eh_frame] format.
 
-    The second parameter is the expected length from the length field. The third
-    parameter is the file offset where this FDE starts. *)
+    The second parameter is the pointer encoding for [initial_location], taken
+    from the owning CIE's ['R'] augmentation. The third parameter is the file
+    offset where this FDE starts. *)
 
 val parse_section : Object.Buffer.cursor -> int -> section
 (** Parse the [.eh_frame] section.

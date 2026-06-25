@@ -1,5 +1,5 @@
 open Durin
-module H = Eh_frame_header
+module H = Eh_encoding
 
 (* Describe a decoded encoding via the library's own pretty-printer, so the
    tests exercise both [encoding_of_u8] and [string_of_encoding]. *)
