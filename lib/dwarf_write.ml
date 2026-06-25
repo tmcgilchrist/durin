@@ -185,7 +185,7 @@ let write_abbrev_table buf (abbrevs : Dwarf.abbrev array) =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       write_uleb128 buf a.code;
-      write_uleb128 buf (Dwarf.abbreviation_tag a.tag);
+      write_uleb128 buf (Dwarf.u64_of_abbreviation_tag a.tag);
       write_u8 buf (Unsigned.UInt8.of_int (if a.has_children then 1 else 0));
       List.iter
         (fun (spec : Dwarf.attr_spec) ->
@@ -228,7 +228,7 @@ let abbrev_table_size (abbrevs : Dwarf.abbrev array) =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       size := !size + uleb128_size a.code;
-      size := !size + uleb128_size (Dwarf.abbreviation_tag a.tag);
+      size := !size + uleb128_size (Dwarf.u64_of_abbreviation_tag a.tag);
       size := !size + 1;
       List.iter
         (fun (spec : Dwarf.attr_spec) ->
@@ -390,8 +390,7 @@ let write_compile_unit buf (enc : Dwarf.encoding) (die : Dwarf.DIE.t)
   let unit_length = header_content_size + die_bytes in
   write_initial_length buf enc.format unit_length;
   write_u16_le buf enc.version;
-  write_u8 buf
-    (Unsigned.UInt8.of_int (Dwarf.int_of_unit_type Dwarf.DW_UT_compile));
+  write_u8 buf (Dwarf.u8_of_unit_type Dwarf.DW_UT_compile);
   write_u8 buf enc.address_size;
   write_offset buf enc.format debug_abbrev_offset;
   write_die buf die enc lookup
@@ -1204,7 +1203,7 @@ let write_debug_names_abbrev_table buf
   List.iter
     (fun (a : Dwarf.DebugNames.debug_names_abbrev) ->
       write_uleb128 buf a.code;
-      write_uleb128 buf (Dwarf.abbreviation_tag a.tag);
+      write_uleb128 buf (Dwarf.u64_of_abbreviation_tag a.tag);
       List.iter
         (fun (attr, form) ->
           write_uleb128 buf
@@ -1222,7 +1221,7 @@ let debug_names_abbrev_table_size
   List.iter
     (fun (a : Dwarf.DebugNames.debug_names_abbrev) ->
       sz := !sz + uleb128_size a.code;
-      sz := !sz + uleb128_size (Dwarf.abbreviation_tag a.tag);
+      sz := !sz + uleb128_size (Dwarf.u64_of_abbreviation_tag a.tag);
       List.iter
         (fun (attr, form) ->
           sz :=

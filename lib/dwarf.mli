@@ -17,13 +17,13 @@ type unit_type =
   | DW_UT_lo_user (* Reserved for user-defined types *)
   | DW_UT_hi_user (* Reserved for user-defined types *)
 
-val unit_type_of_u8 : Unsigned.UInt8.t -> unit_type
+val unit_type : u8 -> unit_type
 (** Convert a u8 value to a unit_type
 
     @raise Parse_error if the byte is not a recognized DWARF unit type. *)
 
-val int_of_unit_type : unit_type -> int
-(** Convert a [unit_type] to its integer encoding. *)
+val u8_of_unit_type : unit_type -> u8
+(** Convert a [unit_type] to its u8 encoding. *)
 
 val string_of_unit_type : unit_type -> string
 (** Convert a unit_type to its string representation *)
@@ -34,6 +34,12 @@ val string_of_unit_type : unit_type -> string
 type dwarf_format =
   | DWARF32  (** 32-bit format with 4-byte lengths and offsets. *)
   | DWARF64  (** 64-bit format with 8-byte lengths and offsets. *)
+
+val dwarf_format : int -> dwarf_format
+(** Convert an offset size in bytes to the corresponding DWARF format. The
+    inverse of {!offset_size_for_format}.
+
+    @raise Parse_error if the size is neither 4 nor 8. *)
 
 val string_of_dwarf_format : dwarf_format -> string
 (** Convert a dwarf_format to its string representation. *)
@@ -49,17 +55,27 @@ type encoding = {
 
 val parse_initial_length : Object.Buffer.cursor -> dwarf_format * u64
 (** Parse the initial_length field from a DWARF section header. Returns the
-    [dwarf_format] and the actual length value. Raises an exception if the value
-    is in the reserved range 0xfffffff0-0xfffffffe.
+    [dwarf_format] and the actual length value.
 
-    @raise Parse_error if the length field uses a reserved value. *)
+    TODO Investigate how this is used? Seems like an internal function rather
+    than a public API.
+
+    @raise Parse_error
+      if the length field uses a reserved value in the reserved range
+      0xfffffff0-0xfffffffe. *)
 
 val offset_size_for_format : dwarf_format -> int
-(** Returns the size in bytes of offsets for a given DWARF format. *)
+(** Returns the size in bytes of offsets for a given DWARF format.
+
+    TODO Investigate how this is used? Seems like an internal function rather
+    than a public API. *)
 
 val read_offset_for_format : dwarf_format -> Object.Buffer.cursor -> u64
 (** Read an offset value from the buffer according to the specified
-    [dwarf_format], returning the value as a u64. *)
+    [dwarf_format], returning the value as a u64.
+
+    TODO Investigate how this is used? Seems like an internal function rather
+    than a public API. *)
 
 (** Abbreviation tag encoding.
 
@@ -140,28 +156,23 @@ type abbreviation_tag =
   | DW_TAG_skeleton_unit
   | DW_TAG_immutable_type
   (* GNU extensions *)
-  (* TODO Other common GNU extensions here? *)
+  (* TODO Add other common GNU extensions here. *)
   | DW_TAG_GNU_template_parameter_pack
   | DW_TAG_lo_user
   | DW_TAG_hi_user
 
-val abbreviation_tag_of_int : u64 -> abbreviation_tag
+val abbreviation_tag : u64 -> abbreviation_tag
 (** Convert a u64 to an [abbreviation_tag].
 
-    @raise Parse_error if the value is not a recognized DWARF tag encoding. *)
+    @raise Parse_error if the value is not a recognized tag encoding. *)
 
-val abbreviation_tag : abbreviation_tag -> u64
-(** Convert an [abbreviation_tag] tag to a u64. *)
+val u64_of_abbreviation_tag : abbreviation_tag -> u64
+(** Convert an [abbreviation_tag] to its u64 tag encoding. *)
 
 val string_of_abbreviation_tag : abbreviation_tag -> string
-(** Convert an [abbreviation_tag] to its string representation.
+(** Convert an [abbreviation_tag] to a string representation.
 
-    {@ocaml[
-      # Durin.Dwarf.string_of_abbreviation_tag DW_TAG_compile_unit;;
-      - : string = "DW_TAG_compile_unit"
-      # Durin.Dwarf.string_of_abbreviation_tag DW_TAG_subprogram;;
-      - : string = "DW_TAG_subprogram"
-    ]} *)
+    Follows the format of the abbreviation_tag type variants. *)
 
 (** The encodings for the child determination byte.
 
@@ -173,10 +184,14 @@ val children_determination : int -> children_determination
 
     @raise Parse_error
       if the value is not a recognized child determination code. *)
-(* TODO Use the more specific type over int. *)
 
 val int_of_children_determination : children_determination -> int
 (** Convert [children_determination] to int. *)
+
+val string_of_children_determination : children_determination -> string
+(** Convert [children_determination] to a string representation.
+
+    Follows the format of the children_determination type variants.*)
 
 (** The encodings for the attribute names.
 
@@ -313,15 +328,9 @@ type attribute_encoding =
   | DW_AT_APPLE_sdk
 
 val string_of_attribute_encoding : attribute_encoding -> string
-(** Convert an [attribute_encoding] to its string representation. The output
-    format is intended for display and is not a stable interface.
+(** Convert an [attribute_encoding] to its string representation.
 
-    {@ocaml[
-      # Durin.Dwarf.string_of_attribute_encoding DW_AT_name;;
-      - : string = "DW_AT_name"
-      # Durin.Dwarf.string_of_attribute_encoding DW_AT_language;;
-      - : string = "DW_AT_language"
-    ]} *)
+    Follows the format of the attribute_encoding type variants. *)
 
 val attribute_encoding : u64 -> attribute_encoding
 (** Convert a u64 to an [attribute_encoding].
@@ -394,12 +403,13 @@ val attribute_form_encoding : u64 -> attribute_form_encoding
 (** Convert a u64 to an [attribute_form_encoding]. *)
 
 val u64_of_attribute_form_encoding : attribute_form_encoding -> u64
-(** Convert an attribute_form_encoding to its u64 DWARF code *)
+(** Convert an attribute_form_encoding to an u64 *)
 
 (** DWARF expression operations
 
     DWARF 5 specification, Table 7.9 "DWARF operation encodings". *)
 type operation_encoding =
+  (* TODO Should attach more information to these constructors explaining their use based off the DWARF 5 spec. *)
   | DW_OP_addr (* constant address *)
   | DW_OP_deref
   | DW_OP_const1u (* 1-byte unsigned constant *)
@@ -580,7 +590,9 @@ val int_of_operation_encoding : operation_encoding -> int
 (** Convert an [operation_encoding] to its integer encoding. *)
 
 val string_of_operation_encoding : operation_encoding -> string
-(** Convert an [operation_encoding] to its string representation. *)
+(** Convert an [operation_encoding] to its string representation.
+
+    Follows the format of the operation_encoding type variants. *)
 
 type dwarf_expression_operation = {
   opcode : operation_encoding;
@@ -594,6 +606,7 @@ type dwarf_expression_operation = {
 val parse_dwarf_expression :
   ?encoding:encoding -> string -> dwarf_expression_operation list
 (** Parse a DWARF expression bytecode string into a list of operations. *)
+(* TODO How is this used?  *)
 
 val string_of_dwarf_operation : dwarf_expression_operation -> string
 (** Convert a single DWARF operation to its string representation. *)
@@ -713,7 +726,9 @@ val int_of_endianity : endianity -> int
 (** Convert an [endianity] to its integer encoding. *)
 
 val string_of_endianity : endianity -> string
-(** Convert an [endianity] to its string representation. *)
+(** Convert an [endianity] to its string representation.
+
+    Follows the format of the endianity type variants. *)
 
 (** Accessibility encoding.
 
@@ -734,7 +749,9 @@ val int_of_accessibility : accessibility -> int
 (** Convert an [accessibility] to its integer encoding. *)
 
 val string_of_accessibility : accessibility -> string
-(** Convert an [accessibility] to its string representation. *)
+(** Convert an [accessibility] to its string representation.
+
+    Follows the format of the accessibility type variants. *)
 
 (** Visibility encoding.
 
@@ -752,7 +769,9 @@ val int_of_visibility : visibility -> int
 (** Convert a [visibility] to its integer encoding. *)
 
 val string_of_visibility : visibility -> string
-(** Convert a [visibility] to its string representation. *)
+(** Convert a [visibility] to its string representation.
+
+    Follows the format of the visibility type variants. *)
 
 (** Virtuality encoding.
 
@@ -773,7 +792,9 @@ val int_of_virtuality : virtuality -> int
 (** Convert a [virtuality] to its integer encoding. *)
 
 val string_of_virtuality : virtuality -> string
-(** Convert a [virtuality] to its string representation. *)
+(** Convert a [virtuality] to its string representation.
+
+    Follows the format of the virtuality type variants. *)
 
 (** Language encoding.
 
@@ -823,8 +844,8 @@ type dwarf_language =
   | DW_LANG_hi_user
 
 val dwarf_language : int -> dwarf_language
-(** Convert an int to a [dwarf_language].
-
+(** Convert an int to a [dwarf_language]. TODO This should probably not raise
+    here
     @raise Parse_error if the value is not a recognized language encoding. *)
 
 val int_of_dwarf_language : dwarf_language -> int
@@ -853,7 +874,9 @@ val int_of_identifier : identifier -> int
 (** Convert an [identifier] to its integer encoding. *)
 
 val string_of_identifier : identifier -> string
-(** Convert an [identifier] to its string representation. *)
+(** Convert an [identifier] to its string representation.
+
+    Follows the format of the [identifier] type variants. *)
 
 (** Calling convention.
 
@@ -870,6 +893,8 @@ type calling_convention =
   | DW_CC_pass_by_value
   | DW_CC_lo_user
   | DW_CC_hi_user
+(* TODO Another candidate for Unknown of int,
+                                   we expect extensions between lo_user / hi_user *)
 
 val calling_convention : int -> calling_convention
 (** Convert an int to a [calling_convention].
@@ -901,7 +926,9 @@ val int_of_inlined : inlined -> int
 (** Convert an [inlined] to its integer encoding. *)
 
 val string_of_inlined : inlined -> string
-(** Convert an [inlined] to its string representation. *)
+(** Convert an [inlined] to its string representation.
+
+    Follows the format of the [inlined] type variants. *)
 
 (** Array ordering.
 
@@ -919,7 +946,9 @@ val int_of_array_ordering : array_ordering -> int
 (** Convert an [array_ordering] to its integer encoding. *)
 
 val string_of_array_ordering : array_ordering -> string
-(** Convert an [array_ordering] to its string representation. *)
+(** Convert an [array_ordering] to its string representation.
+
+    Follows the format of the [array_ordering] type variants. *)
 
 (** Discriminant.
 
@@ -937,6 +966,9 @@ val discriminant : int -> discriminant
 
 val int_of_discriminant : discriminant -> int
 (** Convert a [discriminant] to its integer encoding. *)
+
+val string_of_discriminant : discriminant -> string
+(** Convert a [discriminant] to its string representation. *)
 
 (** Name index attribute encodings. New in DWARF 5.
 
@@ -983,7 +1015,9 @@ val int_of_defaulted_attribute : defaulted_attribute -> int
 (** Convert a [defaulted_attribute] to its integer encoding. *)
 
 val string_of_defaulted_attribute : defaulted_attribute -> string
-(** Convert a [defaulted_attribute] to its string representation. *)
+(** Convert a [defaulted_attribute] to its string representation.
+
+    Follows the format of the [defaulted_attribute] type variants. *)
 
 (** Line number opcodes.
 
@@ -1012,7 +1046,9 @@ val int_of_line_number_opcode : line_number_opcode -> int
 (** Convert a [line_number_opcode] to its integer encoding. *)
 
 val string_of_line_number_opcode : line_number_opcode -> string
-(** Convert a [line_number_opcode] to its string representation. *)
+(** Convert a [line_number_opcode] to its string representation.
+
+    Follows the format of the [line_number_opcode] type variants. *)
 
 (** Line number extended opcodes.
 
@@ -1025,7 +1061,7 @@ type line_number_extended_opcode =
   | DW_LNE_set_address
   | DW_LNE_set_discriminator
   | DW_LNE_lo_user
-  | DW_LNE_hi_user
+  | DW_LNE_hi_user (* TODO Another variant expected to be extended. *)
 
 val line_number_extended_opcode : int -> line_number_extended_opcode
 (** Convert an int to a [line_number_extended_opcode]. *)
@@ -1035,7 +1071,9 @@ val int_of_line_number_extended_opcode : line_number_extended_opcode -> int
 
 val string_of_line_number_extended_opcode :
   line_number_extended_opcode -> string
-(** Convert a [line_number_extended_opcode] to its string representation. *)
+(** Convert a [line_number_extended_opcode] to its string representation.
+
+    Follows the format of the [line_number_extended_opcode] type variants. *)
 
 (** Line number header entry.
 
@@ -1050,7 +1088,7 @@ type line_number_header_entry =
   | DW_LNCT_size
   | DW_LNCT_MD5
   | DW_LNCT_lo_user
-  | DW_LNCT_hi_user
+  | DW_LNCT_hi_user (* TODO Another variant expected to be extended. *)
 
 val line_number_header_entry : int -> line_number_header_entry
 (** Convert an int to a [line_number_header_entry]. *)
@@ -1059,7 +1097,9 @@ val int_of_line_number_header_entry : line_number_header_entry -> int
 (** Convert a [line_number_header_entry] to its integer encoding. *)
 
 val string_of_line_number_header_entry : line_number_header_entry -> string
-(** Convert a [line_number_header_entry] to its string representation. *)
+(** Convert a [line_number_header_entry] to its string representation.
+
+    Follows the format of the [line_number_header_entry] type variants.*)
 
 (** Macro information entry type. New in DWARF 5.
 

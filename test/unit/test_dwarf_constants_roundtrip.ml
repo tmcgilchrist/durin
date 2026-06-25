@@ -65,6 +65,8 @@ type line_number_extended_opcode =
 type line_number_header_entry = [%import: Durin.Dwarf.line_number_header_entry]
 [@@deriving qcheck]
 
+type dwarf_format = [%import: Durin.Dwarf.dwarf_format] [@@deriving qcheck]
+
 (* --- Helpers --- *)
 
 let arb gen = QCheck.make gen
@@ -77,8 +79,8 @@ let roundtrip name gen encode decode =
 
 let roundtrip_tests =
   [
-    roundtrip "abbreviation_tag" gen_abbreviation_tag abbreviation_tag
-      abbreviation_tag_of_int;
+    roundtrip "abbreviation_tag" gen_abbreviation_tag u64_of_abbreviation_tag
+      abbreviation_tag;
     roundtrip "attribute_encoding" gen_attribute_encoding
       u64_of_attribute_encoding attribute_encoding;
     roundtrip "attribute_form_encoding" gen_attribute_form_encoding
@@ -97,8 +99,9 @@ let roundtrip_tests =
     roundtrip "macro_info_entry_type" gen_macro_info_entry_type
       (fun v -> Unsigned.UInt8.to_int (u8_of_macro_info_entry_type v))
       (fun i -> macro_info_entry_type (Unsigned.UInt8.of_int i));
-    roundtrip "unit_type" gen_unit_type int_of_unit_type (fun i ->
-        unit_type_of_u8 (Unsigned.UInt8.of_int i));
+    roundtrip "unit_type" gen_unit_type
+      (fun v -> Unsigned.UInt8.to_int (u8_of_unit_type v))
+      (fun i -> unit_type (Unsigned.UInt8.of_int i));
     roundtrip "children_determination" gen_children_determination
       int_of_children_determination children_determination;
     roundtrip "decimal_sign" gen_decimal_sign int_of_decimal_sign decimal_sign;
@@ -122,6 +125,8 @@ let roundtrip_tests =
       int_of_line_number_extended_opcode line_number_extended_opcode;
     roundtrip "line_number_header_entry" gen_line_number_header_entry
       int_of_line_number_header_entry line_number_header_entry;
+    roundtrip "dwarf_format" gen_dwarf_format offset_size_for_format
+      dwarf_format;
   ]
 
 (* --- String consistency tests --- *)

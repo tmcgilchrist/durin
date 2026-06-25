@@ -109,7 +109,7 @@ type unit_type =
   | DW_UT_lo_user
   | DW_UT_hi_user
 
-let unit_type_of_u8 u =
+let unit_type u =
   match Unsigned.UInt8.to_int u with
   | 0x01 -> DW_UT_compile
   | 0x02 -> DW_UT_type
@@ -121,15 +121,17 @@ let unit_type_of_u8 u =
   | 0xff -> DW_UT_hi_user
   | n -> fail (Printf.sprintf "Unknown unit type: 0x%02x" n)
 
-let int_of_unit_type = function
-  | DW_UT_compile -> 0x01
-  | DW_UT_type -> 0x02
-  | DW_UT_partial -> 0x03
-  | DW_UT_skeleton -> 0x04
-  | DW_UT_split_compile -> 0x05
-  | DW_UT_split_type -> 0x06
-  | DW_UT_lo_user -> 0x80
-  | DW_UT_hi_user -> 0xff
+let u8_of_unit_type v =
+  Unsigned.UInt8.of_int
+    (match v with
+    | DW_UT_compile -> 0x01
+    | DW_UT_type -> 0x02
+    | DW_UT_partial -> 0x03
+    | DW_UT_skeleton -> 0x04
+    | DW_UT_split_compile -> 0x05
+    | DW_UT_split_type -> 0x06
+    | DW_UT_lo_user -> 0x80
+    | DW_UT_hi_user -> 0xff)
 
 let string_of_unit_type = function
   | DW_UT_compile -> "DW_UT_compile"
@@ -171,6 +173,11 @@ let parse_initial_length (cur : Object.Buffer.cursor) : dwarf_format * u64 =
   else (DWARF32, Unsigned.UInt64.of_uint32 first_four)
 
 let offset_size_for_format = function DWARF32 -> 4 | DWARF64 -> 8
+
+let dwarf_format = function
+  | 4 -> DWARF32
+  | 8 -> DWARF64
+  | n -> fail (Printf.sprintf "Unknown DWARF offset size: %d" n)
 
 let read_offset_for_format (format : dwarf_format) (cur : Object.Buffer.cursor)
     =
@@ -1908,7 +1915,7 @@ let parse_abbrev_table_from_cursor cur =
       let abbrev =
         {
           code = Unsigned.UInt64.of_int code;
-          tag = abbreviation_tag_of_int (Unsigned.UInt64.of_int tag_raw);
+          tag = abbreviation_tag (Unsigned.UInt64.of_int tag_raw);
           has_children;
           attr_specs;
         }
@@ -2757,7 +2764,7 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
   let version_int = Unsigned.UInt16.to_int version in
   let unit_type, address_size, debug_abbrev_offset =
     if version_int = 5 then
-      let ut = unit_type_of_u8 (Object.Buffer.Read.u8 cur) in
+      let ut = unit_type (Object.Buffer.Read.u8 cur) in
       let address_size = Object.Buffer.Read.u8 cur in
       let debug_abbrev_offset = read_offset_for_format format cur in
       (ut, address_size, debug_abbrev_offset)
@@ -4759,7 +4766,7 @@ module DebugNames = struct
           let tag_code =
             Object.Buffer.Read.uleb128 cur |> Unsigned.UInt64.of_int
           in
-          let tag = abbreviation_tag_of_int tag_code in
+          let tag = abbreviation_tag tag_code in
 
           (* Parse attributes *)
           let attributes = ref [] in

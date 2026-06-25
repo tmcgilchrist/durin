@@ -76,7 +76,7 @@ type abbreviation_tag =
   | DW_TAG_lo_user
   | DW_TAG_hi_user
 
-let abbreviation_tag_of_int tag_code =
+let abbreviation_tag tag_code =
   match Unsigned.UInt64.to_int tag_code with
   | 0x00 -> DW_TAG_null
   | 0x01 -> DW_TAG_array_type
@@ -153,7 +153,7 @@ let abbreviation_tag_of_int tag_code =
   | 0xffff -> DW_TAG_hi_user
   | n -> fail (Printf.sprintf "Unknown tag encoding: 0x%02x" n)
 
-let abbreviation_tag tag =
+let u64_of_abbreviation_tag tag =
   let code =
     match tag with
     | DW_TAG_null -> 0x00
@@ -317,3 +317,7 @@ let children_determination = function
 let int_of_children_determination = function
   | DW_CHILDREN_no -> 0x00
   | DW_CHILDREN_yes -> 0x01
+
+let string_of_children_determination = function
+  | DW_CHILDREN_no -> "DW_CHILDREN_no"
+  | DW_CHILDREN_yes -> "DW_CHILDREN_yes"

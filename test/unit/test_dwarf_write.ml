@@ -215,7 +215,7 @@ let parse_abbrev_from_cursor cur =
         Dwarf.
           {
             code = Unsigned.UInt64.of_int code;
-            tag = Dwarf.abbreviation_tag_of_int (Unsigned.UInt64.of_int tag_raw);
+            tag = Dwarf.abbreviation_tag (Unsigned.UInt64.of_int tag_raw);
             has_children;
             attr_specs;
           }
@@ -685,7 +685,7 @@ let test_write_die_simple () =
   | None -> fail "expected Some die"
   | Some parsed -> (
       check int "tag" 0x11
-        (Unsigned.UInt64.to_int (Dwarf.abbreviation_tag parsed.tag));
+        (Unsigned.UInt64.to_int (Dwarf.u64_of_abbreviation_tag parsed.tag));
       check int "attr count" 2 (List.length parsed.attributes);
       let name_attr = List.hd parsed.attributes in
       (match name_attr.value with
@@ -727,12 +727,13 @@ let test_write_die_with_children () =
   | None -> fail "expected Some die"
   | Some parsed -> (
       check int "parent tag" 0x11
-        (Unsigned.UInt64.to_int (Dwarf.abbreviation_tag parsed.tag));
+        (Unsigned.UInt64.to_int (Dwarf.u64_of_abbreviation_tag parsed.tag));
       match parsed.children () with
       | Seq.Nil -> fail "expected children"
       | Seq.Cons (child_parsed, _) -> (
           check int "child tag" 0x24
-            (Unsigned.UInt64.to_int (Dwarf.abbreviation_tag child_parsed.tag));
+            (Unsigned.UInt64.to_int
+               (Dwarf.u64_of_abbreviation_tag child_parsed.tag));
           check int "child attr count" 2 (List.length child_parsed.attributes);
           let name = List.hd child_parsed.attributes in
           match name.value with
@@ -890,7 +891,7 @@ let test_write_compile_unit () =
   | None -> fail "expected die"
   | Some parsed ->
       check int "tag" 0x11
-        (Unsigned.UInt64.to_int (Dwarf.abbreviation_tag parsed.tag));
+        (Unsigned.UInt64.to_int (Dwarf.u64_of_abbreviation_tag parsed.tag));
       check int "attr count" 2 (List.length parsed.attributes)
 
 let test_write_debug_info_simple () =
@@ -920,7 +921,7 @@ let test_write_debug_info_simple () =
   | None -> fail "expected die"
   | Some parsed -> (
       check int "tag" 0x11
-        (Unsigned.UInt64.to_int (Dwarf.abbreviation_tag parsed.tag));
+        (Unsigned.UInt64.to_int (Dwarf.u64_of_abbreviation_tag parsed.tag));
       let name = List.hd parsed.attributes in
       (match name.value with
       | String s -> check string "name" "hello.c" s
@@ -973,7 +974,8 @@ let test_write_debug_info_with_children () =
       | Seq.Nil -> fail "expected children"
       | Seq.Cons (child_parsed, _) -> (
           check int "child tag" 0x24
-            (Unsigned.UInt64.to_int (Dwarf.abbreviation_tag child_parsed.tag));
+            (Unsigned.UInt64.to_int
+               (Dwarf.u64_of_abbreviation_tag child_parsed.tag));
           check int "child attrs" 3 (List.length child_parsed.attributes);
           let enc_attr = List.nth child_parsed.attributes 2 in
           match enc_attr.value with

@@ -528,6 +528,10 @@ let discriminant = function
 
 let int_of_discriminant = function DW_DSC_label -> 0x00 | DW_DSC_range -> 0x01
 
+let string_of_discriminant = function
+  | DW_DSC_label -> "DW_DSC_label"
+  | DW_DSC_range -> "DW_DSC_range"
+
 type name_index_attribute =
   | DW_IDX_null
   | DW_IDX_compile_unit
