@@ -6089,7 +6089,12 @@ module DebugLoclists = struct
     | LLE_start_length of { start_addr : u64; length : u64; expr : string }
 
   type location_list = { entries : location_entry list }
-  type loclists_section = { header : header; offset_table : u64 array }
+
+  type loclists_section = {
+    header : header;
+    offset_table : u64 array;
+    lists : location_list array;
+  }
 
   let parse_header cur =
     let open Object.Buffer in
@@ -6172,14 +6177,20 @@ module DebugLoclists = struct
     match find_debug_section_by_type buffer Debug_loclists with
     | None -> None
     | Some (section_offset, _section_size) -> (
-        let cursor =
-          Object.Buffer.cursor buffer
-            ~at:(Unsigned.UInt64.to_int section_offset)
-        in
+        let section_start = Unsigned.UInt64.to_int section_offset in
+        let cursor = Object.Buffer.cursor buffer ~at:section_start in
         try
           let header = parse_header cursor in
           let offset_table = parse_offset_table cursor header in
-          Some { header; offset_table }
+          let lists =
+            Array.map
+              (fun off ->
+                let pos = section_start + Unsigned.UInt64.to_int off in
+                let c = Object.Buffer.cursor buffer ~at:pos in
+                parse_location_list c header.address_size)
+              offset_table
+          in
+          Some { header; offset_table; lists }
         with _ -> None)
 
   let resolve_location_list buffer (offset : u64) (address_size : u8) =
@@ -6213,7 +6224,12 @@ module DebugRnglists = struct
     | RLE_start_length of { start_addr : u64; length : u64 }
 
   type range_list = { entries : range_entry list }
-  type rnglists_section = { header : header; offset_table : u64 array }
+
+  type rnglists_section = {
+    header : header;
+    offset_table : u64 array;
+    lists : range_list array;
+  }
 
   let parse_header cur =
     let open Object.Buffer in
@@ -6282,14 +6298,20 @@ module DebugRnglists = struct
     match find_debug_section_by_type buffer Debug_rnglists with
     | None -> None
     | Some (section_offset, _section_size) -> (
-        let cursor =
-          Object.Buffer.cursor buffer
-            ~at:(Unsigned.UInt64.to_int section_offset)
-        in
+        let section_start = Unsigned.UInt64.to_int section_offset in
+        let cursor = Object.Buffer.cursor buffer ~at:section_start in
         try
           let header = parse_header cursor in
           let offset_table = parse_offset_table cursor header in
-          Some { header; offset_table }
+          let lists =
+            Array.map
+              (fun off ->
+                let pos = section_start + Unsigned.UInt64.to_int off in
+                let c = Object.Buffer.cursor buffer ~at:pos in
+                parse_range_list c header.address_size)
+              offset_table
+          in
+          Some { header; offset_table; lists }
         with _ -> None)
 
   let resolve_range_list buffer (offset : u64) (address_size : u8) =

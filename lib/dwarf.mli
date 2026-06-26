@@ -3309,13 +3309,18 @@ module DebugLoclists : sig
     | LLE_start_length of { start_addr : u64; length : u64; expr : string }
         (** Range with an explicit start address, plus a length *)
 
-  (* TODO Performance / memory usage, how large is this list? Should we
-     parse this lazily? Also why do we need location_list and loclists_section? *)
   type location_list = { entries : location_entry list }
-  (** A decoded location list. *)
+  (** A single decoded location list — the entries found at one offset. *)
 
-  type loclists_section = { header : header; offset_table : u64 array }
-  (** Parsed .debug_loclists section. *)
+  (* TODO [parse] populates [lists] eagerly; consider lazy parsing for large
+     sections. *)
+  type loclists_section = {
+    header : header;
+    offset_table : u64 array;  (** Section-relative offset of each list. *)
+    lists : location_list array;  (** The decoded lists, one per offset. *)
+  }
+  (** A parsed [.debug_loclists] contribution: its [header], the [offset_table]
+      indexing each list, and the decoded [lists] themselves. *)
 
   val parse_header : Object.Buffer.cursor -> header
   (** Parse the header of a loclists contribution.
@@ -3386,12 +3391,18 @@ module DebugRnglists : sig
     | RLE_start_length of { start_addr : u64; length : u64 }
         (** Range with an explicit start address, plus a length *)
 
-  (* TODO Similar to the question above, why do we need both types in the API? *)
   type range_list = { entries : range_entry list }
-  (** A decoded range list. *)
+  (** A single decoded range list — the entries found at one offset. *)
 
-  type rnglists_section = { header : header; offset_table : u64 array }
-  (** Parsed .debug_rnglists section. *)
+  (* TODO [parse] populates [lists] eagerly; consider lazy parsing for large
+     sections. *)
+  type rnglists_section = {
+    header : header;
+    offset_table : u64 array;  (** Section-relative offset of each list. *)
+    lists : range_list array;  (** The decoded lists, one per offset. *)
+  }
+  (** A parsed [.debug_rnglists] contribution: its [header], the [offset_table]
+      indexing each list, and the decoded [lists] themselves. *)
 
   val parse_header : Object.Buffer.cursor -> header
   (** Parse the header of a rnglists contribution.
@@ -3549,8 +3560,6 @@ module SplitDwarf : sig
   (** Create a [dwo_context] from a .dwp package entry, populating the
       contributions list from the index entry. *)
 end
-
-(* TODO Move this into its own mli/ml files, it isn't part of the core DWARF support. *)
 
 (** DWARF Expression Evaluator.
 
