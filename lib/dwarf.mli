@@ -53,29 +53,10 @@ type encoding = {
 
     DWARF 5 specification, section 7.5.1 "Unit Headers". *)
 
-val parse_initial_length : Object.Buffer.cursor -> dwarf_format * u64
-(** Parse the initial_length field from a DWARF section header. Returns the
-    [dwarf_format] and the actual length value.
-
-    TODO Investigate how this is used? Seems like an internal function rather
-    than a public API.
-
-    @raise Parse_error
-      if the length field uses a reserved value in the reserved range
-      0xfffffff0-0xfffffffe. *)
-
 val offset_size_for_format : dwarf_format -> int
-(** Returns the size in bytes of offsets for a given DWARF format.
-
-    TODO Investigate how this is used? Seems like an internal function rather
-    than a public API. *)
-
-val read_offset_for_format : dwarf_format -> Object.Buffer.cursor -> u64
-(** Read an offset value from the buffer according to the specified
-    [dwarf_format], returning the value as a u64.
-
-    TODO Investigate how this is used? Seems like an internal function rather
-    than a public API. *)
+(** The size in bytes of an offset or length in the given format: 4 for
+    {!DWARF32}, 8 for {!DWARF64}. Use it to compute the width of section-offset
+    fields; it is the inverse of {!val:dwarf_format}. *)
 
 (** Abbreviation tag encoding.
 
@@ -893,10 +874,10 @@ type dwarf_language =
   | DW_LANG_lo_user
   | DW_LANG_hi_user
 
+(* TODO This should probably not raise here *)
 val dwarf_language : int -> dwarf_language
-(** Convert an int to a [dwarf_language]. TODO This should probably not raise
-    here
-    @raise Parse_error if the value is not a recognized language encoding. *)
+(** Convert an int to a [dwarf_language].
+    @raise Parse_error if the value is not a recognised language encoding. *)
 
 val int_of_dwarf_language : dwarf_language -> int
 (** Convert a [dwarf_language] to its integer encoding. *)
@@ -2200,8 +2181,6 @@ module CallFrame : sig
 
       DWARF 5 specification, section 6.4.1 "Structure of Call Frame
       Information". *)
-
-  (* TODO What is this length field? *)
 
   val create_default_cie : unit -> common_information_entry
   (** Create a CIE with default values for x86-64 architecture. *)

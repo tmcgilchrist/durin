@@ -12,6 +12,20 @@ let object_buffer_of_buffer buf =
   Sys.remove filename;
   obj_buf
 
+(* Independent decoders for the DWARF initial-length and offset fields, used to
+   read back what the writer produced. Kept local to the test so the writer
+   checks do not depend on the library's (internal) reader. *)
+let read_initial_length cur =
+  let first = Object.Buffer.Read.u32 cur in
+  if Unsigned.UInt32.to_int32 first = -1l (* 0xffffffff escape *) then
+    (Dwarf.DWARF64, Object.Buffer.Read.u64 cur)
+  else (Dwarf.DWARF32, Unsigned.UInt64.of_uint32 first)
+
+let read_offset fmt cur =
+  match fmt with
+  | Dwarf.DWARF32 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cur)
+  | Dwarf.DWARF64 -> Object.Buffer.Read.u64 cur
+
 let test_write_u8 () =
   let buf = Buffer.create 1 in
   Dwarf_write.write_u8 buf (Unsigned.UInt8.of_int 0x42);
@@ -95,7 +109,7 @@ let test_write_initial_length_dwarf32 () =
   Dwarf_write.write_initial_length buf Dwarf.DWARF32 256;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let format, length = Dwarf.parse_initial_length cur in
+  let format, length = read_initial_length cur in
   check
     (module struct
       type t = Dwarf.dwarf_format
@@ -112,7 +126,7 @@ let test_write_initial_length_dwarf64 () =
   Dwarf_write.write_initial_length buf Dwarf.DWARF64 512;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let format, length = Dwarf.parse_initial_length cur in
+  let format, length = read_initial_length cur in
   check
     (module struct
       type t = Dwarf.dwarf_format
@@ -129,7 +143,7 @@ let test_write_offset_dwarf32 () =
   Dwarf_write.write_offset buf Dwarf.DWARF32 (Unsigned.UInt64.of_int 0x12345678);
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let v = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let v = read_offset Dwarf.DWARF32 cur in
   check int64 "offset DWARF32 roundtrip"
     (Int64.of_string "0x12345678")
     (Unsigned.UInt64.to_int64 v)
@@ -140,7 +154,7 @@ let test_write_offset_dwarf64 () =
     (Unsigned.UInt64.of_int64 (Int64.of_string "0x123456789abcdef0"));
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let v = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  let v = read_offset Dwarf.DWARF64 cur in
   check int64 "offset DWARF64 roundtrip"
     (Int64.of_string "0x123456789abcdef0")
     (Unsigned.UInt64.to_int64 v)
@@ -1741,7 +1755,7 @@ let test_write_loclists_header_roundtrip () =
   Dwarf_write.write_loclists_header buf enc 0 10;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let _fmt, unit_length = Dwarf.parse_initial_length cur in
+  let _fmt, unit_length = read_initial_length cur in
   let version = Object.Buffer.Read.u16 cur in
   let address_size = Object.Buffer.Read.u8 cur in
   let segment_size = Object.Buffer.Read.u8 cur in
@@ -1993,10 +2007,10 @@ let test_write_aranges_set () =
   Dwarf_write.write_aranges_set buf aset;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let _fmt, _unit_length = Dwarf.parse_initial_length cur in
+  let _fmt, _unit_length = read_initial_length cur in
   let version = Object.Buffer.Read.u16 cur in
   check int "version" 2 (Unsigned.UInt16.to_int version);
-  let debug_info_off = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let debug_info_off = read_offset Dwarf.DWARF32 cur in
   check int "debug_info_offset" 0 (Unsigned.UInt64.to_int debug_info_off);
   let addr_sz = Object.Buffer.Read.u8 cur in
   check int "address_size" 8 (Unsigned.UInt8.to_int addr_sz);
@@ -2029,11 +2043,11 @@ let test_write_aranges_empty () =
   Dwarf_write.write_aranges_set buf aset;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let _fmt, unit_length = Dwarf.parse_initial_length cur in
+  let _fmt, unit_length = read_initial_length cur in
   let expected_body = 2 + 4 + 1 + 1 + 4 + (1 * 8 * 2) in
   check int "unit_length" expected_body (Unsigned.UInt64.to_int unit_length);
   let _version = Object.Buffer.Read.u16 cur in
-  let _off = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let _off = read_offset Dwarf.DWARF32 cur in
   let _addr_sz = Object.Buffer.Read.u8 cur in
   let _seg_sz = Object.Buffer.Read.u8 cur in
   for _ = 1 to 4 do
@@ -2112,13 +2126,13 @@ let test_write_debug_str_offsets () =
   check int "version" 5 (Unsigned.UInt16.to_int parsed_header.version);
   check int "padding" 0 (Unsigned.UInt16.to_int parsed_header.padding);
   (* Read the 4 offsets manually *)
-  let o0 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let o0 = read_offset Dwarf.DWARF32 cur in
   check int "offset 0" 0 (Unsigned.UInt64.to_int o0);
-  let o1 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let o1 = read_offset Dwarf.DWARF32 cur in
   check int "offset 1" 10 (Unsigned.UInt64.to_int o1);
-  let o2 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let o2 = read_offset Dwarf.DWARF32 cur in
   check int "offset 2" 25 (Unsigned.UInt64.to_int o2);
-  let o3 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let o3 = read_offset Dwarf.DWARF32 cur in
   check int "offset 3" 42 (Unsigned.UInt64.to_int o3)
 
 let test_write_debug_addr_segments () =
@@ -2233,7 +2247,7 @@ let test_write_debug_names_simple () =
   Dwarf_write.write_debug_names buf sec;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let _fmt, _unit_length = Dwarf.parse_initial_length cur in
+  let _fmt, _unit_length = read_initial_length cur in
   let version = Object.Buffer.Read.u16 cur in
   check int "version" 5 (Unsigned.UInt16.to_int version);
   let _padding = Object.Buffer.Read.u16 cur in
@@ -3012,7 +3026,7 @@ let test_aranges_dwarf64 () =
   Dwarf_write.write_aranges_set buf aset;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let fmt, _unit_length = Dwarf.parse_initial_length cur in
+  let fmt, _unit_length = read_initial_length cur in
   check
     (module struct
       type t = Dwarf.dwarf_format
@@ -3023,7 +3037,7 @@ let test_aranges_dwarf64 () =
     "format is DWARF64" Dwarf.DWARF64 fmt;
   let version = Object.Buffer.Read.u16 cur in
   check int "version" 2 (Unsigned.UInt16.to_int version);
-  let debug_info_off = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  let debug_info_off = read_offset Dwarf.DWARF64 cur in
   check int "debug_info_offset" 0 (Unsigned.UInt64.to_int debug_info_off);
   let addr_sz = Object.Buffer.Read.u8 cur in
   check int "address_size" 8 (Unsigned.UInt8.to_int addr_sz);
@@ -3109,11 +3123,11 @@ let test_debug_str_offsets_dwarf64 () =
       let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
     end)
     "format is DWARF64" Dwarf.DWARF64 parsed_header.format;
-  let o0 = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  let o0 = read_offset Dwarf.DWARF64 cur in
   check int "offset 0" 0 (Unsigned.UInt64.to_int o0);
-  let o1 = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  let o1 = read_offset Dwarf.DWARF64 cur in
   check int "offset 1" 10 (Unsigned.UInt64.to_int o1);
-  let o2 = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  let o2 = read_offset Dwarf.DWARF64 cur in
   check int "offset 2" 25 (Unsigned.UInt64.to_int o2)
 
 let test_debug_macro_dwarf64 () =
