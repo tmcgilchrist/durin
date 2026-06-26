@@ -634,8 +634,10 @@ type dwarf_expression_operation = {
 
 val parse_dwarf_expression :
   ?encoding:encoding -> string -> dwarf_expression_operation list
-(** Parse a DWARF expression bytecode string into a list of operations. *)
-(* TODO How is this used?  *)
+(** Decode a DWARF expression bytecode string (as carried raw in
+    [DW_AT_location], location- and range-list entries, [DW_CFA_expression],
+    etc.) into its operations. [encoding] sets the width of address- and
+    offset-sized operands; without it they default to 8 bytes. *)
 
 val string_of_dwarf_operation : dwarf_expression_operation -> string
 (** Convert a single DWARF operation to its string representation. *)
