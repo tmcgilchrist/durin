@@ -8,14 +8,14 @@ open Dwarf_types
 
     DWARF 5 specification, Table 7.2 "Unit header unit type encodings". *)
 type unit_type =
-  | DW_UT_compile (* A normal compilation unit *)
-  | DW_UT_type (* A type unit *)
-  | DW_UT_partial (* A partial unit *)
-  | DW_UT_skeleton (* A skeleton compilation unit *)
-  | DW_UT_split_compile (* A split compilation unit *)
-  | DW_UT_split_type (* A split type unit *)
-  | DW_UT_lo_user (* Reserved for user-defined types *)
-  | DW_UT_hi_user (* Reserved for user-defined types *)
+  | DW_UT_compile  (** A normal compilation unit *)
+  | DW_UT_type  (** A type unit *)
+  | DW_UT_partial  (** A partial unit *)
+  | DW_UT_skeleton  (** A skeleton compilation unit *)
+  | DW_UT_split_compile  (** A split compilation unit *)
+  | DW_UT_split_type  (** A split type unit *)
+  | DW_UT_lo_user  (** Reserved for user-defined types *)
+  | DW_UT_hi_user  (** Reserved for user-defined types *)
 
 val unit_type : u8 -> unit_type
 (** Convert a u8 value to a unit_type
@@ -344,50 +344,51 @@ val u64_of_attribute_encoding : attribute_encoding -> u64
 
     DWARF 5 specification, Table 7.6 "Attribute form encodings". *)
 type attribute_form_encoding =
-  | DW_FORM_addr
-  | DW_FORM_block2
-  | DW_FORM_block4
-  | DW_FORM_data2
-  | DW_FORM_data4
-  | DW_FORM_data8
-  | DW_FORM_string
-  | DW_FORM_block
-  | DW_FORM_block1
-  | DW_FORM_data1
-  | DW_FORM_flag
-  | DW_FORM_sdata
-  | DW_FORM_strp
-  | DW_FORM_udata
-  | DW_FORM_ref_addr
-  | DW_FORM_ref1
-  | DW_FORM_ref2
-  | DW_FORM_ref4
-  | DW_FORM_ref8
-  | DW_FORM_ref_udata
-  | DW_FORM_indirect
-  | DW_FORM_sec_offset
-  | DW_FORM_exprloc
-  | DW_FORM_flag_present
+  | DW_FORM_addr  (** Target-address-sized address *)
+  | DW_FORM_block2  (** Block with a 2-byte length prefix *)
+  | DW_FORM_block4  (** Block with a 4-byte length prefix *)
+  | DW_FORM_data2  (** 2-byte constant *)
+  | DW_FORM_data4  (** 4-byte constant *)
+  | DW_FORM_data8  (** 8-byte constant *)
+  | DW_FORM_string  (** Inline null-terminated string *)
+  | DW_FORM_block  (** Block with a ULEB128 length prefix *)
+  | DW_FORM_block1  (** Block with a 1-byte length prefix *)
+  | DW_FORM_data1  (** 1-byte constant *)
+  | DW_FORM_flag  (** 1-byte boolean flag *)
+  | DW_FORM_sdata  (** SLEB128 signed constant *)
+  | DW_FORM_strp  (** Offset of a string in .debug_str *)
+  | DW_FORM_udata  (** ULEB128 unsigned constant *)
+  | DW_FORM_ref_addr  (** Offset-sized reference to any unit's DIE *)
+  | DW_FORM_ref1  (** 1-byte reference within the current unit *)
+  | DW_FORM_ref2  (** 2-byte reference within the current unit *)
+  | DW_FORM_ref4  (** 4-byte reference within the current unit *)
+  | DW_FORM_ref8  (** 8-byte reference within the current unit *)
+  | DW_FORM_ref_udata  (** ULEB128 reference within the current unit *)
+  | DW_FORM_indirect  (** Form is itself given by a ULEB128 in the data *)
+  | DW_FORM_sec_offset  (** Offset-sized offset into a DWARF section *)
+  | DW_FORM_exprloc  (** DWARF expression with a ULEB128 length prefix *)
+  | DW_FORM_flag_present  (** Implicit true flag; no value stored *)
   (* New in DWARF Version 5 *)
-  | DW_FORM_strx
-  | DW_FORM_addrx
-  | DW_FORM_ref_sup4
-  | DW_FORM_strp_sup
-  | DW_FORM_data16
-  | DW_FORM_line_strp
-  | DW_FORM_ref_sig8
+  | DW_FORM_strx  (** ULEB128 index into .debug_str_offsets *)
+  | DW_FORM_addrx  (** ULEB128 index into .debug_addr *)
+  | DW_FORM_ref_sup4  (** 4-byte reference into the supplementary .debug_info *)
+  | DW_FORM_strp_sup  (** Offset of a string in the supplementary .debug_str *)
+  | DW_FORM_data16  (** 16-byte constant (e.g. an MD5 digest) *)
+  | DW_FORM_line_strp  (** Offset of a string in .debug_line_str *)
+  | DW_FORM_ref_sig8  (** 8-byte type-unit signature *)
   | DW_FORM_implicit_const
-  | DW_FORM_loclistx
-  | DW_FORM_rnglistx
-  | DW_FORM_ref_sup8
-  | DW_FORM_strx1
-  | DW_FORM_strx2
-  | DW_FORM_strx3
-  | DW_FORM_strx4
-  | DW_FORM_addrx1
-  | DW_FORM_addrx2
-  | DW_FORM_addrx3
-  | DW_FORM_addrx4
+      (** Constant stored in the abbreviation, not the DIE *)
+  | DW_FORM_loclistx  (** ULEB128 index into .debug_loclists *)
+  | DW_FORM_rnglistx  (** ULEB128 index into .debug_rnglists *)
+  | DW_FORM_ref_sup8  (** 8-byte reference into the supplementary .debug_info *)
+  | DW_FORM_strx1  (** 1-byte index into .debug_str_offsets *)
+  | DW_FORM_strx2  (** 2-byte index into .debug_str_offsets *)
+  | DW_FORM_strx3  (** 3-byte index into .debug_str_offsets *)
+  | DW_FORM_strx4  (** 4-byte index into .debug_str_offsets *)
+  | DW_FORM_addrx1  (** 1-byte index into .debug_addr *)
+  | DW_FORM_addrx2  (** 2-byte index into .debug_addr *)
+  | DW_FORM_addrx3  (** 3-byte index into .debug_addr *)
+  | DW_FORM_addrx4  (** 4-byte index into .debug_addr *)
   (* GNU extensions *)
   | DW_FORM_GNU_addr_index  (** GNU Fission: ULEB128 index into .debug_addr *)
   | DW_FORM_GNU_str_index
@@ -409,50 +410,55 @@ val u64_of_attribute_form_encoding : attribute_form_encoding -> u64
 
     DWARF 5 specification, Table 7.9 "DWARF operation encodings". *)
 type operation_encoding =
-  (* TODO Should attach more information to these constructors explaining their use based off the DWARF 5 spec. *)
-  | DW_OP_addr (* constant address *)
+  | DW_OP_addr  (** Push a constant target-address-sized address. *)
   | DW_OP_deref
-  | DW_OP_const1u (* 1-byte unsigned constant *)
-  | DW_OP_const1s (* 1-byte signed constant *)
-  | DW_OP_const2u (* 2-byte unsigned constant *)
-  | DW_OP_const2s (* 2-byte signed constant *)
-  | DW_OP_const4u (* 4-byte unsigned constant *)
-  | DW_OP_const4s (* 4-byte signed constant *)
-  | DW_OP_const8u (* 8-byte unsigned constant *)
-  | DW_OP_const8s (* 8-byte signed constant *)
-  | DW_OP_constu (* ULEB128 unsigned constant *)
-  | DW_OP_consts (* SLEB128 signed constant *)
-  | DW_OP_dup
-  | DW_OP_drop
+      (** Pop an address and push the address-sized value stored there. *)
+  | DW_OP_const1u  (** Push a 1-byte unsigned constant. *)
+  | DW_OP_const1s  (** Push a 1-byte signed constant. *)
+  | DW_OP_const2u  (** Push a 2-byte unsigned constant. *)
+  | DW_OP_const2s  (** Push a 2-byte signed constant. *)
+  | DW_OP_const4u  (** Push a 4-byte unsigned constant. *)
+  | DW_OP_const4s  (** Push a 4-byte signed constant. *)
+  | DW_OP_const8u  (** Push an 8-byte unsigned constant. *)
+  | DW_OP_const8s  (** Push an 8-byte signed constant. *)
+  | DW_OP_constu  (** Push a ULEB128 unsigned constant. *)
+  | DW_OP_consts  (** Push an SLEB128 signed constant. *)
+  | DW_OP_dup  (** Duplicate the top stack entry. *)
+  | DW_OP_drop  (** Pop the top stack entry. *)
   | DW_OP_over
-  | DW_OP_pick (* 1-byte stack index *)
-  | DW_OP_swap
-  | DW_OP_rot
+      (** Push a copy of the entry below the top (equivalent to pick 1). *)
+  | DW_OP_pick  (** Push a copy of the stack entry at the 1-byte index. *)
+  | DW_OP_swap  (** Swap the top two stack entries. *)
+  | DW_OP_rot  (** Rotate the top three stack entries. *)
   | DW_OP_xderef
-  | DW_OP_abs
-  | DW_OP_and
-  | DW_OP_div
-  | DW_OP_minus
-  | DW_OP_mod
-  | DW_OP_mul
-  | DW_OP_neg
-  | DW_OP_not
-  | DW_OP_or
-  | DW_OP_plus
-  | DW_OP_plus_uconst
-  | DW_OP_shl
-  | DW_OP_shr
-  | DW_OP_shra
-  | DW_OP_xor
-  | DW_OP_bra (* signed 2-byte constant *)
-  | DW_OP_eq
-  | DW_OP_ge
-  | DW_OP_gt
-  | DW_OP_le
-  | DW_OP_lt
-  | DW_OP_ne
-  | DW_OP_skip (* signed 2-byte constant *)
-  | DW_OP_lit0
+      (** Pop an address and an address-space identifier and push the value read
+          from that multi-address-space location. *)
+  | DW_OP_abs  (** Replace the top entry with its absolute value. *)
+  | DW_OP_and  (** Bitwise AND of the top two entries. *)
+  | DW_OP_div  (** Signed division of the second entry by the top. *)
+  | DW_OP_minus  (** Subtract the top entry from the one below it. *)
+  | DW_OP_mod  (** Modulo of the second entry by the top. *)
+  | DW_OP_mul  (** Multiply the top two entries. *)
+  | DW_OP_neg  (** Arithmetic negation of the top entry. *)
+  | DW_OP_not  (** Bitwise complement of the top entry. *)
+  | DW_OP_or  (** Bitwise OR of the top two entries. *)
+  | DW_OP_plus  (** Add the top two entries. *)
+  | DW_OP_plus_uconst  (** Add a ULEB128 constant to the top entry. *)
+  | DW_OP_shl  (** Left-shift the second entry by the top entry. *)
+  | DW_OP_shr  (** Logical right-shift the second entry by the top entry. *)
+  | DW_OP_shra  (** Arithmetic right-shift the second entry by the top entry. *)
+  | DW_OP_xor  (** Bitwise XOR of the top two entries. *)
+  | DW_OP_bra
+      (** Conditional branch: pop the top entry and, if non-zero, branch by the
+          signed 2-byte offset. *)
+  | DW_OP_eq  (** Push 1 if the top two entries are equal, else 0. *)
+  | DW_OP_ge  (** Push 1 if the second entry is >= the top, else 0. *)
+  | DW_OP_gt  (** Push 1 if the second entry is > the top, else 0. *)
+  | DW_OP_le  (** Push 1 if the second entry is <= the top, else 0. *)
+  | DW_OP_lt  (** Push 1 if the second entry is < the top, else 0. *)
+  | DW_OP_ne  (** Push 1 if the top two entries are not equal, else 0. *)
+  | DW_OP_skip  (** Unconditional branch by the signed 2-byte offset. *)
+  | DW_OP_lit0  (** Push the literal value N (DW_OP_lit0..lit31 push 0..31). *)
   | DW_OP_lit1
   | DW_OP_lit2
   | DW_OP_lit3
@@ -485,6 +491,8 @@ type operation_encoding =
   | DW_OP_lit30
   | DW_OP_lit31
   | DW_OP_reg0
+      (** Register location: the value is in register N (DW_OP_reg0..reg31 cover
+          registers 0..31). *)
   | DW_OP_reg1
   | DW_OP_reg2
   | DW_OP_reg3
@@ -516,7 +524,9 @@ type operation_encoding =
   | DW_OP_reg29
   | DW_OP_reg30
   | DW_OP_reg31
-  | DW_OP_breg0 (* SLEB128 offset *)
+  | DW_OP_breg0
+      (** Push register N's contents plus an SLEB128 offset (DW_OP_breg0..breg31
+          cover registers 0..31). *)
   | DW_OP_breg1
   | DW_OP_breg2
   | DW_OP_breg3
@@ -548,37 +558,72 @@ type operation_encoding =
   | DW_OP_breg29
   | DW_OP_breg30
   | DW_OP_breg31
-  | DW_OP_regx (* ULEB128 register *)
-  | DW_OP_fbreg (* SLEB128 offset *)
-  | DW_OP_bregx (* ULEB128 register, SLEB128 offset *)
-  | DW_OP_piece (* ULEB128 size of piece *)
-  | DW_OP_deref_size (* 1-byte size of data retrieved *)
-  | DW_OP_xderef_size (* 1-byte size of data retrieved *)
-  | DW_OP_nop
+  | DW_OP_regx  (** Register location for the ULEB128 register number. *)
+  | DW_OP_fbreg
+      (** Push the frame base (DW_AT_frame_base) plus an SLEB128 offset. *)
+  | DW_OP_bregx
+      (** Push the ULEB128 register's contents plus an SLEB128 offset. *)
+  | DW_OP_piece
+      (** The preceding location holds a ULEB128-byte piece of the object
+          (composite location description). *)
+  | DW_OP_deref_size
+      (** Like DW_OP_deref but read the 1-byte-specified number of bytes. *)
+  | DW_OP_xderef_size
+      (** Like DW_OP_xderef but read the 1-byte-specified number of bytes. *)
+  | DW_OP_nop  (** No operation. *)
   | DW_OP_push_object_address
-  | DW_OP_call2 (* 2-byte offset of DIE *)
-  | DW_OP_call4 (* 4-byte offset of DIE *)
-  | DW_OP_call_ref (* 4- or 8-byte offset of DIE *)
+      (** Push the address of the object being described. *)
+  | DW_OP_call2
+      (** Evaluate the expression of the DIE at the 2-byte unit offset. *)
+  | DW_OP_call4
+      (** Evaluate the expression of the DIE at the 4-byte unit offset. *)
+  | DW_OP_call_ref
+      (** Evaluate the expression of the DIE at the offset-sized reference. *)
   | DW_OP_form_tls_address
+      (** Pop a TLS offset and push the corresponding thread-local address. *)
   | DW_OP_call_frame_cfa
-  | DW_OP_bit_piece (* ULEB128 size, ULEB128 offset *)
-  | DW_OP_implicit_value (* ULEB128 size, block of that size *)
-  | DW_OP_stack_value  (** New in DWARF Version 5 *)
+      (** Push the call frame CFA (canonical frame address). *)
+  | DW_OP_bit_piece
+      (** Like DW_OP_piece but a ULEB128 bit size and ULEB128 bit offset. *)
+  | DW_OP_implicit_value
+      (** The object has no location; its value is the given block (ULEB128 size
+          followed by that many bytes). *)
+  | DW_OP_stack_value
+      (** The object has no location; its value is the top stack entry. New in
+          DWARF Version 5. *)
   | DW_OP_implicit_pointer
-    (* 4- or 8-byte offset of DIE, SLEB128 constant offset *)
-  | DW_OP_addrx (* ULEB128 indirect address *)
-  | DW_OP_constx (* ULEB128 indirect constant *)
-  | DW_OP_entry_value (* ULEB128 size, block of that size *)
+      (** A pointer that was optimised away: an offset-sized DIE reference and
+          an SLEB128 byte offset into the pointed-to object. *)
+  | DW_OP_addrx  (** Push an address from .debug_addr at the ULEB128 index. *)
+  | DW_OP_constx  (** Push a constant from .debug_addr at the ULEB128 index. *)
+  | DW_OP_entry_value
+      (** Push the value a sub-expression had on entry to the current function
+          (ULEB128 size followed by that many bytes of expression). *)
   | DW_OP_const_type
-    (* ULEB128 type entry offset, 1-byte size, constant value *)
-  | DW_OP_regval_type (* ULEB128 register number, ULEB128 constant offset *)
-  | DW_OP_deref_type (* 1-byte size, ULEB128 type entry offset *)
-  | DW_OP_xderef_type (* 1-byte size, ULEB128 type entry offset *)
-  | DW_OP_convert (* ULEB128 type entry offset *)
-  | DW_OP_reinterpret (* DW_OP_lo_user 0xe0 ULEB128 type entry offset *)
-  | DW_OP_GNU_parameter_ref (* 4-byte DIE offset *)
-  | DW_OP_GNU_variable_value (* address-sized DIE ref *)
+      (** Push a typed constant: ULEB128 type-DIE offset, 1-byte size, then the
+          constant value of that size. *)
+  | DW_OP_regval_type
+      (** Push the typed contents of a register: ULEB128 register number and
+          ULEB128 type-DIE offset. *)
+  | DW_OP_deref_type
+      (** Like DW_OP_deref but typed: 1-byte size and ULEB128 type-DIE offset.
+      *)
+  | DW_OP_xderef_type
+      (** Like DW_OP_xderef but typed: 1-byte size and ULEB128 type-DIE offset.
+      *)
+  | DW_OP_convert
+      (** Convert the top entry to the type at the ULEB128 offset (0 = generic
+          type). *)
+  | DW_OP_reinterpret
+      (** Reinterpret the top entry's bits as the type at the ULEB128 offset. *)
+  | DW_OP_GNU_parameter_ref
+      (** GNU extension: reference a parameter DIE by 4-byte offset. *)
+  | DW_OP_GNU_variable_value
+      (** GNU extension: push the value of the variable at the address-sized DIE
+          reference. *)
   | DW_OP_hi_user
+      (** Top of the vendor-extension opcode range (DW_OP_lo_user 0xe0 ..
+          DW_OP_hi_user 0xff). *)
 
 val operation_encoding : int -> operation_encoding
 (** Convert an int to an [operation_encoding].
@@ -618,15 +663,17 @@ val string_of_dwarf_expression : dwarf_expression_operation list -> string
 
     DWARF 5 specification, Table 7.10 "Location list entry encoding values". *)
 type location_list_entry =
-  | DW_LLE_end_of_list
-  | DW_LLE_base_addressx
-  | DW_LLE_startx_endx
+  | DW_LLE_end_of_list  (** Marks the end of the location list *)
+  | DW_LLE_base_addressx  (** New base address, as a .debug_addr index *)
+  | DW_LLE_startx_endx  (** Range: start and end as .debug_addr indices *)
   | DW_LLE_startx_length
+      (** Range: start as a .debug_addr index, plus length *)
   | DW_LLE_offset_pair
-  | DW_LLE_default_location
-  | DW_LLE_base_address
-  | DW_LLE_start_end
-  | DW_LLE_start_length
+      (** Range: start and end offsets from the base address *)
+  | DW_LLE_default_location  (** Default location when no other entry applies *)
+  | DW_LLE_base_address  (** New base address, given directly *)
+  | DW_LLE_start_end  (** Range: explicit start and end addresses *)
+  | DW_LLE_start_length  (** Range: explicit start address, plus length *)
 
 val location_list_entry : int -> location_list_entry
 (** Convert an int to a [location_list_entry].
@@ -650,26 +697,26 @@ val string_of_location_list_entry : location_list_entry -> string
 
     DWARF 5 specification, Table 7.11 "Base type encoding values". *)
 type base_type =
-  | DW_ATE_address
-  | DW_ATE_boolean
-  | DW_ATE_complex_float
-  | DW_ATE_float
-  | DW_ATE_signed
-  | DW_ATE_signed_char
-  | DW_ATE_unsigned
-  | DW_ATE_unsigned_char
-  | DW_ATE_imaginary_float
-  | DW_ATE_packed_decimal
-  | DW_ATE_numeric_string
-  | DW_ATE_edited
-  | DW_ATE_signed_fixed
-  | DW_ATE_unsigned_fixed
-  | DW_ATE_decimal_float
-  | DW_ATE_UTF  (** New in DWARF Version 5 *)
-  | DW_ATE_UCS
-  | DW_ATE_ASCII
-  | DW_ATE_lo_user
-  | DW_ATE_hi_user
+  | DW_ATE_address  (** Linear machine address *)
+  | DW_ATE_boolean  (** True or false *)
+  | DW_ATE_complex_float  (** Complex floating-point number *)
+  | DW_ATE_float  (** Floating-point number *)
+  | DW_ATE_signed  (** Signed binary integer *)
+  | DW_ATE_signed_char  (** Signed character *)
+  | DW_ATE_unsigned  (** Unsigned binary integer *)
+  | DW_ATE_unsigned_char  (** Unsigned character *)
+  | DW_ATE_imaginary_float  (** Imaginary floating-point number *)
+  | DW_ATE_packed_decimal  (** Packed decimal *)
+  | DW_ATE_numeric_string  (** Numeric string *)
+  | DW_ATE_edited  (** Edited string or number *)
+  | DW_ATE_signed_fixed  (** Signed fixed-point *)
+  | DW_ATE_unsigned_fixed  (** Unsigned fixed-point *)
+  | DW_ATE_decimal_float  (** Decimal floating-point number *)
+  | DW_ATE_UTF  (** Unicode character; new in DWARF Version 5 *)
+  | DW_ATE_UCS  (** ISO/IEC 10646-1 character *)
+  | DW_ATE_ASCII  (** ASCII character *)
+  | DW_ATE_lo_user  (** Start of the vendor-extension range *)
+  | DW_ATE_hi_user  (** End of the vendor-extension range *)
 
 val base_type : int -> base_type
 (** Convert an int to a [base_type].
@@ -688,11 +735,11 @@ val string_of_base_type : base_type -> string
 
     DWARF 5 specification, Table 7.12 "Decimal sign encodings". *)
 type decimal_sign =
-  | DW_DS_unsigned
-  | DW_DS_leading_overpunch
-  | DW_DS_trailing_overpunch
-  | DW_DS_leading_separate
-  | DW_DS_trailing_separate
+  | DW_DS_unsigned  (** Unsigned *)
+  | DW_DS_leading_overpunch  (** Sign encoded in the leading digit *)
+  | DW_DS_trailing_overpunch  (** Sign encoded in the trailing digit *)
+  | DW_DS_leading_separate  (** Separate leading sign byte *)
+  | DW_DS_trailing_separate  (** Separate trailing sign byte *)
 
 val decimal_sign : int -> decimal_sign
 (** Convert an int to a [decimal_sign].
@@ -711,11 +758,11 @@ val string_of_decimal_sign : decimal_sign -> string
 
     DWARF 5 specification, Table 7.13 "Endianity encodings". *)
 type endianity =
-  | DW_END_default
-  | DW_END_big
-  | DW_END_little
-  | DW_END_lo_user
-  | DW_END_hi_user
+  | DW_END_default  (** Target's default byte order *)
+  | DW_END_big  (** Big-endian byte order *)
+  | DW_END_little  (** Little-endian byte order *)
+  | DW_END_lo_user  (** Start of the vendor-extension range *)
+  | DW_END_hi_user  (** End of the vendor-extension range *)
 
 val endianity : int -> endianity
 (** Convert an int to an [endianity].
@@ -736,9 +783,9 @@ val string_of_endianity : endianity -> string
 
     DWARF 5 specification, Table 7.14 "Accessibility encodings". *)
 type accessibility =
-  | DW_ACCESS_public
-  | DW_ACCESS_protected
-  | DW_ACCESS_private
+  | DW_ACCESS_public  (** Public member *)
+  | DW_ACCESS_protected  (** Protected member *)
+  | DW_ACCESS_private  (** Private member *)
 
 val accessibility : int -> accessibility
 (** Convert an int to an [accessibility].
@@ -758,7 +805,10 @@ val string_of_accessibility : accessibility -> string
     The encoding of the constants used in the [DW_AT_visibility] attribute.
 
     DWARF 5 specification, Table 7.15 "Visibility encodings". *)
-type visibility = DW_VIS_local | DW_VIS_exported | DW_VIS_qualified
+type visibility =
+  | DW_VIS_local  (** Visible only within its compilation unit *)
+  | DW_VIS_exported  (** Visible outside its compilation unit *)
+  | DW_VIS_qualified  (** Visible only through qualification *)
 
 val visibility : int -> visibility
 (** Convert an int to a [visibility].
@@ -779,9 +829,9 @@ val string_of_visibility : visibility -> string
 
     DWARF 5 specification, Table 7.16 "Virtuality encodings". *)
 type virtuality =
-  | DW_VIRTUALITY_none
-  | DW_VIRTUALITY_virtual
-  | DW_VIRTUALITY_pure_virtual
+  | DW_VIRTUALITY_none  (** Not virtual *)
+  | DW_VIRTUALITY_virtual  (** Virtual *)
+  | DW_VIRTUALITY_pure_virtual  (** Pure virtual *)
 
 val virtuality : int -> virtuality
 (** Convert an int to a [virtuality].
@@ -860,10 +910,10 @@ val string_of_dwarf_language : dwarf_language -> string
 
     DWARF 5 specification, Table 7.18 "Identifier case encodings". *)
 type identifier =
-  | DW_ID_case_sensitive
-  | DW_ID_up_case
-  | DW_ID_down_case
-  | DW_ID_case_insensitive
+  | DW_ID_case_sensitive  (** Case-sensitive identifiers *)
+  | DW_ID_up_case  (** Folded to upper case *)
+  | DW_ID_down_case  (** Folded to lower case *)
+  | DW_ID_case_insensitive  (** Case-insensitive identifiers *)
 
 val identifier : int -> identifier
 (** Convert an int to an [identifier].
@@ -885,16 +935,17 @@ val string_of_identifier : identifier -> string
 
     DWARF 5 specification, Table 7.19 "Calling convention encodings". *)
 type calling_convention =
-  | DW_CC_normal
-  | DW_CC_program
-  | DW_CC_nocall
+  | DW_CC_normal  (** Normal calling convention *)
+  | DW_CC_program  (** Program's main subprogram *)
+  | DW_CC_nocall  (** Subroutine that is never called *)
   (* New in DWARF Version 5 *)
-  | DW_CC_pass_by_reference
-  | DW_CC_pass_by_value
-  | DW_CC_lo_user
-  | DW_CC_hi_user
-(* TODO Another candidate for Unknown of int,
-                                   we expect extensions between lo_user / hi_user *)
+  | DW_CC_pass_by_reference  (** Aggregate passed by reference *)
+  | DW_CC_pass_by_value  (** Aggregate passed by value *)
+  | DW_CC_lo_user  (** Start of the vendor-extension range *)
+  | DW_CC_hi_user  (** End of the vendor-extension range *)
+
+(* TODO Another candidate for Unknown of int, we expect extensions between
+   lo_user / hi_user *)
 
 val calling_convention : int -> calling_convention
 (** Convert an int to a [calling_convention].
@@ -912,10 +963,10 @@ val string_of_calling_convention : calling_convention -> string
 
     DWARF 5 specification, Table 7.20 "Inline encodings". *)
 type inlined =
-  | DW_INL_not_inlined
-  | DW_INL_inlined
-  | DW_INL_declared_not_inlined
-  | DW_INL_declared_inlined
+  | DW_INL_not_inlined  (** Neither declared inline nor inlined *)
+  | DW_INL_inlined  (** Inlined but not declared inline *)
+  | DW_INL_declared_not_inlined  (** Declared inline but not inlined *)
+  | DW_INL_declared_inlined  (** Declared inline and inlined *)
 
 val inlined : int -> inlined
 (** Convert an int to an [inlined].
@@ -935,7 +986,9 @@ val string_of_inlined : inlined -> string
     The encoding of the constants used in the [DW_AT_ordering] attribute.
 
     DWARF 5 specification, Table 7.21 "Ordering encodings". *)
-type array_ordering = DW_ORD_row_major | DW_ORD_col_major
+type array_ordering =
+  | DW_ORD_row_major  (** Row-major array ordering *)
+  | DW_ORD_col_major  (** Column-major array ordering *)
 
 val array_ordering : int -> array_ordering
 (** Convert an int to an [array_ordering].
@@ -956,7 +1009,9 @@ val string_of_array_ordering : array_ordering -> string
     as 1-byte constants.
 
     DWARF 5 specification, Table 7.22 "Discriminant descriptor encodings". *)
-type discriminant = DW_DSC_label | DW_DSC_range
+type discriminant =
+  | DW_DSC_label  (** Discriminant is a single label *)
+  | DW_DSC_range  (** Discriminant is a range of values *)
 
 val discriminant : int -> discriminant
 (** Convert an int to a [discriminant].
@@ -974,14 +1029,14 @@ val string_of_discriminant : discriminant -> string
 
     DWARF 5 specification, Table 7.23 "Name index attribute encodings". *)
 type name_index_attribute =
-  | DW_IDX_null
-  | DW_IDX_compile_unit
-  | DW_IDX_type_unit
-  | DW_IDX_die_offset
-  | DW_IDX_parent
-  | DW_IDX_type_hash
-  | DW_IDX_lo_user
-  | DW_IDX_hi_user
+  | DW_IDX_null  (** Null terminator for the attribute list *)
+  | DW_IDX_compile_unit  (** Index of the CU in the CU list *)
+  | DW_IDX_type_unit  (** Index of the type unit in the local TU list *)
+  | DW_IDX_die_offset  (** Offset of the DIE within its unit *)
+  | DW_IDX_parent  (** Index of the parent entry in the name index *)
+  | DW_IDX_type_hash  (** Hash of the type, for type units *)
+  | DW_IDX_lo_user  (** Start of the vendor-extension range *)
+  | DW_IDX_hi_user  (** End of the vendor-extension range *)
 
 val name_index_attribute : int -> name_index_attribute
 (** Convert an int to a [name_index_attribute].
@@ -1001,9 +1056,9 @@ val string_of_name_index_attribute : name_index_attribute -> string
 
     DWARF 5 specification, Table 7.24 "Defaulted attribute encodings". *)
 type defaulted_attribute =
-  | DW_DEFAULTED_no
-  | DW_DEFAULTED_in_class
-  | DW_DEFAULTED_out_of_class
+  | DW_DEFAULTED_no  (** Not defaulted *)
+  | DW_DEFAULTED_in_class  (** Defaulted inside the class body *)
+  | DW_DEFAULTED_out_of_class  (** Defaulted outside the class body *)
 
 val defaulted_attribute : int -> defaulted_attribute
 (** Convert an int to a [defaulted_attribute].
@@ -1026,18 +1081,19 @@ val string_of_defaulted_attribute : defaulted_attribute -> string
     DWARF 5 specification, Table 7.25 "Line number standard opcode encodings".
 *)
 type line_number_opcode =
-  | DW_LNS_copy
-  | DW_LNS_advance_pc
-  | DW_LNS_advance_line
-  | DW_LNS_set_file
-  | DW_LNS_set_column
-  | DW_LNS_negate_stmt
-  | DW_LNS_set_basic_block
-  | DW_LNS_const_add_pc
+  | DW_LNS_copy  (** Append a row to the line table *)
+  | DW_LNS_advance_pc  (** Advance the address by an operand *)
+  | DW_LNS_advance_line  (** Advance the line by a signed operand *)
+  | DW_LNS_set_file  (** Set the current file *)
+  | DW_LNS_set_column  (** Set the current column *)
+  | DW_LNS_negate_stmt  (** Toggle the is_stmt flag *)
+  | DW_LNS_set_basic_block  (** Mark the next row as a basic-block start *)
+  | DW_LNS_const_add_pc  (** Advance the address by a constant *)
   | DW_LNS_fixed_advance_pc
-  | DW_LNS_set_prologue_end
-  | DW_LNS_set_epilogue_begin
-  | DW_LNS_set_isa
+      (** Advance the address by a fixed 2-byte operand *)
+  | DW_LNS_set_prologue_end  (** Mark the row as a prologue end *)
+  | DW_LNS_set_epilogue_begin  (** Mark the row as an epilogue start *)
+  | DW_LNS_set_isa  (** Set the instruction set architecture *)
 
 val line_number_opcode : int -> line_number_opcode
 (** Convert an int to a [line_number_opcode]. *)
@@ -1057,11 +1113,13 @@ val string_of_line_number_opcode : line_number_opcode -> string
     DWARF 5 specification, Table 7.26 "Line number extended opcode encodings".
 *)
 type line_number_extended_opcode =
-  | DW_LNE_end_sequence
-  | DW_LNE_set_address
-  | DW_LNE_set_discriminator
-  | DW_LNE_lo_user
-  | DW_LNE_hi_user (* TODO Another variant expected to be extended. *)
+  | DW_LNE_end_sequence  (** End the current sequence of rows *)
+  | DW_LNE_set_address  (** Set the address to a relocatable operand *)
+  | DW_LNE_set_discriminator  (** Set the discriminator value *)
+  | DW_LNE_lo_user  (** Start of the vendor-extension range *)
+  | DW_LNE_hi_user  (** End of the vendor-extension range *)
+
+(* TODO Another variant expected to be extended. *)
 
 val line_number_extended_opcode : int -> line_number_extended_opcode
 (** Convert an int to a [line_number_extended_opcode]. *)
@@ -1082,13 +1140,15 @@ val string_of_line_number_extended_opcode :
     DWARF 5 specification, Table 7.27 "Line number header entry format
     encodings". *)
 type line_number_header_entry =
-  | DW_LNCT_path
-  | DW_LNCT_directory_index
-  | DW_LNCT_timestamp
-  | DW_LNCT_size
-  | DW_LNCT_MD5
-  | DW_LNCT_lo_user
-  | DW_LNCT_hi_user (* TODO Another variant expected to be extended. *)
+  | DW_LNCT_path  (** File or directory path *)
+  | DW_LNCT_directory_index  (** Index into the directory list *)
+  | DW_LNCT_timestamp  (** Last-modification timestamp *)
+  | DW_LNCT_size  (** File size in bytes *)
+  | DW_LNCT_MD5  (** 16-byte MD5 digest of the file *)
+  | DW_LNCT_lo_user  (** Start of the vendor-extension range *)
+  | DW_LNCT_hi_user  (** End of the vendor-extension range *)
+
+(* TODO Another variant expected to be extended. *)
 
 val line_number_header_entry : int -> line_number_header_entry
 (** Convert an int to a [line_number_header_entry]. *)
@@ -1106,20 +1166,23 @@ val string_of_line_number_header_entry : line_number_header_entry -> string
     DWARF 5 specification, Table 7.28 "Macro information entry type encodings".
 *)
 type macro_info_entry_type =
-  | DW_MACRO_define
-  | DW_MACRO_undef
-  | DW_MACRO_start_file
-  | DW_MACRO_end_file
-  | DW_MACRO_define_strp
-  | DW_MACRO_undef_strp
-  | DW_MACRO_import
+  | DW_MACRO_define  (** Macro definition, inline string *)
+  | DW_MACRO_undef  (** Macro undefinition, inline string *)
+  | DW_MACRO_start_file  (** Start of a source file *)
+  | DW_MACRO_end_file  (** End of a source file *)
+  | DW_MACRO_define_strp  (** Macro definition, string via .debug_str *)
+  | DW_MACRO_undef_strp  (** Macro undefinition, string via .debug_str *)
+  | DW_MACRO_import  (** Import another macro unit *)
   | DW_MACRO_define_sup
+      (** Macro definition, string in the supplementary file *)
   | DW_MACRO_undef_sup
-  | DW_MACRO_import_sup
-  | DW_MACRO_define_strx
+      (** Macro undefinition, string in the supplementary file *)
+  | DW_MACRO_import_sup  (** Import a macro unit from the supplementary file *)
+  | DW_MACRO_define_strx  (** Macro definition, string via .debug_str_offsets *)
   | DW_MACRO_undef_strx
-  | DW_MACRO_lo_user
-  | DW_MACRO_hi_user
+      (** Macro undefinition, string via .debug_str_offsets *)
+  | DW_MACRO_lo_user  (** Start of the vendor-extension range *)
+  | DW_MACRO_hi_user  (** End of the vendor-extension range *)
 
 val macro_info_entry_type : u8 -> macro_info_entry_type
 (** Convert a u8 to a [macro_info_entry_type]. *)
@@ -1195,11 +1258,11 @@ end
 module DebugMacinfo : sig
   (** Macro info entry type codes. *)
   type macinfo_type =
-    | DW_MACINFO_define
-    | DW_MACINFO_undef
-    | DW_MACINFO_start_file
-    | DW_MACINFO_end_file
-    | DW_MACINFO_vendor_ext
+    | DW_MACINFO_define  (** Macro definition *)
+    | DW_MACINFO_undef  (** Macro undefinition *)
+    | DW_MACINFO_start_file  (** Start of a source file *)
+    | DW_MACINFO_end_file  (** End of a source file *)
+    | DW_MACINFO_vendor_ext  (** Vendor-specific extension *)
 
   val macinfo_type_of_int : int -> macinfo_type
   (** Convert an int to a [macinfo_type].
@@ -1210,11 +1273,11 @@ module DebugMacinfo : sig
   (** Convert a [macinfo_type] to its string representation. *)
 
   type entry = {
-    macinfo_type : macinfo_type;
-    line_number : u32 option;
-    string_value : string option;
-    file_index : u32 option;
-    constant : u64 option;
+    macinfo_type : macinfo_type;  (** Kind of macro entry *)
+    line_number : u32 option;  (** Source line, for define/undef entries *)
+    string_value : string option;  (** Macro text or file name *)
+    file_index : u32 option;  (** File index, for start_file entries *)
+    constant : u64 option;  (** Constant, for vendor extensions *)
   }
   (** A single macinfo entry. *)
 
@@ -1284,34 +1347,35 @@ exception Parse_error of parse_error
 
     DWARF 5 specification, Table 7.29 "Call frame instruction encodings". *)
 type call_frame_instruction =
-  | DW_CFA_advance_loc
-  | DW_CFA_offset
-  | DW_CFA_restore
-  | DW_CFA_nop
-  | DW_CFA_set_loc
-  | DW_CFA_advance_loc1
-  | DW_CFA_advance_loc2
-  | DW_CFA_advance_loc4
+  | DW_CFA_advance_loc  (** Advance location by the delta in the opcode *)
+  | DW_CFA_offset  (** Register saved at CFA + offset *)
+  | DW_CFA_restore  (** Restore register to its initial rule *)
+  | DW_CFA_nop  (** No operation; padding *)
+  | DW_CFA_set_loc  (** Set location to an explicit address *)
+  | DW_CFA_advance_loc1  (** Advance location by a 1-byte delta *)
+  | DW_CFA_advance_loc2  (** Advance location by a 2-byte delta *)
+  | DW_CFA_advance_loc4  (** Advance location by a 4-byte delta *)
   | DW_CFA_offset_extended
-  | DW_CFA_restore_extended
-  | DW_CFA_undefined
-  | DW_CFA_same_value
-  | DW_CFA_register
-  | DW_CFA_remember_state
-  | DW_CFA_restore_state
-  | DW_CFA_def_cfa
-  | DW_CFA_def_cfa_register
-  | DW_CFA_def_cfa_offset
-  | DW_CFA_def_cfa_expression
-  | DW_CFA_expression
-  | DW_CFA_offset_extended_sf
-  | DW_CFA_def_cfa_sf
-  | DW_CFA_def_cfa_offset_sf
-  | DW_CFA_val_offset
-  | DW_CFA_val_offset_sf
-  | DW_CFA_val_expression
-  | DW_CFA_lo_user
-  | DW_CFA_hi_user
+      (** Register saved at CFA + offset (ULEB register) *)
+  | DW_CFA_restore_extended  (** Restore register to its initial rule (ULEB) *)
+  | DW_CFA_undefined  (** Register has no recoverable value *)
+  | DW_CFA_same_value  (** Register's value is unchanged *)
+  | DW_CFA_register  (** Register saved in another register *)
+  | DW_CFA_remember_state  (** Push the register rules onto a stack *)
+  | DW_CFA_restore_state  (** Pop the register rules from the stack *)
+  | DW_CFA_def_cfa  (** Define the CFA as register + offset *)
+  | DW_CFA_def_cfa_register  (** Change the CFA register, keep the offset *)
+  | DW_CFA_def_cfa_offset  (** Change the CFA offset, keep the register *)
+  | DW_CFA_def_cfa_expression  (** Define the CFA via a DWARF expression *)
+  | DW_CFA_expression  (** Register value located via a DWARF expression *)
+  | DW_CFA_offset_extended_sf  (** Register saved at CFA + signed offset *)
+  | DW_CFA_def_cfa_sf  (** Define the CFA as register + signed offset *)
+  | DW_CFA_def_cfa_offset_sf  (** Change the CFA offset to a signed value *)
+  | DW_CFA_val_offset  (** Register value is CFA + offset (not in memory) *)
+  | DW_CFA_val_offset_sf  (** Register value is CFA + signed offset *)
+  | DW_CFA_val_expression  (** Register value computed by a DWARF expression *)
+  | DW_CFA_lo_user  (** Start of the vendor-extension range *)
+  | DW_CFA_hi_user  (** End of the vendor-extension range *)
 
 val string_of_call_frame_instruction : call_frame_instruction -> string
 (** Convert a [call_frame_instruction] to its string representation. *)
@@ -1323,14 +1387,16 @@ val string_of_call_frame_instruction : call_frame_instruction -> string
 
     DWARF 5 specification, Table 7.30 "Range list entry encoding values". *)
 type range_list_entry =
-  | DW_RLE_end_of_list
-  | DW_RLE_base_addressx
-  | DW_RLE_startx_endx
+  | DW_RLE_end_of_list  (** Marks the end of the range list *)
+  | DW_RLE_base_addressx  (** New base address, as a .debug_addr index *)
+  | DW_RLE_startx_endx  (** Range: start and end as .debug_addr indices *)
   | DW_RLE_startx_length
+      (** Range: start as a .debug_addr index, plus length *)
   | DW_RLE_offset_pair
-  | DW_RLE_base_address
-  | DW_RLE_start_end
-  | DW_RLE_start_length
+      (** Range: start and end offsets from the base address *)
+  | DW_RLE_base_address  (** New base address, given directly *)
+  | DW_RLE_start_end  (** Range: explicit start and end addresses *)
+  | DW_RLE_start_length  (** Range: explicit start address, plus length *)
 
 val range_list_entry : int -> range_list_entry
 (** Convert an int to a [range_list_entry].
@@ -1465,10 +1531,10 @@ module DIE : sig
       DWARF 5 specification, section 7.5.4 "Attribute Encodings". *)
 
   type t = {
-    tag : abbreviation_tag;
-    attributes : attribute list;
-    children : t Seq.t;
-    offset : int;
+    tag : abbreviation_tag;  (** The DIE's tag (its kind) *)
+    attributes : attribute list;  (** Decoded attributes *)
+    children : t Seq.t;  (** Child DIEs, parsed lazily *)
+    offset : int;  (** Section-relative offset of this DIE *)
   }
   (** A Debug Information Entry containing tag, attributes, and children *)
 
@@ -1909,9 +1975,11 @@ module DebugLoc : sig
 
       DWARF 4 specification, section 2.6.2 "Location Lists". *)
   type entry =
-    | EndOfList
-    | BaseAddress of u64
+    | EndOfList  (** Marks the end of the location list *)
+    | BaseAddress of u64  (** New base address for subsequent entries *)
     | Location of { begin_addr : u64; end_addr : u64; expr : string }
+        (** Location described by [expr], for addresses [begin_addr] up to
+            [end_addr] (exclusive) *)
 
   val parse_list : Object.Buffer.cursor -> int -> entry list
   (** Parse a location list from the .debug_loc section. The [int] parameter is
@@ -1933,9 +2001,10 @@ module DebugRanges : sig
 
       DWARF 4 specification, section 2.17.3 "Non-Contiguous Address Ranges". *)
   type entry =
-    | EndOfList
-    | BaseAddress of u64
+    | EndOfList  (** Marks the end of the range list *)
+    | BaseAddress of u64  (** New base address for subsequent entries *)
     | Range of { begin_addr : u64; end_addr : u64 }
+        (** A range from [begin_addr] up to [end_addr] (exclusive) *)
 
   val parse_list : Object.Buffer.cursor -> int -> entry list
   (** Parse a range list from the .debug_ranges section. The [int] parameter is
@@ -2095,8 +2164,8 @@ end
     DWARF 5 specification, section 6.4 "Call Frame Information". *)
 module CallFrame : sig
   type common_information_entry = {
-    format : dwarf_format;
-    length : u64;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
+    length : u64;  (** Length of the CIE excluding this field *)
     cie_id : u64;  (** Distinguished CIE identifier (0xffffffff) *)
     version : u8;  (** DWARF version number (5 for DWARF 5) *)
     augmentation : string;  (** Null-terminated augmentation string *)
@@ -2132,12 +2201,14 @@ module CallFrame : sig
       DWARF 5 specification, section 6.4.1 "Structure of Call Frame
       Information". *)
 
+  (* TODO What is this length field? *)
+
   val create_default_cie : unit -> common_information_entry
   (** Create a CIE with default values for x86-64 architecture. *)
   (* TODO Maybe default to x86-64 but take an optional architecture here? *)
 
   type frame_description_entry = {
-    format : dwarf_format;
+    format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
     length : u64;  (** Length of the FDE excluding this field *)
     cie_pointer : u64;  (** Offset to associated CIE in [Debug_frame] section *)
     initial_location : u64;
@@ -2193,18 +2264,20 @@ module CallFrame : sig
   type cfi_rule =
     | Rule_undefined
     | Rule_same_value
-    | Rule_offset of int64 (* offset from CFA *)
-    | Rule_val_offset of int64 (* value = CFA + offset *)
-    | Rule_register of int (* register number *)
-    | Rule_expression of string (* DWARF expression *)
-    | Rule_val_expression of string (* DWARF expression for value *)
+    | Rule_offset of int64  (** offset from CFA *)
+    | Rule_val_offset of int64  (** value = CFA + offset *)
+    | Rule_register of int  (** register number *)
+    | Rule_expression of string  (** DWARF expression *)
+    | Rule_val_expression of string  (** DWARF expression for value *)
 
   type cfi_state = {
-    cfa_register : int;
-    cfa_offset : int64;
+    cfa_register : int;  (** Register defining the CFA *)
+    cfa_offset : int64;  (** Offset from [cfa_register] to the CFA *)
     register_rules : (int, cfi_rule) Hashtbl.t;
-    pc_offset : int;
-    state_stack : cfi_state list; (* Stack for remember_state/restore_state *)
+        (** Recovery rule per register number *)
+    pc_offset : int;  (** Current location within the frame's code range *)
+    state_stack : cfi_state list;
+        (** Saved states for DW_CFA_remember_state/restore_state *)
   }
   (** CFI state for tracking register rules. *)
 
@@ -3211,19 +3284,28 @@ module DebugLoclists : sig
 
       DWARF 5 specification, section 7.29 "Location List Table". *)
 
+  (** A decoded location list entry (a DW_LLE_ encoding). Entries that describe
+      a location carry the DWARF expression bytes in [expr].
+
+      DWARF 5 specification, section 7.7.3 "Location Lists". *)
   type location_entry =
-    | LLE_end_of_list
+    | LLE_end_of_list  (** Marks the end of the location list *)
     | LLE_base_addressx of { index : int }
+        (** New base address, as a .debug_addr index *)
     | LLE_startx_endx of { start_index : int; end_index : int; expr : string }
+        (** Range with start and end as .debug_addr indices *)
     | LLE_startx_length of { start_index : int; length : u64; expr : string }
+        (** Range with start as a .debug_addr index, plus a length *)
     | LLE_offset_pair of { start_offset : u64; end_offset : u64; expr : string }
+        (** Range as start and end offsets from the current base address *)
     | LLE_default_location of { expr : string }
+        (** Default location used when no other entry matches *)
     | LLE_base_address of { address : u64 }
+        (** New base address, given directly *)
     | LLE_start_end of { start_addr : u64; end_addr : u64; expr : string }
+        (** Range with explicit start and end addresses *)
     | LLE_start_length of { start_addr : u64; length : u64; expr : string }
-        (** Location list entry kinds (DW_LLE) as defined in DWARF 5
-            specification, section 7.7.3. Entries that describe a location carry
-            a DWARF expression in [expr]. *)
+        (** Range with an explicit start address, plus a length *)
 
   (* TODO Performance / memory usage, how large is this list? Should we
      parse this lazily? Also why do we need location_list and loclists_section? *)
@@ -3274,25 +3356,33 @@ end
 module DebugRnglists : sig
   type header = {
     format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
-    unit_length : u64;
-    version : u16;
-    address_size : u8;
-    segment_size : u8;
-    offset_entry_count : u32;
+    unit_length : u64;  (** Length of the range lists contribution *)
+    version : u16;  (** Version identifier (DWARF 5) *)
+    address_size : u8;  (** Size of addresses in bytes *)
+    segment_size : u8;  (** Size of segment selectors in bytes (usually 0) *)
+    offset_entry_count : u32;  (** Number of entries in the offset table *)
   }
   (** Header for a range lists contribution.*)
 
+  (** A decoded range list entry (a DW_RLE_ encoding).
+
+      DWARF 5 specification, section 7.25. *)
   type range_entry =
-    | RLE_end_of_list
+    | RLE_end_of_list  (** Marks the end of the range list *)
     | RLE_base_addressx of { index : int }
+        (** New base address, as a .debug_addr index *)
     | RLE_startx_endx of { start_index : int; end_index : int }
+        (** Range with start and end as .debug_addr indices *)
     | RLE_startx_length of { start_index : int; length : u64 }
+        (** Range with start as a .debug_addr index, plus a length *)
     | RLE_offset_pair of { start_offset : u64; end_offset : u64 }
+        (** Range as start and end offsets from the current base address *)
     | RLE_base_address of { address : u64 }
+        (** New base address, given directly *)
     | RLE_start_end of { start_addr : u64; end_addr : u64 }
+        (** Range with explicit start and end addresses *)
     | RLE_start_length of { start_addr : u64; length : u64 }
-        (** Range list entry kinds (DW_RLE) as defined in DWARF 5 specification,
-            section 7.25. *)
+        (** Range with an explicit start address, plus a length *)
 
   (* TODO Similar to the question above, why do we need both types in the API? *)
   type range_list = { entries : range_entry list }
@@ -3404,13 +3494,13 @@ module SplitDwarf : sig
       DWARF 5 specification, Table 7.1 "DWARF package file section identifier
       encodings". *)
   type dw_sect =
-    | DW_SECT_INFO
-    | DW_SECT_ABBREV
-    | DW_SECT_LINE
-    | DW_SECT_LOCLISTS
-    | DW_SECT_STR_OFFSETS
-    | DW_SECT_MACRO
-    | DW_SECT_RNGLISTS
+    | DW_SECT_INFO  (** .debug_info contribution *)
+    | DW_SECT_ABBREV  (** .debug_abbrev contribution *)
+    | DW_SECT_LINE  (** .debug_line contribution *)
+    | DW_SECT_LOCLISTS  (** .debug_loclists contribution *)
+    | DW_SECT_STR_OFFSETS  (** .debug_str_offsets contribution *)
+    | DW_SECT_MACRO  (** .debug_macro contribution *)
+    | DW_SECT_RNGLISTS  (** .debug_rnglists contribution *)
 
   val int_of_dw_sect : dw_sect -> int
   (** Convert a [dw_sect] to its integer encoding. *)
@@ -3487,9 +3577,9 @@ module Expression : sig
     | ImplicitValue of string  (** Implicit value (raw bytes) *)
 
   type piece = {
-    size_in_bits : int option;
-    bit_offset : int option;
-    location : value option;
+    size_in_bits : int option;  (** Size of this piece in bits, if known *)
+    bit_offset : int option;  (** Bit offset of this piece within the value *)
+    location : value option;  (** Where this piece lives, if it has a location *)
   }
   (** Location pieces for composite locations.
 

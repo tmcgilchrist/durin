@@ -31,10 +31,6 @@ type dwarf_section = Dwarf_types.dwarf_section =
   | Debug_cu_index
   | Debug_tu_index
 
-(* Re-export the shared parse error (defined in Dwarf_types) so that
-   [Dwarf.Parse_error] remains the public name; it is the very same exception
-   raised by the reader, writers and helper modules. [fail] comes from the same
-   place via [open Dwarf_types]. *)
 type parse_error = Dwarf_types.parse_error = {
   section : dwarf_section option;
   offset : int option;
@@ -154,9 +150,8 @@ type encoding = {
   address_size : u8;  (** Size of addresses in bytes *)
   version : u16;  (** DWARF version *)
 }
-(** Encoding parameters that affect how DWARF data is parsed. Similar to Gimli's
-    Encoding struct, this bundles format with related context needed for parsing
-    DIE attributes. *)
+(** Encoding parameters that affect how DWARF data is parsed. T his bundles
+    format with related context needed for parsing DIE attributes. *)
 
 let parse_initial_length (cur : Object.Buffer.cursor) : dwarf_format * u64 =
   let open Object.Buffer in
