@@ -2408,8 +2408,8 @@ module CompileUnit = struct
     header : header;
   }
 
-  let make parent_ offset raw_buffer_ header =
-    { parent_; offset; raw_buffer_; header }
+  let make ~position ~offset raw_buffer_ header =
+    { parent_ = position; offset; raw_buffer_; header }
 
   let dwarf_info t = t.parent_
   let offset t = t.offset
@@ -2845,8 +2845,8 @@ let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
             in
             let _unit_span, parsed_header = parse_compile_unit_header cur in
             let unit =
-              CompileUnit.make cursor_pos absolute_pos dwarf.object_
-                parsed_header
+              CompileUnit.make ~position:cursor_pos ~offset:absolute_pos
+                dwarf.object_ parsed_header
             in
 
             (* Calculate next position: current + unit_length + length_field_size *)
@@ -6442,7 +6442,8 @@ module SplitDwarf = struct
               let _unit_span, parsed_header = parse_compile_unit_header cur in
               let obj = Object_file.{ buffer = ctx.dwo_buffer } in
               let unit =
-                CompileUnit.make cursor_pos absolute_pos obj parsed_header
+                CompileUnit.make ~position:cursor_pos ~offset:absolute_pos obj
+                  parsed_header
               in
               let unit_length =
                 Unsigned.UInt64.to_int parsed_header.unit_length

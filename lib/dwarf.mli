@@ -1587,10 +1587,9 @@ module CompileUnit : sig
   type t
   (** A compilation unit with parsed content. *)
 
-  (* TODO Make this into a labelled function *)
-  val make : int -> int -> Object_file.t -> header -> t
-  (** Create a new compilation unit. The first [int] is the section-relative
-      position, the second is the absolute buffer offset. *)
+  val make : position:int -> offset:int -> Object_file.t -> header -> t
+  (** Create a new compilation unit, given its section-relative [position] and
+      its absolute buffer [offset]. *)
 
   val dwarf_info : t -> int
   (** Get the section-relative position of this unit. *)
