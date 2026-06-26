@@ -1455,12 +1455,7 @@ type abbrev = {
     Each abbreviation maps a compact code used in [.debug_info] to the full tag,
     children flag, and attribute specifications for a DIE. *)
 
-type object_format = Object_format.format
-(** The object file format (ELF or MachO). *)
-(* TODO This ties the library to Object, could we provide a functorised
-   version or some abstraction that allows a different implementation? *)
-
-val object_format_to_section_name : object_format -> dwarf_section -> string
+val object_format_to_section_name : Object_format.format -> dwarf_section -> string
 (** Returns the dwarf_section name specific for the object_format. *)
 
 val detect_format_and_arch : Object.Buffer.t -> string
@@ -1479,13 +1474,6 @@ val resolve_address_index : Object.Buffer.t -> int -> u64 -> u64
 (** Resolve an address index to its actual address value using debug_addr
     section. Returns the resolved address if found, or the index value as
     fallback *)
-
-(* TODO Design choice here whether this type is useful? *)
-
-(** An object file with its backing buffer and format. *)
-module Object_file : sig
-  type t
-end
 
 (** Debugging Information Entry (DIE) represent low-level information about a
     source program.
@@ -1615,7 +1603,7 @@ module CompileUnit : sig
   type t
   (** A compilation unit with parsed content. *)
 
-  val make : position:int -> offset:int -> Object_file.t -> header -> t
+  val make : position:int -> offset:int -> Object.Buffer.t -> header -> t
   (** Create a new compilation unit, given its section-relative [position] and
       its absolute buffer [offset]. *)
 

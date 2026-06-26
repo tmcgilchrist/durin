@@ -181,9 +181,7 @@ let read_offset_for_format (format : dwarf_format) (cur : Object.Buffer.cursor)
   | DWARF32 -> Read.u32 cur |> Unsigned.UInt64.of_uint32
   | DWARF64 -> Read.u64 cur
 
-type object_format = Object_format.format
-
-let object_format_to_section_name format section =
+let object_format_to_section_name (format : Object_format.format) section =
   match format with
   | Object_format.MACHO -> (
       match section with
@@ -1818,11 +1816,6 @@ module Expression = struct
   let pieces state = state.pieces
 end
 
-(* TODO Why wrap this as a struct with a record with a buffer? *)
-module Object_file = struct
-  type t = { buffer : Buffer.t }
-end
-
 type attr_spec = {
   attr : attribute_encoding;
   form : attribute_form_encoding;
@@ -1929,16 +1922,16 @@ let parse_abbrev_table_from_cursor cur =
   parse_abbrevs ();
   table
 
-let parse_abbrev_table (elf : Object_file.t) (offset : u32) :
+let parse_abbrev_table (buffer : Object.Buffer.t) (offset : u32) :
     (u64, abbrev) Hashtbl.t =
   let open Object.Buffer in
   let section_offset =
-    match find_debug_section_by_type elf.buffer Debug_abbrev with
+    match find_debug_section_by_type buffer Debug_abbrev with
     | Some (section_offset, _) -> Unsigned.UInt64.to_int section_offset
     | None -> fail "Could not find debug_abbrev section"
   in
   let cur =
-    cursor elf.buffer ~at:(section_offset + Unsigned.UInt32.to_int offset)
+    cursor buffer ~at:(section_offset + Unsigned.UInt32.to_int offset)
   in
   parse_abbrev_table_from_cursor cur
 
@@ -2412,7 +2405,7 @@ module CompileUnit = struct
   type t = {
     parent_ : int;
     offset : int;
-    raw_buffer_ : Object_file.t;
+    raw_buffer_ : Object.Buffer.t;
     header : header;
   }
 
@@ -2434,9 +2427,7 @@ module CompileUnit = struct
 
   let root_die t abbrev_table full_buffer =
     let header_size = Unsigned.UInt64.to_int t.header.span.size in
-    let cur =
-      Object.Buffer.cursor t.raw_buffer_.buffer ~at:(t.offset + header_size)
-    in
+    let cur = Object.Buffer.cursor t.raw_buffer_ ~at:(t.offset + header_size) in
     let enc = encoding t in
     DIE.parse_die cur abbrev_table enc full_buffer
 
@@ -2444,10 +2435,7 @@ module CompileUnit = struct
     let header_size = Unsigned.UInt64.to_int t.header.span.size in
     let pos = t.offset + header_size in
     let enc = encoding t in
-    ( Object.Buffer.cursor t.raw_buffer_.buffer ~at:pos,
-      abbrev_table,
-      enc,
-      full_buffer )
+    (Object.Buffer.cursor t.raw_buffer_ ~at:pos, abbrev_table, enc, full_buffer)
 end
 
 let rec skip_attribute_value (cur : Object.Buffer.cursor)
@@ -2756,7 +2744,7 @@ end
    Perhaps this belongs in a consumer? *)
 type t = {
   abbrev_tables_ : (size_t, (u64, abbrev) Hashtbl.t) Hashtbl.t;
-  object_ : Object_file.t;
+  object_ : Object.Buffer.t;
 }
 
 let parse_compile_unit_header (cur : Object.Buffer.cursor) :
@@ -2835,7 +2823,7 @@ let parse_compile_unit_header (cur : Object.Buffer.cursor) :
     } )
 
 let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
-  match find_debug_section_by_type dwarf.object_.buffer Debug_info with
+  match find_debug_section_by_type dwarf.object_ Debug_info with
   | None -> Seq.empty
   | Some (section_offset, section_size) ->
       let section_end = Unsigned.UInt64.to_int section_size in
@@ -2848,9 +2836,7 @@ let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
             let absolute_pos =
               Unsigned.UInt64.to_int section_offset + cursor_pos
             in
-            let cur =
-              Object.Buffer.cursor dwarf.object_.buffer ~at:absolute_pos
-            in
+            let cur = Object.Buffer.cursor dwarf.object_ ~at:absolute_pos in
             let _unit_span, parsed_header = parse_compile_unit_header cur in
             let unit =
               CompileUnit.make ~position:cursor_pos ~offset:absolute_pos
@@ -5608,12 +5594,12 @@ let get_abbrev_table t (offset : size_t) =
       (t, a)
 
 let create buffer =
-  let object_ = Object_file.{ buffer } in
+  let object_ = buffer in
   { abbrev_tables_ = Hashtbl.create 10; object_ }
 
 module DebugAbbrev = struct
   let parse buffer offset =
-    let object_ = Object_file.{ buffer } in
+    let object_ = buffer in
     match find_debug_section_by_type buffer Debug_abbrev with
     | None -> None
     | Some _ -> Some (parse_abbrev_table object_ offset)
@@ -5622,7 +5608,7 @@ module DebugAbbrev = struct
     match find_debug_section_by_type buffer Debug_abbrev with
     | None -> []
     | Some (section_offset, section_size) ->
-        let object_ = Object_file.{ buffer } in
+        let object_ = buffer in
         let section_start = Unsigned.UInt64.to_int section_offset in
         let section_end = section_start + Unsigned.UInt64.to_int section_size in
         let tables = ref [] in
@@ -6448,7 +6434,7 @@ module SplitDwarf = struct
               in
               let cur = cursor ctx.dwo_buffer ~at:absolute_pos in
               let _unit_span, parsed_header = parse_compile_unit_header cur in
-              let obj = Object_file.{ buffer = ctx.dwo_buffer } in
+              let obj = ctx.dwo_buffer in
               let unit =
                 CompileUnit.make ~position:cursor_pos ~offset:absolute_pos obj
                   parsed_header
