@@ -318,6 +318,7 @@ type line_number_extended_opcode =
   | DW_LNE_set_discriminator
   | DW_LNE_lo_user
   | DW_LNE_hi_user
+  | DW_LNE_unknown of int
 
 let line_number_extended_opcode = function
   | 0x01 -> DW_LNE_end_sequence
@@ -325,7 +326,7 @@ let line_number_extended_opcode = function
   | 0x04 -> DW_LNE_set_discriminator
   | 0x80 -> DW_LNE_lo_user
   | 0xff -> DW_LNE_hi_user
-  | n -> fail (Printf.sprintf "Unknown line_number_extended_opcode: 0x%02x" n)
+  | n -> DW_LNE_unknown n
 
 let int_of_line_number_extended_opcode = function
   | DW_LNE_end_sequence -> 0x01
@@ -333,6 +334,7 @@ let int_of_line_number_extended_opcode = function
   | DW_LNE_set_discriminator -> 0x04
   | DW_LNE_lo_user -> 0x80
   | DW_LNE_hi_user -> 0xff
+  | DW_LNE_unknown n -> n
 
 let string_of_line_number_extended_opcode = function
   | DW_LNE_end_sequence -> "DW_LNE_end_sequence"
@@ -340,6 +342,7 @@ let string_of_line_number_extended_opcode = function
   | DW_LNE_set_discriminator -> "DW_LNE_set_discriminator"
   | DW_LNE_lo_user -> "DW_LNE_lo_user"
   | DW_LNE_hi_user -> "DW_LNE_hi_user"
+  | DW_LNE_unknown n -> Printf.sprintf "DW_LNE_unknown(0x%x)" n
 
 type line_number_header_entry =
   | DW_LNCT_path
@@ -349,6 +352,7 @@ type line_number_header_entry =
   | DW_LNCT_MD5
   | DW_LNCT_lo_user
   | DW_LNCT_hi_user
+  | DW_LNCT_unknown of int
 
 let line_number_header_entry = function
   | 0x1 -> DW_LNCT_path
@@ -358,7 +362,7 @@ let line_number_header_entry = function
   | 0x5 -> DW_LNCT_MD5
   | 0x2000 -> DW_LNCT_lo_user
   | 0x3fff -> DW_LNCT_hi_user
-  | n -> fail (Printf.sprintf "Unknown line_number_header_entry: 0x%04x" n)
+  | n -> DW_LNCT_unknown n
 
 let int_of_line_number_header_entry = function
   | DW_LNCT_path -> 0x1
@@ -368,6 +372,7 @@ let int_of_line_number_header_entry = function
   | DW_LNCT_MD5 -> 0x5
   | DW_LNCT_lo_user -> 0x2000
   | DW_LNCT_hi_user -> 0x3fff
+  | DW_LNCT_unknown n -> n
 
 let string_of_line_number_header_entry = function
   | DW_LNCT_path -> "DW_LNCT_path"
@@ -377,6 +382,7 @@ let string_of_line_number_header_entry = function
   | DW_LNCT_MD5 -> "DW_LNCT_MD5"
   | DW_LNCT_lo_user -> "DW_LNCT_lo_user"
   | DW_LNCT_hi_user -> "DW_LNCT_hi_user"
+  | DW_LNCT_unknown n -> Printf.sprintf "DW_LNCT_unknown(0x%x)" n
 
 type macro_info_entry_type =
   | DW_MACRO_define
@@ -659,6 +665,7 @@ type call_frame_instruction =
   | DW_CFA_val_expression
   | DW_CFA_lo_user
   | DW_CFA_hi_user
+  | DW_CFA_unknown of int
 
 let string_of_call_frame_instruction = function
   | DW_CFA_advance_loc -> "DW_CFA_advance_loc"
@@ -689,6 +696,7 @@ let string_of_call_frame_instruction = function
   | DW_CFA_val_expression -> "DW_CFA_val_expression"
   | DW_CFA_lo_user -> "DW_CFA_lo_user"
   | DW_CFA_hi_user -> "DW_CFA_hi_user"
+  | DW_CFA_unknown n -> Printf.sprintf "DW_CFA_unknown(0x%x)" n
 
 let decode_cfa_opcode = function
   | 0x00 -> DW_CFA_nop
@@ -719,7 +727,7 @@ let decode_cfa_opcode = function
   | n when n >= 0x40 && n <= 0x7f -> DW_CFA_advance_loc (* + delta *)
   | n when n >= 0x80 && n <= 0xbf -> DW_CFA_offset (* + register *)
   | n when n >= 0xc0 && n <= 0xff -> DW_CFA_restore (* + register *)
-  | _ -> DW_CFA_nop (* Unknown instruction, treat as nop *)
+  | n -> DW_CFA_unknown n
 
 (* Helper functions for parsing ULEB128/SLEB128 values *)
 
@@ -794,7 +802,7 @@ let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) =
           | DW_OP_xor | DW_OP_eq | DW_OP_ge | DW_OP_gt | DW_OP_le | DW_OP_lt
           | DW_OP_ne | DW_OP_nop | DW_OP_push_object_address
           | DW_OP_form_tls_address | DW_OP_call_frame_cfa | DW_OP_stack_value
-          | DW_OP_hi_user ->
+          | DW_OP_hi_user | DW_OP_unknown _ ->
               ([], None, pos + 1)
           (* Literal values 0-31 *)
           | DW_OP_lit0 | DW_OP_lit1 | DW_OP_lit2 | DW_OP_lit3 | DW_OP_lit4
@@ -3060,7 +3068,7 @@ module DebugLine = struct
           | DW_LNCT_MD5, _ ->
               fail
                 "DW_LNCT_MD5 is not valid for directory entries (DWARF 5 spec)"
-          | DW_LNCT_lo_user, _ | DW_LNCT_hi_user, _ -> (
+          | DW_LNCT_lo_user, _ | DW_LNCT_hi_user, _ | DW_LNCT_unknown _, _ -> (
               match form with
               | DW_FORM_string -> ignore (Object.Buffer.Read.zero_string cur ())
               | DW_FORM_data1 -> ignore (Object.Buffer.Read.u8 cur)
@@ -3174,7 +3182,7 @@ module DebugLine = struct
                 |> Unsigned.UInt64.of_int
           | DW_LNCT_size, DW_FORM_data8 ->
               file_size_ref := Object.Buffer.Read.u64 cur
-          | DW_LNCT_lo_user, _ | DW_LNCT_hi_user, _ -> (
+          | DW_LNCT_lo_user, _ | DW_LNCT_hi_user, _ | DW_LNCT_unknown _, _ -> (
               match form with
               | DW_FORM_string -> ignore (Object.Buffer.Read.zero_string cur ())
               | DW_FORM_data1 -> ignore (Object.Buffer.Read.u8 cur)
@@ -5070,7 +5078,7 @@ module DebugNames = struct
                       current_offset_ref := !current_offset_ref + 8
                   | _ -> ())
               | DW_IDX_null -> ()
-              | DW_IDX_lo_user | DW_IDX_hi_user -> (
+              | DW_IDX_lo_user | DW_IDX_hi_user | DW_IDX_unknown _ -> (
                   (* Skip user-defined attributes *)
                   match form with
                   | DW_FORM_ref4 ->

@@ -66,6 +66,7 @@ type base_type =
   | DW_ATE_ASCII
   | DW_ATE_lo_user
   | DW_ATE_hi_user
+  | DW_ATE_unknown of int
 
 let base_type = function
   | 0x01 -> DW_ATE_address
@@ -88,7 +89,7 @@ let base_type = function
   | 0x12 -> DW_ATE_ASCII
   | 0x80 -> DW_ATE_lo_user
   | 0xff -> DW_ATE_hi_user
-  | n -> fail (Printf.sprintf "Unknown base_type: 0x%02x" n)
+  | n -> DW_ATE_unknown n
 
 let int_of_base_type = function
   | DW_ATE_address -> 0x01
@@ -111,6 +112,7 @@ let int_of_base_type = function
   | DW_ATE_ASCII -> 0x12
   | DW_ATE_lo_user -> 0x80
   | DW_ATE_hi_user -> 0xff
+  | DW_ATE_unknown n -> n
 
 let string_of_base_type = function
   | DW_ATE_address -> "DW_ATE_address"
@@ -133,6 +135,7 @@ let string_of_base_type = function
   | DW_ATE_ASCII -> "DW_ATE_ASCII"
   | DW_ATE_lo_user -> "DW_ATE_lo_user"
   | DW_ATE_hi_user -> "DW_ATE_hi_user"
+  | DW_ATE_unknown n -> Printf.sprintf "DW_ATE_unknown(0x%x)" n
 
 type decimal_sign =
   | DW_DS_unsigned
@@ -169,6 +172,7 @@ type endianity =
   | DW_END_little
   | DW_END_lo_user
   | DW_END_hi_user
+  | DW_END_unknown of int
 
 let endianity = function
   | 0x00 -> DW_END_default
@@ -176,7 +180,7 @@ let endianity = function
   | 0x02 -> DW_END_little
   | 0x40 -> DW_END_lo_user
   | 0xff -> DW_END_hi_user
-  | n -> fail (Printf.sprintf "Unknown endianity: 0x%02x" n)
+  | n -> DW_END_unknown n
 
 let int_of_endianity = function
   | DW_END_default -> 0x00
@@ -184,6 +188,7 @@ let int_of_endianity = function
   | DW_END_little -> 0x02
   | DW_END_lo_user -> 0x40
   | DW_END_hi_user -> 0xff
+  | DW_END_unknown n -> n
 
 let string_of_endianity = function
   | DW_END_default -> "DW_END_default"
@@ -191,6 +196,7 @@ let string_of_endianity = function
   | DW_END_little -> "DW_END_little"
   | DW_END_lo_user -> "DW_END_lo_user"
   | DW_END_hi_user -> "DW_END_hi_user"
+  | DW_END_unknown n -> Printf.sprintf "DW_END_unknown(0x%x)" n
 
 type accessibility =
   | DW_ACCESS_public
@@ -292,6 +298,7 @@ type dwarf_language =
   | DW_LANG_BLISS
   | DW_LANG_lo_user
   | DW_LANG_hi_user
+  | DW_LANG_unknown of int
 
 let dwarf_language = function
   | 0x0001 -> DW_LANG_C89
@@ -333,7 +340,7 @@ let dwarf_language = function
   | 0x0025 -> DW_LANG_BLISS
   | 0x8000 -> DW_LANG_lo_user
   | 0xffff -> DW_LANG_hi_user
-  | n -> fail (Printf.sprintf "Unknown dwarf_language: 0x%04x" n)
+  | n -> DW_LANG_unknown n
 
 let int_of_dwarf_language = function
   | DW_LANG_C89 -> 0x0001
@@ -375,6 +382,7 @@ let int_of_dwarf_language = function
   | DW_LANG_BLISS -> 0x0025
   | DW_LANG_lo_user -> 0x8000
   | DW_LANG_hi_user -> 0xffff
+  | DW_LANG_unknown n -> n
 
 let string_of_dwarf_language = function
   | DW_LANG_C89 -> "DW_LANG_C89"
@@ -416,6 +424,7 @@ let string_of_dwarf_language = function
   | DW_LANG_BLISS -> "DW_LANG_BLISS"
   | DW_LANG_lo_user -> "DW_LANG_lo_user"
   | DW_LANG_hi_user -> "DW_LANG_hi_user"
+  | DW_LANG_unknown n -> Printf.sprintf "DW_LANG_unknown(0x%x)" n
 
 type identifier =
   | DW_ID_case_sensitive
@@ -450,6 +459,7 @@ type calling_convention =
   | DW_CC_pass_by_value
   | DW_CC_lo_user
   | DW_CC_hi_user
+  | DW_CC_unknown of int
 
 let calling_convention = function
   | 0x01 -> DW_CC_normal
@@ -459,7 +469,7 @@ let calling_convention = function
   | 0x05 -> DW_CC_pass_by_value
   | 0x40 -> DW_CC_lo_user
   | 0xff -> DW_CC_hi_user
-  | n -> fail (Printf.sprintf "Unknown calling_convention: 0x%02x" n)
+  | n -> DW_CC_unknown n
 
 let int_of_calling_convention = function
   | DW_CC_normal -> 0x01
@@ -469,6 +479,7 @@ let int_of_calling_convention = function
   | DW_CC_pass_by_value -> 0x05
   | DW_CC_lo_user -> 0x40
   | DW_CC_hi_user -> 0xff
+  | DW_CC_unknown n -> n
 
 let string_of_calling_convention = function
   | DW_CC_normal -> "DW_CC_normal"
@@ -478,6 +489,7 @@ let string_of_calling_convention = function
   | DW_CC_pass_by_value -> "DW_CC_pass_by_value"
   | DW_CC_lo_user -> "DW_CC_lo_user"
   | DW_CC_hi_user -> "DW_CC_hi_user"
+  | DW_CC_unknown n -> Printf.sprintf "DW_CC_unknown(0x%x)" n
 
 type inlined =
   | DW_INL_not_inlined
@@ -541,6 +553,7 @@ type name_index_attribute =
   | DW_IDX_type_hash
   | DW_IDX_lo_user
   | DW_IDX_hi_user
+  | DW_IDX_unknown of int
 
 let name_index_attribute = function
   | 0 -> DW_IDX_null
@@ -551,7 +564,7 @@ let name_index_attribute = function
   | 5 -> DW_IDX_type_hash
   | 0x2000 -> DW_IDX_lo_user
   | 0x3fff -> DW_IDX_hi_user
-  | n -> fail (Printf.sprintf "Unknown name_index_attribute: 0x%02x" n)
+  | n -> DW_IDX_unknown n
 
 let name_index_attribute_of_u64 code =
   name_index_attribute (Unsigned.UInt64.to_int code)
@@ -565,6 +578,7 @@ let int_of_name_index_attribute = function
   | DW_IDX_type_hash -> 5
   | DW_IDX_lo_user -> 0x2000
   | DW_IDX_hi_user -> 0x3fff
+  | DW_IDX_unknown n -> n
 
 let string_of_name_index_attribute = function
   | DW_IDX_null -> "DW_IDX_null"
@@ -575,6 +589,7 @@ let string_of_name_index_attribute = function
   | DW_IDX_type_hash -> "DW_IDX_type_hash"
   | DW_IDX_lo_user -> "DW_IDX_lo_user"
   | DW_IDX_hi_user -> "DW_IDX_hi_user"
+  | DW_IDX_unknown n -> Printf.sprintf "DW_IDX_unknown(0x%x)" n
 
 type defaulted_attribute =
   | DW_DEFAULTED_no

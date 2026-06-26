@@ -144,11 +144,14 @@ type abbreviation_tag =
   | DW_TAG_GNU_call_site_parameter
   | DW_TAG_lo_user
   | DW_TAG_hi_user
+  | DW_TAG_unknown of int
+      (** A value not in this enumeration, e.g. a vendor extension; carries the
+          raw code. *)
 
 val abbreviation_tag : u64 -> abbreviation_tag
 (** Convert a u64 to an [abbreviation_tag].
 
-    @raise Parse_error if the value is not a recognized tag encoding. *)
+    Unrecognised values decode to [DW_TAG_unknown]. *)
 
 val u64_of_abbreviation_tag : abbreviation_tag -> u64
 (** Convert an [abbreviation_tag] to its u64 tag encoding. *)
@@ -310,6 +313,9 @@ type attribute_encoding =
   | DW_AT_LLVM_sysroot
   | DW_AT_APPLE_omit_frame_ptr
   | DW_AT_APPLE_sdk
+  | DW_AT_unknown of int
+      (** A value not in this enumeration, e.g. a vendor extension; carries the
+          raw code. *)
 
 val string_of_attribute_encoding : attribute_encoding -> string
 (** Convert an [attribute_encoding] to its string representation.
@@ -319,7 +325,7 @@ val string_of_attribute_encoding : attribute_encoding -> string
 val attribute_encoding : u64 -> attribute_encoding
 (** Convert a u64 to an [attribute_encoding].
 
-    @raise Parse_error if the value is not a recognized attribute encoding. *)
+    Unrecognised values decode to [DW_AT_unknown]. *)
 
 val u64_of_attribute_encoding : attribute_encoding -> u64
 (** Convert an attribute_encoding to its numeric DWARF code. *)
@@ -608,12 +614,13 @@ type operation_encoding =
   | DW_OP_hi_user
       (** Top of the vendor-extension opcode range (DW_OP_lo_user 0xe0 ..
           DW_OP_hi_user 0xff). *)
+  | DW_OP_unknown of int
+      (** An opcode not in this enumeration, e.g. a vendor extension; carries
+          the raw code. *)
 
 val operation_encoding : int -> operation_encoding
-(** Convert an int to an [operation_encoding].
-
-    @raise Parse_error
-      if the value is not a recognized DWARF operation encoding. *)
+(** Convert an int to an [operation_encoding]. Unrecognised values decode to
+    [DW_OP_unknown]. *)
 
 val int_of_operation_encoding : operation_encoding -> int
 (** Convert an [operation_encoding] to its integer encoding. *)
@@ -703,11 +710,14 @@ type base_type =
   | DW_ATE_ASCII  (** ASCII character *)
   | DW_ATE_lo_user  (** Start of the vendor-extension range *)
   | DW_ATE_hi_user  (** End of the vendor-extension range *)
+  | DW_ATE_unknown of int
+      (** A value not in this enumeration, e.g. a vendor extension; carries the
+          raw code. *)
 
 val base_type : int -> base_type
 (** Convert an int to a [base_type].
 
-    @raise Parse_error if the value is not a recognized base type encoding. *)
+    Unrecognised values decode to [DW_ATE_unknown]. *)
 
 val int_of_base_type : base_type -> int
 (** Convert a [base_type] to its integer encoding. *)
@@ -749,11 +759,14 @@ type endianity =
   | DW_END_little  (** Little-endian byte order *)
   | DW_END_lo_user  (** Start of the vendor-extension range *)
   | DW_END_hi_user  (** End of the vendor-extension range *)
+  | DW_END_unknown of int
+      (** A value not in this enumeration, e.g. a vendor extension; carries the
+          raw code. *)
 
 val endianity : int -> endianity
 (** Convert an int to an [endianity].
 
-    @raise Parse_error if the value is not a recognized endianity code. *)
+    Unrecognised values decode to [DW_END_unknown]. *)
 
 val int_of_endianity : endianity -> int
 (** Convert an [endianity] to its integer encoding. *)
@@ -878,11 +891,13 @@ type dwarf_language =
   | DW_LANG_BLISS
   | DW_LANG_lo_user
   | DW_LANG_hi_user
+  | DW_LANG_unknown of int
+      (** A value not in this enumeration, e.g. a vendor extension; carries the
+          raw code. *)
 
-(* TODO This should probably not raise here *)
 val dwarf_language : int -> dwarf_language
-(** Convert an int to a [dwarf_language].
-    @raise Parse_error if the value is not a recognised language encoding. *)
+(** Convert an int to a [dwarf_language]. Unrecognised values decode to
+    [DW_LANG_unknown]. *)
 
 val int_of_dwarf_language : dwarf_language -> int
 (** Convert a [dwarf_language] to its integer encoding. *)
@@ -929,14 +944,14 @@ type calling_convention =
   | DW_CC_pass_by_value  (** Aggregate passed by value *)
   | DW_CC_lo_user  (** Start of the vendor-extension range *)
   | DW_CC_hi_user  (** End of the vendor-extension range *)
-
-(* TODO Another candidate for Unknown of int, we expect extensions between
-   lo_user / hi_user *)
+  | DW_CC_unknown of int
+      (** A value outside the standard set, e.g. a vendor extension in the
+          [lo_user]..[hi_user] range; carries the raw code. *)
 
 val calling_convention : int -> calling_convention
 (** Convert an int to a [calling_convention].
 
-    @raise Parse_error if the value is not a recognized calling convention. *)
+    Unrecognised values decode to [DW_CC_unknown]. *)
 
 val int_of_calling_convention : calling_convention -> int
 (** Convert a [calling_convention] to its integer encoding. *)
@@ -1023,11 +1038,14 @@ type name_index_attribute =
   | DW_IDX_type_hash  (** Hash of the type, for type units *)
   | DW_IDX_lo_user  (** Start of the vendor-extension range *)
   | DW_IDX_hi_user  (** End of the vendor-extension range *)
+  | DW_IDX_unknown of int
+      (** A value not in this enumeration, e.g. a vendor extension; carries the
+          raw code. *)
 
 val name_index_attribute : int -> name_index_attribute
 (** Convert an int to a [name_index_attribute].
 
-    @raise Parse_error if the value is not a recognized name index attribute. *)
+    Unrecognised values decode to [DW_IDX_unknown]. *)
 
 val int_of_name_index_attribute : name_index_attribute -> int
 (** Convert a [name_index_attribute] to its integer encoding. *)
@@ -1104,8 +1122,9 @@ type line_number_extended_opcode =
   | DW_LNE_set_discriminator  (** Set the discriminator value *)
   | DW_LNE_lo_user  (** Start of the vendor-extension range *)
   | DW_LNE_hi_user  (** End of the vendor-extension range *)
-
-(* TODO Another variant expected to be extended. *)
+  | DW_LNE_unknown of int
+      (** A value not in this enumeration, e.g. a vendor extension; carries the
+          raw code. *)
 
 val line_number_extended_opcode : int -> line_number_extended_opcode
 (** Convert an int to a [line_number_extended_opcode]. *)
@@ -1133,8 +1152,9 @@ type line_number_header_entry =
   | DW_LNCT_MD5  (** 16-byte MD5 digest of the file *)
   | DW_LNCT_lo_user  (** Start of the vendor-extension range *)
   | DW_LNCT_hi_user  (** End of the vendor-extension range *)
-
-(* TODO Another variant expected to be extended. *)
+  | DW_LNCT_unknown of int
+      (** A value not in this enumeration, e.g. a vendor extension; carries the
+          raw code. *)
 
 val line_number_header_entry : int -> line_number_header_entry
 (** Convert an int to a [line_number_header_entry]. *)
@@ -1362,6 +1382,9 @@ type call_frame_instruction =
   | DW_CFA_val_expression  (** Register value computed by a DWARF expression *)
   | DW_CFA_lo_user  (** Start of the vendor-extension range *)
   | DW_CFA_hi_user  (** End of the vendor-extension range *)
+  | DW_CFA_unknown of int
+      (** An instruction not in this enumeration, e.g. a vendor extension;
+          carries the raw opcode. *)
 
 val string_of_call_frame_instruction : call_frame_instruction -> string
 (** Convert a [call_frame_instruction] to its string representation. *)

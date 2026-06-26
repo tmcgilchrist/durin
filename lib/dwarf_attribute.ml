@@ -1,5 +1,3 @@
-open Dwarf_types
-
 type attribute_encoding =
   | DW_AT_sibling
   | DW_AT_location
@@ -130,6 +128,7 @@ type attribute_encoding =
   | DW_AT_LLVM_sysroot
   | DW_AT_APPLE_omit_frame_ptr
   | DW_AT_APPLE_sdk
+  | DW_AT_unknown of int
 
 let attribute_encoding x =
   match Unsigned.UInt64.to_int x with
@@ -260,7 +259,7 @@ let attribute_encoding x =
   | 0x3e02 -> DW_AT_LLVM_sysroot
   | 0x3fe7 -> DW_AT_APPLE_omit_frame_ptr
   | 0x3fef -> DW_AT_APPLE_sdk
-  | n -> fail (Printf.sprintf "Unknown attribute_encoding: 0x%04x" n)
+  | n -> DW_AT_unknown n
 
 let string_of_attribute_encoding = function
   | DW_AT_sibling -> "DW_AT_sibling"
@@ -390,6 +389,7 @@ let string_of_attribute_encoding = function
   | DW_AT_LLVM_sysroot -> "DW_AT_LLVM_sysroot"
   | DW_AT_APPLE_omit_frame_ptr -> "DW_AT_APPLE_omit_frame_ptr"
   | DW_AT_APPLE_sdk -> "DW_AT_APPLE_sdk"
+  | DW_AT_unknown n -> Printf.sprintf "DW_AT_unknown(0x%x)" n
 
 let u64_of_attribute_encoding = function
   | DW_AT_sibling -> Unsigned.UInt64.of_int 0x01
@@ -518,3 +518,4 @@ let u64_of_attribute_encoding = function
   | DW_AT_LLVM_sysroot -> Unsigned.UInt64.of_int 0x3e02
   | DW_AT_APPLE_omit_frame_ptr -> Unsigned.UInt64.of_int 0x3fe7
   | DW_AT_APPLE_sdk -> Unsigned.UInt64.of_int 0x3fef
+  | DW_AT_unknown n -> Unsigned.UInt64.of_int n

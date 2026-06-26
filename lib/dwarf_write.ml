@@ -671,6 +671,7 @@ let int_of_lnct = function
   | DW_LNCT_MD5 -> 0x5
   | DW_LNCT_lo_user -> 0x2000
   | DW_LNCT_hi_user -> 0x3fff
+  | DW_LNCT_unknown n -> n
 
 let find_dir_index dirs dir =
   let rec find i =

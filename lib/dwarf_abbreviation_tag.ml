@@ -79,6 +79,7 @@ type abbreviation_tag =
   | DW_TAG_GNU_call_site_parameter
   | DW_TAG_lo_user
   | DW_TAG_hi_user
+  | DW_TAG_unknown of int
 
 let abbreviation_tag tag_code =
   match Unsigned.UInt64.to_int tag_code with
@@ -159,7 +160,7 @@ let abbreviation_tag tag_code =
   | 0x410a -> DW_TAG_GNU_call_site_parameter
   | 0x4080 -> DW_TAG_lo_user
   | 0xffff -> DW_TAG_hi_user
-  | n -> fail (Printf.sprintf "Unknown tag encoding: 0x%02x" n)
+  | n -> DW_TAG_unknown n
 
 let u64_of_abbreviation_tag tag =
   let code =
@@ -242,6 +243,7 @@ let u64_of_abbreviation_tag tag =
     | DW_TAG_GNU_call_site_parameter -> 0x410a
     | DW_TAG_lo_user -> 0x4080
     | DW_TAG_hi_user -> 0xffff
+    | DW_TAG_unknown n -> n
   in
   Unsigned.UInt64.of_int code
 
@@ -322,6 +324,7 @@ let string_of_abbreviation_tag = function
   | DW_TAG_GNU_call_site_parameter -> "DW_TAG_GNU_call_site_parameter"
   | DW_TAG_lo_user -> "DW_TAG_lo_user"
   | DW_TAG_hi_user -> "DW_TAG_hi_user"
+  | DW_TAG_unknown n -> Printf.sprintf "DW_TAG_unknown(0x%x)" n
 
 type children_determination = DW_CHILDREN_no | DW_CHILDREN_yes
 

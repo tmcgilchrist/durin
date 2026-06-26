@@ -156,8 +156,10 @@ let () =
             check_expr ~name:"empty" ~count:0 ~expected:"" "" );
           ( "unknown_opcode",
             `Quick,
-            check_expr ~name:"unknown" ~count:1 ~expected:"DW_OP_lit5"
-              "\x01\x35" );
+            (* An unrecognised opcode decodes to DW_OP_unknown rather than
+               aborting the parse; the following operations still decode. *)
+            check_expr ~name:"unknown" ~count:2
+              ~expected:"DW_OP_unknown(0x1) DW_OP_lit5" "\x01\x35" );
         ] );
       ( "gnu_ops",
         [
