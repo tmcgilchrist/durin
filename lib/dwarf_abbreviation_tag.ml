@@ -72,7 +72,11 @@ type abbreviation_tag =
   | DW_TAG_skeleton_unit
   | DW_TAG_immutable_type
   (* GNU extensions *)
+  | DW_TAG_GNU_template_template_param
   | DW_TAG_GNU_template_parameter_pack
+  | DW_TAG_GNU_formal_parameter_pack
+  | DW_TAG_GNU_call_site
+  | DW_TAG_GNU_call_site_parameter
   | DW_TAG_lo_user
   | DW_TAG_hi_user
 
@@ -148,7 +152,11 @@ let abbreviation_tag tag_code =
   | 0x4a -> DW_TAG_skeleton_unit
   | 0x4b -> DW_TAG_immutable_type
   (* GNU extensions *)
+  | 0x4106 -> DW_TAG_GNU_template_template_param
   | 0x4107 -> DW_TAG_GNU_template_parameter_pack
+  | 0x4108 -> DW_TAG_GNU_formal_parameter_pack
+  | 0x4109 -> DW_TAG_GNU_call_site
+  | 0x410a -> DW_TAG_GNU_call_site_parameter
   | 0x4080 -> DW_TAG_lo_user
   | 0xffff -> DW_TAG_hi_user
   | n -> fail (Printf.sprintf "Unknown tag encoding: 0x%02x" n)
@@ -227,7 +235,11 @@ let u64_of_abbreviation_tag tag =
     | DW_TAG_skeleton_unit -> 0x4a
     | DW_TAG_immutable_type -> 0x4b
     (* GNU extensions *)
+    | DW_TAG_GNU_template_template_param -> 0x4106
     | DW_TAG_GNU_template_parameter_pack -> 0x4107
+    | DW_TAG_GNU_formal_parameter_pack -> 0x4108
+    | DW_TAG_GNU_call_site -> 0x4109
+    | DW_TAG_GNU_call_site_parameter -> 0x410a
     | DW_TAG_lo_user -> 0x4080
     | DW_TAG_hi_user -> 0xffff
   in
@@ -303,7 +315,11 @@ let string_of_abbreviation_tag = function
   | DW_TAG_call_site_parameter -> "DW_TAG_call_site_parameter"
   | DW_TAG_skeleton_unit -> "DW_TAG_skeleton_unit"
   | DW_TAG_immutable_type -> "DW_TAG_immutable_type"
+  | DW_TAG_GNU_template_template_param -> "DW_TAG_GNU_template_template_param"
   | DW_TAG_GNU_template_parameter_pack -> "DW_TAG_GNU_template_parameter_pack"
+  | DW_TAG_GNU_formal_parameter_pack -> "DW_TAG_GNU_formal_parameter_pack"
+  | DW_TAG_GNU_call_site -> "DW_TAG_GNU_call_site"
+  | DW_TAG_GNU_call_site_parameter -> "DW_TAG_GNU_call_site_parameter"
   | DW_TAG_lo_user -> "DW_TAG_lo_user"
   | DW_TAG_hi_user -> "DW_TAG_hi_user"
 

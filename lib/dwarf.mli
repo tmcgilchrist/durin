@@ -137,8 +137,11 @@ type abbreviation_tag =
   | DW_TAG_skeleton_unit
   | DW_TAG_immutable_type
   (* GNU extensions *)
-  (* TODO Add other common GNU extensions here. *)
+  | DW_TAG_GNU_template_template_param
   | DW_TAG_GNU_template_parameter_pack
+  | DW_TAG_GNU_formal_parameter_pack
+  | DW_TAG_GNU_call_site
+  | DW_TAG_GNU_call_site_parameter
   | DW_TAG_lo_user
   | DW_TAG_hi_user
 
