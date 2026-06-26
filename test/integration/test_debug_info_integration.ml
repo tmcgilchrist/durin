@@ -37,9 +37,7 @@ let test_root_die_exists binary_path =
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) ->
       let h = Dwarf.CompileUnit.header cu in
-      let _ctx, abbrev_table =
-        Dwarf.get_abbrev_table ctx h.debug_abbrev_offset
-      in
+      let abbrev_table = Dwarf.get_abbrev_table ctx h.debug_abbrev_offset in
       let root = Dwarf.CompileUnit.root_die cu abbrev_table buffer in
       check bool "root DIE exists" true (Option.is_some root)
 
@@ -51,9 +49,7 @@ let test_root_die_is_compile_unit binary_path =
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) -> (
       let h = Dwarf.CompileUnit.header cu in
-      let _ctx, abbrev_table =
-        Dwarf.get_abbrev_table ctx h.debug_abbrev_offset
-      in
+      let abbrev_table = Dwarf.get_abbrev_table ctx h.debug_abbrev_offset in
       match Dwarf.CompileUnit.root_die cu abbrev_table buffer with
       | None -> fail "expected root DIE"
       | Some die ->
@@ -68,9 +64,7 @@ let test_root_die_has_attributes binary_path =
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) -> (
       let h = Dwarf.CompileUnit.header cu in
-      let _ctx, abbrev_table =
-        Dwarf.get_abbrev_table ctx h.debug_abbrev_offset
-      in
+      let abbrev_table = Dwarf.get_abbrev_table ctx h.debug_abbrev_offset in
       match Dwarf.CompileUnit.root_die cu abbrev_table buffer with
       | None -> fail "expected root DIE"
       | Some die ->
@@ -84,9 +78,7 @@ let test_root_die_attribute_values binary_path =
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) -> (
       let h = Dwarf.CompileUnit.header cu in
-      let _ctx, abbrev_table =
-        Dwarf.get_abbrev_table ctx h.debug_abbrev_offset
-      in
+      let abbrev_table = Dwarf.get_abbrev_table ctx h.debug_abbrev_offset in
       match Dwarf.CompileUnit.root_die cu abbrev_table buffer with
       | None -> fail "expected root DIE"
       | Some die -> (

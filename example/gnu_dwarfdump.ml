@@ -572,7 +572,7 @@ let dump_debug_info filename =
 
             (* Get the abbreviation table for this compilation unit *)
             let abbrev_offset = header.debug_abbrev_offset in
-            let _, abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
+            let abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
 
             (* Get the root DIE for this compilation unit *)
             match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
@@ -850,7 +850,7 @@ let dump_debug_aranges filename =
             Printf.printf "< 0><0x%08x>  DW_TAG_compile_unit\n" cu_die_offset;
 
             (* Get abbreviation table for DIE parsing *)
-            let _, abbrev_table =
+            let abbrev_table =
               Dwarf.get_abbrev_table (Dwarf.create buffer)
                 (Dwarf.CompileUnit.header unit).debug_abbrev_offset
             in
@@ -994,7 +994,7 @@ let dump_debug_abbrev filename =
     | Some (_offset, _size) ->
         (* Create DWARF context and parse abbreviation table *)
         let dwarf = Dwarf.create buffer in
-        let _dwarf, abbrev_table =
+        let abbrev_table =
           Dwarf.get_abbrev_table dwarf (Unsigned.UInt64.of_int 0)
         in
 

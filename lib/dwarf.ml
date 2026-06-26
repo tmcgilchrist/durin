@@ -5582,16 +5582,15 @@ module DebugNames = struct
 end
 
 let get_abbrev_table t (offset : size_t) =
-  let a = Hashtbl.find_opt t.abbrev_tables_ offset in
-  match a with
-  | Some a -> (t, a)
+  match Hashtbl.find_opt t.abbrev_tables_ offset with
+  | Some a -> a
   | None ->
       let a =
         parse_abbrev_table t.object_
           (Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 offset))
       in
       Hashtbl.add t.abbrev_tables_ offset a;
-      (t, a)
+      a
 
 let create buffer =
   let object_ = buffer in

@@ -1420,9 +1420,14 @@ val string_of_range_list_entry : range_list_entry -> string
 (** Convert a [range_list_entry] to its string representation. *)
 
 type t
-(** Opaque DWARF context holding parsed abbreviation tables, compilation units,
-    and a reference to the underlying object file. Created via {!create} and
-    used as the entry point for parsing DWARF sections. *)
+(** A DWARF context: a handle over an object buffer that lazily parses and
+    caches sections. This is the {b high-level} API and the entry point for
+    reading DWARF; create one with {!create}.
+
+    For one-shot, stateless parsing of an individual section without a context,
+    use the per-section modules directly (the {b low-level} API) — e.g.
+    {!DebugAbbrev}, {!DebugAranges}, {!DebugLoclists}. The context's cached
+    accessors are the memoizing counterparts of those. *)
 
 type span = { start : size_t; size : size_t }
 (** A byte range within a buffer, used to track the position and size of parsed
@@ -1455,7 +1460,8 @@ type abbrev = {
     Each abbreviation maps a compact code used in [.debug_info] to the full tag,
     children flag, and attribute specifications for a DIE. *)
 
-val object_format_to_section_name : Object_format.format -> dwarf_section -> string
+val object_format_to_section_name :
+  Object_format.format -> dwarf_section -> string
 (** Returns the dwarf_section name specific for the object_format. *)
 
 val detect_format_and_arch : Object.Buffer.t -> string
@@ -2917,15 +2923,17 @@ module DebugLineStr : sig
 end
 
 val create : Object.Buffer.t -> t
-(** Create a new DWARF context from an object file *)
-(* TODO Explain why we have this type? It seems ill founded. *)
+(** Create a DWARF context over an object buffer. The context holds no parsed
+    data initially; sections are parsed and cached on first access. *)
 
 val parse_compile_units : t -> CompileUnit.t Seq.t
 (** Parse all compile units from the [Debug_info] section lazily *)
 
-(* TODO This function and the two in DebugAbbrev seem like duplication? *)
-val get_abbrev_table : t -> size_t -> t * (u64, abbrev) Hashtbl.t
-(** Retrieve the abbreviation table at offset [size_t].
+val get_abbrev_table : t -> size_t -> (u64, abbrev) Hashtbl.t
+(** Return the abbreviation table at the given [.debug_abbrev] offset, parsing
+    it on first request and caching it in the context for reuse (many compile
+    units share a table). The cached, high-level counterpart of the stateless
+    {!DebugAbbrev.parse}.
 
     @raise Parse_error if the abbreviation table is malformed. *)
 

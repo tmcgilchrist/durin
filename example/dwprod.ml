@@ -21,7 +21,7 @@ let process_file filename =
     Seq.iteri
       (fun i unit ->
         let header = Dwarf.CompileUnit.header unit in
-        let _, abbrev_table =
+        let abbrev_table =
           Dwarf.get_abbrev_table dwarf header.debug_abbrev_offset
         in
         let producer =

@@ -140,7 +140,7 @@ let find_function_name buffer addr =
       | Seq.Cons (unit, rest) -> (
           let header = Dwarf.CompileUnit.header unit in
           let abbrev_offset = header.debug_abbrev_offset in
-          let _, abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
+          let abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
           match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
           | None -> search_cu rest
           | Some root_die -> (
