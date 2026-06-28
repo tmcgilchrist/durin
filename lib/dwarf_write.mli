@@ -141,43 +141,15 @@ val write_debug_line :
 
 (** {2 CFI Writer} *)
 
-(* TODO Why is this in write but not dwarf.mli for reading. Explain the
-   difference. *)
-
-(** A call frame instruction emitted into a [.debug_frame] or [.eh_frame]
-    section.
+(** Write call frame instructions into a [.debug_frame] or [.eh_frame] buffer.
+    The instruction type {!Dwarf.CallFrame.cfi_op} and its byte encoding
+    ({!Dwarf.CallFrame.encode_instructions}) live with the other CFI types in
+    [Dwarf.CallFrame]; these are the buffer-writing wrappers.
 
     DWARF 5 specification, section 6.4.2 "Call Frame Instructions". *)
-type cfi_op =
-  | CFA_advance_loc of int
-  | CFA_offset of int * int
-  | CFA_restore of int
-  | CFA_nop
-  | CFA_set_loc of int
-  | CFA_advance_loc1 of int
-  | CFA_advance_loc2 of int
-  | CFA_advance_loc4 of int
-  | CFA_offset_extended of int * int
-  | CFA_restore_extended of int
-  | CFA_undefined of int
-  | CFA_same_value of int
-  | CFA_register of int * int
-  | CFA_remember_state
-  | CFA_restore_state
-  | CFA_def_cfa of int * int
-  | CFA_def_cfa_register of int
-  | CFA_def_cfa_offset of int
-  | CFA_def_cfa_expression of string
-  | CFA_expression of int * string
-  | CFA_offset_extended_sf of int * int
-  | CFA_def_cfa_sf of int * int
-  | CFA_def_cfa_offset_sf of int
-  | CFA_val_offset of int * int
-  | CFA_val_offset_sf of int * int
-  | CFA_val_expression of int * string
 
-val write_cfi_instruction : Buffer.t -> cfi_op -> unit
-val write_cfi_instructions : Buffer.t -> cfi_op list -> unit
+val write_cfi_instruction : Buffer.t -> Dwarf.CallFrame.cfi_op -> unit
+val write_cfi_instructions : Buffer.t -> Dwarf.CallFrame.cfi_op list -> unit
 val write_cie : Buffer.t -> Dwarf.CallFrame.common_information_entry -> unit
 val write_fde : Buffer.t -> Dwarf.CallFrame.frame_description_entry -> unit
 

@@ -2203,9 +2203,54 @@ module CallFrame : sig
       DWARF 5 specification, section 6.4.1 "Structure of Call Frame
       Information". *)
 
-  val create_default_cie : unit -> common_information_entry
-  (** Create a CIE with default values for x86-64 architecture. *)
-  (* TODO Maybe default to x86-64 but take an optional architecture here? *)
+  type cfi_op =
+    | CFA_advance_loc of int
+    | CFA_offset of int * int
+    | CFA_restore of int
+    | CFA_nop
+    | CFA_set_loc of int
+    | CFA_advance_loc1 of int
+    | CFA_advance_loc2 of int
+    | CFA_advance_loc4 of int
+    | CFA_offset_extended of int * int
+    | CFA_restore_extended of int
+    | CFA_undefined of int
+    | CFA_same_value of int
+    | CFA_register of int * int
+    | CFA_remember_state
+    | CFA_restore_state
+    | CFA_def_cfa of int * int
+    | CFA_def_cfa_register of int
+    | CFA_def_cfa_offset of int
+    | CFA_def_cfa_expression of string
+    | CFA_expression of int * string
+    | CFA_offset_extended_sf of int * int
+    | CFA_def_cfa_sf of int * int
+    | CFA_def_cfa_offset_sf of int
+    | CFA_val_offset of int * int
+    | CFA_val_offset_sf of int * int
+    | CFA_val_expression of int * string
+        (** A call frame instruction with its operands, for encoding the
+            [initial_instructions] of a CIE and the instructions of an FDE.
+
+            DWARF 5 specification, Table 7.29 "Call frame instruction
+            encodings". *)
+
+  val encode_instructions : cfi_op list -> string
+  (** Encode a list of call frame instructions to their byte representation (as
+      carried in [initial_instructions] and FDE instruction streams). *)
+
+  type arch =
+    | X86_64
+    | ARM64
+        (** Target architecture, selecting architecture-specific call frame
+            defaults (return-address register and the initial CFA rule). *)
+
+  val create_default_cie : ?arch:arch -> unit -> common_information_entry
+  (** Create a CIE with default values for the given [arch] (default {!X86_64}).
+      The return-address register and [initial_instructions] (the initial CFA
+      rule) are architecture-specific; the alignment factors and address size
+      are shared by the supported 64-bit targets. *)
 
   type frame_description_entry = {
     format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
@@ -2281,8 +2326,9 @@ module CallFrame : sig
   }
   (** CFI state for tracking register rules. *)
 
-  val initial_cfi_state : unit -> cfi_state
-  (** Create initial CFI state with architecture defaults *)
+  val initial_cfi_state : ?arch:arch -> unit -> cfi_state
+  (** Create the initial CFI state with the CFA defaults for [arch] (default
+      {!X86_64}): {!X86_64} starts at [rsp + 8], {!ARM64} at [sp + 0]. *)
 
   val parse_initial_state : common_information_entry -> cfi_state
   (** Parse CIE initial instructions to establish proper initial CFI state.

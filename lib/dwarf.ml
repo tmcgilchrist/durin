@@ -3888,7 +3888,174 @@ module CallFrame = struct
     state_stack : cfi_state list; (* Stack for remember_state/restore_state *)
   }
 
-  let create_default_cie () =
+  (* Call frame instructions with their operands, used to encode the
+     [initial_instructions] of a CIE and the instructions of an FDE.
+     DWARF 5 specification, Table 7.29 "Call frame instruction encodings". *)
+  type cfi_op =
+    | CFA_advance_loc of int
+    | CFA_offset of int * int
+    | CFA_restore of int
+    | CFA_nop
+    | CFA_set_loc of int
+    | CFA_advance_loc1 of int
+    | CFA_advance_loc2 of int
+    | CFA_advance_loc4 of int
+    | CFA_offset_extended of int * int
+    | CFA_restore_extended of int
+    | CFA_undefined of int
+    | CFA_same_value of int
+    | CFA_register of int * int
+    | CFA_remember_state
+    | CFA_restore_state
+    | CFA_def_cfa of int * int
+    | CFA_def_cfa_register of int
+    | CFA_def_cfa_offset of int
+    | CFA_def_cfa_expression of string
+    | CFA_expression of int * string
+    | CFA_offset_extended_sf of int * int
+    | CFA_def_cfa_sf of int * int
+    | CFA_def_cfa_offset_sf of int
+    | CFA_val_offset of int * int
+    | CFA_val_offset_sf of int * int
+    | CFA_val_expression of int * string
+
+  (* Encode a list of call frame instructions to their byte representation. *)
+  let encode_instructions ops =
+    let b = Stdlib.Buffer.create 16 in
+    let u8 v = Stdlib.Buffer.add_char b (Char.chr (v land 0xff)) in
+    let u16 v =
+      u8 v;
+      u8 (v lsr 8)
+    in
+    let u32 v =
+      u8 v;
+      u8 (v lsr 8);
+      u8 (v lsr 16);
+      u8 (v lsr 24)
+    in
+    let uleb v =
+      let v = ref v and continue = ref true in
+      while !continue do
+        let byte = !v land 0x7f in
+        v := !v lsr 7;
+        if !v = 0 then (
+          u8 byte;
+          continue := false)
+        else u8 (byte lor 0x80)
+      done
+    in
+    let sleb v =
+      let v = ref v and more = ref true in
+      while !more do
+        let byte = !v land 0x7f in
+        v := !v asr 7;
+        if (!v = 0 && byte land 0x40 = 0) || (!v = -1 && byte land 0x40 <> 0)
+        then (
+          u8 byte;
+          more := false)
+        else u8 (byte lor 0x80)
+      done
+    in
+    let str s = Stdlib.Buffer.add_string b s in
+    let encode = function
+      | CFA_advance_loc delta -> u8 (0x40 lor (delta land 0x3f))
+      | CFA_offset (reg, off) ->
+          u8 (0x80 lor (reg land 0x3f));
+          uleb off
+      | CFA_restore reg -> u8 (0xc0 lor (reg land 0x3f))
+      | CFA_nop -> u8 0x00
+      | CFA_set_loc addr ->
+          u8 0x01;
+          u32 addr
+      | CFA_advance_loc1 delta ->
+          u8 0x02;
+          u8 delta
+      | CFA_advance_loc2 delta ->
+          u8 0x03;
+          u16 delta
+      | CFA_advance_loc4 delta ->
+          u8 0x04;
+          u32 delta
+      | CFA_offset_extended (reg, off) ->
+          u8 0x05;
+          uleb reg;
+          uleb off
+      | CFA_restore_extended reg ->
+          u8 0x06;
+          uleb reg
+      | CFA_undefined reg ->
+          u8 0x07;
+          uleb reg
+      | CFA_same_value reg ->
+          u8 0x08;
+          uleb reg
+      | CFA_register (reg, target) ->
+          u8 0x09;
+          uleb reg;
+          uleb target
+      | CFA_remember_state -> u8 0x0a
+      | CFA_restore_state -> u8 0x0b
+      | CFA_def_cfa (reg, off) ->
+          u8 0x0c;
+          uleb reg;
+          uleb off
+      | CFA_def_cfa_register reg ->
+          u8 0x0d;
+          uleb reg
+      | CFA_def_cfa_offset off ->
+          u8 0x0e;
+          uleb off
+      | CFA_def_cfa_expression expr ->
+          u8 0x0f;
+          uleb (String.length expr);
+          str expr
+      | CFA_expression (reg, expr) ->
+          u8 0x10;
+          uleb reg;
+          uleb (String.length expr);
+          str expr
+      | CFA_offset_extended_sf (reg, off) ->
+          u8 0x11;
+          uleb reg;
+          sleb off
+      | CFA_def_cfa_sf (reg, off) ->
+          u8 0x12;
+          uleb reg;
+          sleb off
+      | CFA_def_cfa_offset_sf off ->
+          u8 0x13;
+          sleb off
+      | CFA_val_offset (reg, off) ->
+          u8 0x14;
+          uleb reg;
+          uleb off
+      | CFA_val_offset_sf (reg, off) ->
+          u8 0x15;
+          uleb reg;
+          sleb off
+      | CFA_val_expression (reg, expr) ->
+          u8 0x16;
+          uleb reg;
+          uleb (String.length expr);
+          str expr
+    in
+    List.iter encode ops;
+    Stdlib.Buffer.contents b
+
+  (* Target architecture, used to pick architecture-specific call frame
+     defaults: the return-address register and the initial CFA rule. *)
+  type arch = X86_64 | ARM64
+
+  let create_default_cie ?(arch = X86_64) () =
+    let ra_register, initial_instructions =
+      match arch with
+      (* System V AMD64 ABI: CFA = rsp(7) + 8; return address rip(16) saved at
+         CFA-8, i.e. 1 * data_alignment_factor (-8). *)
+      | X86_64 ->
+          (16, encode_instructions [ CFA_def_cfa (7, 8); CFA_offset (16, 1) ])
+      (* AAPCS64: CFA = sp(31) + 0; return address held in x30 (LR). *)
+      | ARM64 -> (30, encode_instructions [ CFA_def_cfa (31, 0) ])
+    in
     {
       format = DWARF32;
       length = Unsigned.UInt64.of_int 0;
@@ -3899,10 +4066,10 @@ module CallFrame = struct
       segment_selector_size = Unsigned.UInt8.of_int 0;
       code_alignment_factor = Unsigned.UInt64.of_int 1;
       data_alignment_factor = Signed.Int64.of_int (-8);
-      return_address_register = Unsigned.UInt64.of_int 16;
+      return_address_register = Unsigned.UInt64.of_int ra_register;
       augmentation_length = None;
       augmentation_data = None;
-      initial_instructions = "";
+      initial_instructions;
       span =
         { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 0 };
       offset = Unsigned.UInt64.of_int 0;
@@ -4106,13 +4273,15 @@ module CallFrame = struct
       { entries = List.rev !entries; entry_count = !entry_count }
 
   (* TODO This is x86_64 specific, we want to support ARM64 as well *)
-  (* Create initial CFI state *)
-  let initial_cfi_state () =
+  (* Create initial CFI state with architecture-specific CFA defaults. *)
+  let initial_cfi_state ?(arch = X86_64) () =
+    let cfa_register, cfa_offset =
+      match arch with X86_64 -> (7, 8L) (* rsp + 8 *) | ARM64 -> (31, 0L)
+      (* sp + 0 *)
+    in
     {
-      cfa_register = 7;
-      (* Default RSP for x86_64 *)
-      cfa_offset = 8L;
-      (* Default stack pointer offset *)
+      cfa_register;
+      cfa_offset;
       register_rules = Hashtbl.create 32;
       pc_offset = 0;
       state_stack = [];

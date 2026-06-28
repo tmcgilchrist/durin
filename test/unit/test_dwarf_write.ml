@@ -1699,6 +1699,25 @@ let test_write_cfi_initial_state () =
       check int "r16 offset" (-8) (Int64.to_int off)
   | _ -> fail "r16 should have Rule_offset"
 
+let test_cie_arch_defaults () =
+  let open Dwarf.CallFrame in
+  (* Default is x86-64: return address rip(16), initial CFA = rsp(7) + 8. *)
+  let x86 = create_default_cie () in
+  check int "x86-64 RA register" 16
+    (Unsigned.UInt64.to_int x86.return_address_register);
+  let x86_state = parse_initial_state x86 in
+  check int "x86-64 cfa_register" 7 x86_state.cfa_register;
+  check int "x86-64 cfa_offset" 8 (Int64.to_int x86_state.cfa_offset);
+  (* ARM64: return address x30(30), initial CFA = sp(31) + 0. *)
+  let arm = create_default_cie ~arch:ARM64 () in
+  check int "ARM64 RA register" 30
+    (Unsigned.UInt64.to_int arm.return_address_register);
+  let arm_state = parse_initial_state arm in
+  check int "ARM64 cfa_register" 31 arm_state.cfa_register;
+  check int "ARM64 cfa_offset" 0 (Int64.to_int arm_state.cfa_offset);
+  check int "ARM64 initial_cfi_state cfa_register" 31
+    (initial_cfi_state ~arch:ARM64 ()).cfa_register
+
 let test_write_debug_frame_section () =
   let cie = Dwarf.CallFrame.create_default_cie () in
   let fde : Dwarf.CallFrame.frame_description_entry =
@@ -3399,6 +3418,7 @@ let () =
         [
           test_case "cie roundtrip" `Quick test_write_cie_roundtrip;
           test_case "cfi initial state" `Quick test_write_cfi_initial_state;
+          test_case "cie arch defaults" `Quick test_cie_arch_defaults;
           test_case "debug_frame section" `Quick test_write_debug_frame_section;
           test_case "advance_loc" `Quick test_write_cfi_advance_loc;
         ] );
