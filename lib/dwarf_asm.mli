@@ -15,6 +15,8 @@ val emit_section : Format.formatter -> string -> unit
 
 (** {2 DWARF-specific Emission} *)
 
+(* TODO These DWARF specific functions should have API details,
+   explaining what they're for. *)
 val emit_initial_length :
   Format.formatter ->
   Dwarf.dwarf_format ->
@@ -30,9 +32,13 @@ val emit_attribute_value :
   Dwarf.attribute_form_encoding ->
   Dwarf.encoding ->
   unit
+(** @raise Dwarf.Parse_error
+      if the form/value combination or address size is unsupported. *)
 
 val emit_die :
   Format.formatter -> Dwarf.DIE.t -> Dwarf.encoding -> (int -> u64) -> unit
+(** @raise Dwarf.Parse_error
+      if a DIE attribute uses an unsupported form/value combination. *)
 
 val emit_abbrev_table : Format.formatter -> Dwarf.abbrev array -> unit
 
@@ -42,7 +48,12 @@ val emit_debug_abbrev : Format.formatter -> Dwarf.abbrev array -> unit
 
 val emit_debug_info :
   Format.formatter -> Dwarf.encoding -> Dwarf.DIE.t list -> (int -> u64) -> unit
+(** @raise Dwarf.Parse_error
+      if a DIE attribute uses an unsupported form/value combination. *)
 
 val emit_debug_str : Format.formatter -> Dwarf_write.string_table -> unit
 val emit_debug_line_str : Format.formatter -> Dwarf_write.string_table -> unit
+
 val emit_all : Format.formatter -> Dwarf.encoding -> Dwarf.DIE.t list -> unit
+(** @raise Dwarf.Parse_error
+      if a DIE attribute uses an unsupported form/value combination. *)

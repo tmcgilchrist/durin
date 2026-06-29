@@ -521,9 +521,7 @@ let dump_debug_info filename =
 
               (* Get the abbreviation table for this compilation unit *)
               let abbrev_offset = header.debug_abbrev_offset in
-              let _, abbrev_table =
-                Dwarf.get_abbrev_table dwarf abbrev_offset
-              in
+              let abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
 
               (* Get the root DIE for this compilation unit *)
               match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
@@ -763,7 +761,7 @@ let dump_debug_abbrev filename =
 
           (* Create DWARF context and parse abbreviation table *)
           let dwarf = Dwarf.create buffer in
-          let _dwarf, abbrev_table =
+          let abbrev_table =
             Dwarf.get_abbrev_table dwarf (Unsigned.UInt64.of_int offset)
           in
 

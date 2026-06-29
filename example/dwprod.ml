@@ -17,17 +17,24 @@ let process_file filename =
     (* Get compilation units *)
     let units = Dwarf.parse_compile_units dwarf in
 
-    (* Process each compilation unit *)
+    (* Print the DW_AT_producer of each compilation unit's root DIE. *)
     Seq.iteri
       (fun i unit ->
-        Printf.printf "\nCompilation Unit %d:\n" (i + 1);
-
-        (* TODO: Implement producer extraction using DIE.get_producer on root DIE *)
-        (* For now, just get some basic info to show the unit exists *)
-        let parsed_data = Dwarf.CompileUnit.header unit in
-        Printf.printf "  Unit at offset: 0x%x\n"
-          (Unsigned.UInt64.to_int parsed_data.debug_abbrev_offset);
-        Printf.printf "  Producer: <TODO: not implemented>\n")
+        let header = Dwarf.CompileUnit.header unit in
+        let abbrev_table =
+          Dwarf.get_abbrev_table dwarf header.debug_abbrev_offset
+        in
+        let producer =
+          match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+          | None -> "<no root DIE>"
+          | Some root_die -> (
+              match Dwarf.DIE.find_attribute root_die Dwarf.DW_AT_producer with
+              | Some (Dwarf.DIE.String s)
+              | Some (Dwarf.DIE.IndexedString (_, s)) ->
+                  s
+              | _ -> "<no DW_AT_producer>")
+        in
+        Printf.printf "Compilation Unit %d: %s\n" (i + 1) producer)
       units
   with exn ->
     Printf.printf "Error processing %s: %s\n" filename (Printexc.to_string exn)
@@ -38,8 +45,8 @@ let filename =
   Cmdliner.Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
 let cmd =
-  let doc = "A DWARF debugging information dumper" in
-  let info = Cmdliner.Cmd.info "dwarfdump" ~doc in
+  let doc = "List the DW_AT_producer of each compilation unit in a binary" in
+  let info = Cmdliner.Cmd.info "dwprod" ~doc in
   Cmdliner.Cmd.v info Cmdliner.Term.(const process_file $ filename)
 
 let () = exit (Cmdliner.Cmd.eval cmd)

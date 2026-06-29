@@ -59,8 +59,13 @@ let test_unsupported_version_rejected () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   check_raises "version 3 rejected"
-    (Failure "Unsupported DWARF version: 3 (only 4 and 5 supported)") (fun () ->
-      ignore (Dwarf.parse_compile_unit_header cursor))
+    (Dwarf.Parse_error
+       {
+         section = None;
+         offset = None;
+         message = "Unsupported DWARF version: 3 (only 4 and 5 supported)";
+       })
+    (fun () -> ignore (Dwarf.parse_compile_unit_header cursor))
 
 (* ---- Non-compile unit type tests ---- *)
 

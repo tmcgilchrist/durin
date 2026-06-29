@@ -79,7 +79,7 @@ let write_address buf address_size (v : u64) =
       let v32 = Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 v) in
       write_u32_le buf v32
   | 8 -> write_u64_le buf v
-  | n -> failwith (Printf.sprintf "Unsupported address size: %d" n)
+  | n -> fail (Printf.sprintf "Unsupported address size: %d" n)
 
 let write_null_terminated_string buf s =
   Buffer.add_string buf s;
@@ -177,8 +177,7 @@ let assign_abbreviations (dies : Dwarf.DIE.t list) =
     match Hashtbl.find_opt offset_to_code offset with
     | Some code -> code
     | None ->
-        failwith
-          (Printf.sprintf "No abbreviation code for DIE offset %d" offset)
+        fail (Printf.sprintf "No abbreviation code for DIE offset %d" offset)
   in
   (abbrev_array, lookup)
 
@@ -186,7 +185,7 @@ let write_abbrev_table buf (abbrevs : Dwarf.abbrev array) =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       write_uleb128 buf a.code;
-      write_uleb128 buf (Dwarf.uint64_of_abbreviation_tag a.tag);
+      write_uleb128 buf (Dwarf.u64_of_abbreviation_tag a.tag);
       write_u8 buf (Unsigned.UInt8.of_int (if a.has_children then 1 else 0));
       List.iter
         (fun (spec : Dwarf.attr_spec) ->
@@ -229,7 +228,7 @@ let abbrev_table_size (abbrevs : Dwarf.abbrev array) =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       size := !size + uleb128_size a.code;
-      size := !size + uleb128_size (Dwarf.uint64_of_abbreviation_tag a.tag);
+      size := !size + uleb128_size (Dwarf.u64_of_abbreviation_tag a.tag);
       size := !size + 1;
       List.iter
         (fun (spec : Dwarf.attr_spec) ->
@@ -294,7 +293,7 @@ let write_attribute_value buf (value : Dwarf.DIE.attribute_value)
   | DW_FORM_block, Block b ->
       write_uleb128 buf (Unsigned.UInt64.of_int (String.length b));
       Buffer.add_string buf b
-  | _ -> failwith "Unsupported form/value combination"
+  | _ -> fail "Unsupported form/value combination"
 
 let attribute_value_size (value : Dwarf.DIE.attribute_value)
     (form : Dwarf.attribute_form_encoding) (enc : Dwarf.encoding) =
@@ -337,7 +336,7 @@ let attribute_value_size (value : Dwarf.DIE.attribute_value)
   | DW_FORM_block, Block b ->
       let len = String.length b in
       uleb128_size (Unsigned.UInt64.of_int len) + len
-  | _ -> failwith "Unsupported form/value combination for size"
+  | _ -> fail "Unsupported form/value combination for size"
 
 (* DIE Tree Serialisation *)
 
@@ -391,8 +390,7 @@ let write_compile_unit buf (enc : Dwarf.encoding) (die : Dwarf.DIE.t)
   let unit_length = header_content_size + die_bytes in
   write_initial_length buf enc.format unit_length;
   write_u16_le buf enc.version;
-  write_u8 buf
-    (Unsigned.UInt8.of_int (Dwarf.int_of_unit_type Dwarf.DW_UT_compile));
+  write_u8 buf (Dwarf.u8_of_unit_type Dwarf.DW_UT_compile);
   write_u8 buf enc.address_size;
   write_offset buf enc.format debug_abbrev_offset;
   write_die buf die enc lookup
@@ -447,11 +445,18 @@ let write_4byte_le buf v =
   Buffer.add_char buf (Char.chr ((v lsr 24) land 0xff))
 
 let write_expression buf (ops : Dwarf.dwarf_expression_operation list)
-    (_enc : Dwarf.encoding) =
+    (enc : Dwarf.encoding) =
+  let addr_size = Unsigned.UInt8.to_int enc.address_size in
   List.iter
     (fun (op : Dwarf.dwarf_expression_operation) ->
       write_op_byte buf op.opcode;
       match op.opcode with
+      | DW_OP_addr ->
+          write_address buf addr_size
+            (Unsigned.UInt64.of_int (List.hd op.operands))
+      | DW_OP_call_ref ->
+          write_offset buf enc.format
+            (Unsigned.UInt64.of_int (List.hd op.operands))
       | DW_OP_deref | DW_OP_dup | DW_OP_drop | DW_OP_over | DW_OP_swap
       | DW_OP_rot | DW_OP_xderef | DW_OP_abs | DW_OP_and | DW_OP_div
       | DW_OP_minus | DW_OP_mod | DW_OP_mul | DW_OP_neg | DW_OP_not | DW_OP_or
@@ -502,7 +507,7 @@ let write_expression buf (ops : Dwarf.dwarf_expression_operation list)
       | DW_OP_bit_piece ->
           write_uleb128 buf (Unsigned.UInt64.of_int (List.nth op.operands 0));
           write_uleb128 buf (Unsigned.UInt64.of_int (List.nth op.operands 1))
-      | _ -> failwith "Unsupported operation for write")
+      | _ -> fail "Unsupported operation for write")
     ops
 
 (* Location/Range Lists *)
@@ -666,6 +671,7 @@ let int_of_lnct = function
   | DW_LNCT_MD5 -> 0x5
   | DW_LNCT_lo_user -> 0x2000
   | DW_LNCT_hi_user -> 0x3fff
+  | DW_LNCT_unknown n -> n
 
 let find_dir_index dirs dir =
   let rec find i =
@@ -692,7 +698,7 @@ let write_line_dir_entry buf fmt (h : Dwarf.DebugLine.line_program_header)
       | Dwarf.DW_LNCT_path, Dwarf.DW_FORM_line_strp ->
           let offset = add_string line_str_table dir in
           write_offset buf fmt (Unsigned.UInt64.of_int offset)
-      | _ -> failwith "Unsupported directory format")
+      | _ -> fail "Unsupported directory format")
     h.directory_entry_formats
 
 let write_line_file_entry buf fmt (h : Dwarf.DebugLine.line_program_header)
@@ -722,7 +728,7 @@ let write_line_file_entry buf fmt (h : Dwarf.DebugLine.line_program_header)
               for _ = 0 to 15 do
                 write_u8 buf (Unsigned.UInt8.of_int 0)
               done)
-      | _ -> failwith "Unsupported file entry format")
+      | _ -> fail "Unsupported file entry format")
     h.file_name_entry_formats
 
 let write_line_header_body buf fmt (h : Dwarf.DebugLine.line_program_header)
@@ -1024,10 +1030,11 @@ let write_cie buf (cie : Dwarf.CallFrame.common_information_entry) =
     + String.length cie.initial_instructions
   in
   write_initial_length buf fmt body_len;
+  (* cie_id marks a .debug_frame entry as a CIE rather than an FDE. *)
+  let cie_id = 0xffffffffffffffffL in
   (match fmt with
-  | Dwarf.DWARF32 -> write_u32_le buf (Unsigned.UInt32.of_int32 0xffffffffl)
-  | Dwarf.DWARF64 ->
-      write_u64_le buf (Unsigned.UInt64.of_int64 0xffffffffffffffffL));
+  | Dwarf.DWARF32 -> write_u32_le buf (Unsigned.UInt32.of_int64 cie_id)
+  | Dwarf.DWARF64 -> write_u64_le buf (Unsigned.UInt64.of_int64 cie_id));
   write_u8 buf cie.version;
   write_null_terminated_string buf cie.augmentation;
   write_u8 buf cie.address_size;
@@ -1108,23 +1115,75 @@ let write_eh_cie buf (cie : Dwarf.CallFrame.common_information_entry) =
   | _ -> ());
   Buffer.add_string buf cie.initial_instructions
 
+(* Symmetric counterpart of Eh_encoding.read_encoded_value: write [target] into
+   [buf] using [encoding]. [value_pos] is the offset, in the final section, at
+   which the value will sit; PC-relative encodings are stored relative to it. We
+   have no section base, so data-relative values are stored relative to 0, which
+   matches how the reader resolves them. *)
+let write_encoded_value buf encoding ~value_pos target =
+  match encoding with
+  | Eh_encoding.DW_EH_PE_omit -> ()
+  | Eh_encoding.DW_EH_PE_encoding { indirect = true; _ } ->
+      fail "Indirect EH pointer encodings are not supported"
+  | Eh_encoding.DW_EH_PE_encoding { format; application; indirect = false } -> (
+      let raw =
+        match application with
+        | None | Some Eh_encoding.DW_EH_PE_datarel -> target
+        | Some Eh_encoding.DW_EH_PE_pcrel -> target - value_pos
+        | Some
+            ( Eh_encoding.DW_EH_PE_textrel | Eh_encoding.DW_EH_PE_funcrel
+            | Eh_encoding.DW_EH_PE_aligned ) ->
+            fail
+              "Text-, function-relative and aligned EH encodings are not \
+               supported"
+      in
+      match format with
+      | DW_EH_PE_absptr | DW_EH_PE_udata8 | DW_EH_PE_sdata8 ->
+          write_u64_le buf (Unsigned.UInt64.of_int raw)
+      | DW_EH_PE_udata4 | DW_EH_PE_sdata4 ->
+          write_u32_le buf (Unsigned.UInt32.of_int (raw land 0xffffffff))
+      | DW_EH_PE_udata2 | DW_EH_PE_sdata2 ->
+          write_u16_le buf (Unsigned.UInt16.of_int (raw land 0xffff))
+      | DW_EH_PE_uleb128 -> write_uleb128 buf (Unsigned.UInt64.of_int raw)
+      | DW_EH_PE_sleb128 -> write_sleb128 buf (Signed.Int64.of_int raw))
+
 let write_eh_fde buf (fde : Dwarf.CallFrame.frame_description_entry)
-    (cie_offset : int) =
+    fde_encoding (cie_offset : int) =
   let fde_start = Buffer.length buf in
+  (* address_range uses the same value format as initial_location but is an
+     absolute length, so its application is dropped (mirrors the reader). *)
+  let length_encoding =
+    match fde_encoding with
+    | Eh_encoding.DW_EH_PE_encoding { format; indirect; _ } ->
+        Eh_encoding.DW_EH_PE_encoding { format; application = None; indirect }
+    | Eh_encoding.DW_EH_PE_omit -> fde_encoding
+  in
+  (* Encode initial_location and address_range into a temporary buffer so the
+     length field can be sized; both sit after the 4-byte length and 4-byte
+     cie_pointer fields. *)
+  let fields = Buffer.create 16 in
+  let il_pos = fde_start + 4 + 4 in
+  write_encoded_value fields fde_encoding ~value_pos:il_pos
+    (Unsigned.UInt64.to_int fde.initial_location);
+  write_encoded_value fields length_encoding
+    ~value_pos:(il_pos + Buffer.length fields)
+    (Unsigned.UInt64.to_int fde.address_range);
   let aug_data_sz =
     match (fde.augmentation_length, fde.augmentation_data) with
     | Some len, Some data -> uleb128_size len + String.length data
     | _ -> 0
   in
-  let body_len = 4 + 4 + 4 + aug_data_sz + String.length fde.instructions in
+  let body_len =
+    4 (* cie_pointer *) + Buffer.length fields
+    + aug_data_sz
+    + String.length fde.instructions
+  in
   write_u32_le buf (Unsigned.UInt32.of_int body_len);
-  let cie_ptr = fde_start + 4 + 4 - cie_offset in
+  (* .eh_frame cie_pointer is relative to the cie_pointer field itself, which
+     sits 4 bytes into the FDE (after the length field). *)
+  let cie_ptr = fde_start + 4 - cie_offset in
   write_u32_le buf (Unsigned.UInt32.of_int cie_ptr);
-  let il_field_pos = fde_start + 4 + 4 in
-  let il_raw = Unsigned.UInt64.to_int fde.initial_location - il_field_pos in
-  write_u32_le buf (Unsigned.UInt32.of_int il_raw);
-  write_u32_le buf
-    (Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 fde.address_range));
+  Buffer.add_buffer buf fields;
   (match (fde.augmentation_length, fde.augmentation_data) with
   | Some len, Some data ->
       write_uleb128 buf len;
@@ -1132,11 +1191,24 @@ let write_eh_fde buf (fde : Dwarf.CallFrame.frame_description_entry)
   | _ -> ());
   Buffer.add_string buf fde.instructions
 
+(* Each FDE is written with the pointer encoding declared by the CIE that owns
+   it (via its 'R' augmentation), so the section is self-describing and reads
+   back identically. The cie_pointer is computed from that CIE's byte offset. *)
 let write_eh_frame buf entries =
+  let current_cie = ref None in
   List.iter
     (function
-      | Dwarf.EHFrame.EH_CIE cie -> write_eh_cie buf cie
-      | Dwarf.EHFrame.EH_FDE fde -> write_eh_fde buf fde 0)
+      | Eh_frame.EH_CIE cie ->
+          let cie_offset = Buffer.length buf in
+          write_eh_cie buf cie;
+          current_cie := Some (cie_offset, Eh_frame.fde_encoding_of_cie cie)
+      | Eh_frame.EH_FDE fde ->
+          let cie_offset, fde_encoding =
+            match !current_cie with
+            | Some pair -> pair
+            | None -> (0, Eh_frame.default_fde_encoding)
+          in
+          write_eh_fde buf fde fde_encoding cie_offset)
     entries
 
 (* .debug_aranges Writer *)
@@ -1195,7 +1267,7 @@ let write_debug_names_abbrev_table buf
   List.iter
     (fun (a : Dwarf.DebugNames.debug_names_abbrev) ->
       write_uleb128 buf a.code;
-      write_uleb128 buf (Dwarf.uint64_of_abbreviation_tag a.tag);
+      write_uleb128 buf (Dwarf.u64_of_abbreviation_tag a.tag);
       List.iter
         (fun (attr, form) ->
           write_uleb128 buf
@@ -1213,7 +1285,7 @@ let debug_names_abbrev_table_size
   List.iter
     (fun (a : Dwarf.DebugNames.debug_names_abbrev) ->
       sz := !sz + uleb128_size a.code;
-      sz := !sz + uleb128_size (Dwarf.uint64_of_abbreviation_tag a.tag);
+      sz := !sz + uleb128_size (Dwarf.u64_of_abbreviation_tag a.tag);
       List.iter
         (fun (attr, form) ->
           sz :=
@@ -1401,9 +1473,9 @@ let write_unit_index buf (idx : Dwarf.SplitDwarf.unit_index) =
       idx.entries;
     Hashtbl.fold (fun k () acc -> k :: acc) tbl []
     |> List.sort (fun a b ->
-           compare
-             (Dwarf.SplitDwarf.int_of_dw_sect a)
-             (Dwarf.SplitDwarf.int_of_dw_sect b))
+        compare
+          (Dwarf.SplitDwarf.int_of_dw_sect a)
+          (Dwarf.SplitDwarf.int_of_dw_sect b))
   in
   let sc = List.length columns in
   (* Build hash table *)

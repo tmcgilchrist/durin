@@ -168,6 +168,7 @@ type operation_encoding =
   | DW_OP_GNU_parameter_ref (* 4-byte DIE offset *)
   | DW_OP_GNU_variable_value (* address-sized DIE ref *)
   | DW_OP_hi_user
+  | DW_OP_unknown of int
 
 let operation_encoding = function
   | 0x03 -> DW_OP_addr
@@ -347,7 +348,7 @@ let operation_encoding = function
   | 0xfc -> DW_OP_constx
   | 0xfd -> DW_OP_GNU_variable_value
   | 0xff -> DW_OP_hi_user
-  | n -> failwith (Printf.sprintf "Unknown operation_encoding: 0x%02x" n)
+  | n -> DW_OP_unknown n
 
 let int_of_operation_encoding = function
   | DW_OP_addr -> 0x03
@@ -517,6 +518,7 @@ let int_of_operation_encoding = function
   | DW_OP_GNU_parameter_ref -> 0xfa
   | DW_OP_GNU_variable_value -> 0xfd
   | DW_OP_hi_user -> 0xff
+  | DW_OP_unknown n -> n
 
 let string_of_operation_encoding = function
   | DW_OP_addr -> "DW_OP_addr"
@@ -686,3 +688,4 @@ let string_of_operation_encoding = function
   | DW_OP_GNU_parameter_ref -> "DW_OP_GNU_parameter_ref"
   | DW_OP_GNU_variable_value -> "DW_OP_GNU_variable_value"
   | DW_OP_hi_user -> "DW_OP_hi_user"
+  | DW_OP_unknown n -> Printf.sprintf "DW_OP_unknown(0x%x)" n

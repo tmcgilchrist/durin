@@ -1,0 +1,2 @@
+available: arch != "ppc64"
+x-maintenance-intent: ["(latest)"]

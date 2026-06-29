@@ -197,7 +197,13 @@ let test_loclists_unknown_kind () =
   let bytes = [ 0xFF ] in
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
-  check_raises "unknown kind" (Failure "Unknown DW_LLE entry kind: 0xff")
+  check_raises "unknown kind"
+    (Dwarf.Parse_error
+       {
+         section = None;
+         offset = None;
+         message = "Unknown DW_LLE entry kind: 0xff";
+       })
     (fun () -> ignore (Dwarf.DebugLoclists.parse_location_list cursor (u8 8)))
 
 let test_resolve_location_list_no_section () =
@@ -205,7 +211,7 @@ let test_resolve_location_list_no_section () =
   let buffer = buffer_of_bytes bytes in
   let result =
     try Dwarf.resolve_location_list buffer (Unsigned.UInt64.of_int 0) 8
-    with Failure _ -> None
+    with Dwarf.Parse_error _ -> None
   in
   check bool "returns None when no .debug_loc section" true (result = None)
 

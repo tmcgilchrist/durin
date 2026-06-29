@@ -56,7 +56,12 @@ And add `durin` to your project's `dune-project` or `*.opam` files.
 
 ## Documentation
 
- * Documentation on [ocaml.org](https://ocaml.org/p/durin)
+ * API reference on [ocaml.org](https://ocaml.org/p/durin)
+ * [Explanation](./doc/explanation.md) — conceptual background on DWARF:
+   - [DWARF 5 terminology](./doc/terminology.md) (compilation units, DIEs,
+     the root DIE, and the string offsets table)
+   - [Object files and sections](./doc/object-files.md) (DWARF sections in
+     ELF vs Mach-O)
  * Example programs in `example` directory
    - A simple [.debug_info](./example/simple_debug_info.ml) parser
    - A simple [.debug_line](./example/simple_debug_line.ml) parser

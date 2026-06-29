@@ -1,17 +1,13 @@
 Test objdump.ml basic functionality
 
-Set up the test environment:
-  $ cd $TESTCASE_ROOT/../..
-
 Test error handling with non-existent file:
-  $ objdump --unwind-info nonexistent_file.txt
-  objdump: FILE argument: no 'nonexistent_file.txt' file or directory
-  Usage: objdump [--unwind-info] [OPTION]… FILE
-  Try 'objdump --help' for more information.
+  $ ../../example/objdump.exe --unwind-info nonexistent_file.txt
+  Usage: objdump [--help] [--unwind-info] [OPTION]… FILE
+  objdump: FILE argument: no nonexistent_file.txt file or directory
   [124]
 
 Test help flag:
-  $ objdump --help=plain
+  $ ../../example/objdump.exe --help=plain
   NAME
          objdump - Display information from object files
   
@@ -46,8 +42,7 @@ Test help flag:
 
 
 Test no option specified with non-existent file:
-  $ objdump hello_world
-  objdump: FILE argument: no 'hello_world' file or directory
-  Usage: objdump [--unwind-info] [OPTION]… FILE
-  Try 'objdump --help' for more information.
+  $ ../../example/objdump.exe hello_world
+  Usage: objdump [--help] [--unwind-info] [OPTION]… FILE
+  objdump: FILE argument: no hello_world file or directory
   [124]

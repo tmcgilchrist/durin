@@ -12,6 +12,20 @@ let object_buffer_of_buffer buf =
   Sys.remove filename;
   obj_buf
 
+(* Independent decoders for the DWARF initial-length and offset fields, used to
+   read back what the writer produced. Kept local to the test so the writer
+   checks do not depend on the library's (internal) reader. *)
+let read_initial_length cur =
+  let first = Object.Buffer.Read.u32 cur in
+  if Unsigned.UInt32.to_int32 first = -1l (* 0xffffffff escape *) then
+    (Dwarf.DWARF64, Object.Buffer.Read.u64 cur)
+  else (Dwarf.DWARF32, Unsigned.UInt64.of_uint32 first)
+
+let read_offset fmt cur =
+  match fmt with
+  | Dwarf.DWARF32 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cur)
+  | Dwarf.DWARF64 -> Object.Buffer.Read.u64 cur
+
 let test_write_u8 () =
   let buf = Buffer.create 1 in
   Dwarf_write.write_u8 buf (Unsigned.UInt8.of_int 0x42);
@@ -95,7 +109,7 @@ let test_write_initial_length_dwarf32 () =
   Dwarf_write.write_initial_length buf Dwarf.DWARF32 256;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let format, length = Dwarf.parse_initial_length cur in
+  let format, length = read_initial_length cur in
   check
     (module struct
       type t = Dwarf.dwarf_format
@@ -112,7 +126,7 @@ let test_write_initial_length_dwarf64 () =
   Dwarf_write.write_initial_length buf Dwarf.DWARF64 512;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let format, length = Dwarf.parse_initial_length cur in
+  let format, length = read_initial_length cur in
   check
     (module struct
       type t = Dwarf.dwarf_format
@@ -129,7 +143,7 @@ let test_write_offset_dwarf32 () =
   Dwarf_write.write_offset buf Dwarf.DWARF32 (Unsigned.UInt64.of_int 0x12345678);
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let v = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let v = read_offset Dwarf.DWARF32 cur in
   check int64 "offset DWARF32 roundtrip"
     (Int64.of_string "0x12345678")
     (Unsigned.UInt64.to_int64 v)
@@ -140,7 +154,7 @@ let test_write_offset_dwarf64 () =
     (Unsigned.UInt64.of_int64 (Int64.of_string "0x123456789abcdef0"));
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let v = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  let v = read_offset Dwarf.DWARF64 cur in
   check int64 "offset DWARF64 roundtrip"
     (Int64.of_string "0x123456789abcdef0")
     (Unsigned.UInt64.to_int64 v)
@@ -215,7 +229,7 @@ let parse_abbrev_from_cursor cur =
         Dwarf.
           {
             code = Unsigned.UInt64.of_int code;
-            tag = Dwarf.abbreviation_tag_of_int (Unsigned.UInt64.of_int tag_raw);
+            tag = Dwarf.abbreviation_tag (Unsigned.UInt64.of_int tag_raw);
             has_children;
             attr_specs;
           }
@@ -685,7 +699,7 @@ let test_write_die_simple () =
   | None -> fail "expected Some die"
   | Some parsed -> (
       check int "tag" 0x11
-        (Unsigned.UInt64.to_int (Dwarf.uint64_of_abbreviation_tag parsed.tag));
+        (Unsigned.UInt64.to_int (Dwarf.u64_of_abbreviation_tag parsed.tag));
       check int "attr count" 2 (List.length parsed.attributes);
       let name_attr = List.hd parsed.attributes in
       (match name_attr.value with
@@ -727,13 +741,13 @@ let test_write_die_with_children () =
   | None -> fail "expected Some die"
   | Some parsed -> (
       check int "parent tag" 0x11
-        (Unsigned.UInt64.to_int (Dwarf.uint64_of_abbreviation_tag parsed.tag));
+        (Unsigned.UInt64.to_int (Dwarf.u64_of_abbreviation_tag parsed.tag));
       match parsed.children () with
       | Seq.Nil -> fail "expected children"
       | Seq.Cons (child_parsed, _) -> (
           check int "child tag" 0x24
             (Unsigned.UInt64.to_int
-               (Dwarf.uint64_of_abbreviation_tag child_parsed.tag));
+               (Dwarf.u64_of_abbreviation_tag child_parsed.tag));
           check int "child attr count" 2 (List.length child_parsed.attributes);
           let name = List.hd child_parsed.attributes in
           match name.value with
@@ -891,7 +905,7 @@ let test_write_compile_unit () =
   | None -> fail "expected die"
   | Some parsed ->
       check int "tag" 0x11
-        (Unsigned.UInt64.to_int (Dwarf.uint64_of_abbreviation_tag parsed.tag));
+        (Unsigned.UInt64.to_int (Dwarf.u64_of_abbreviation_tag parsed.tag));
       check int "attr count" 2 (List.length parsed.attributes)
 
 let test_write_debug_info_simple () =
@@ -921,7 +935,7 @@ let test_write_debug_info_simple () =
   | None -> fail "expected die"
   | Some parsed -> (
       check int "tag" 0x11
-        (Unsigned.UInt64.to_int (Dwarf.uint64_of_abbreviation_tag parsed.tag));
+        (Unsigned.UInt64.to_int (Dwarf.u64_of_abbreviation_tag parsed.tag));
       let name = List.hd parsed.attributes in
       (match name.value with
       | String s -> check string "name" "hello.c" s
@@ -975,7 +989,7 @@ let test_write_debug_info_with_children () =
       | Seq.Cons (child_parsed, _) -> (
           check int "child tag" 0x24
             (Unsigned.UInt64.to_int
-               (Dwarf.uint64_of_abbreviation_tag child_parsed.tag));
+               (Dwarf.u64_of_abbreviation_tag child_parsed.tag));
           check int "child attrs" 3 (List.length child_parsed.attributes);
           let enc_attr = List.nth child_parsed.attributes 2 in
           match enc_attr.value with
@@ -1741,7 +1755,7 @@ let test_write_loclists_header_roundtrip () =
   Dwarf_write.write_loclists_header buf enc 0 10;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let _fmt, unit_length = Dwarf.parse_initial_length cur in
+  let _fmt, unit_length = read_initial_length cur in
   let version = Object.Buffer.Read.u16 cur in
   let address_size = Object.Buffer.Read.u8 cur in
   let segment_size = Object.Buffer.Read.u8 cur in
@@ -1786,14 +1800,14 @@ let test_write_eh_cie_roundtrip () =
   done;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let section = Dwarf.EHFrame.parse_section cur (Buffer.length buf) in
+  let section = Eh_frame.parse_section cur (Buffer.length buf) in
   let cie_entry =
     List.find
-      (function Dwarf.EHFrame.EH_CIE _ -> true | _ -> false)
+      (function Eh_frame.EH_CIE _ -> true | _ -> false)
       section.entries
   in
   match cie_entry with
-  | Dwarf.EHFrame.EH_CIE p ->
+  | Eh_frame.EH_CIE p ->
       check int "version" 1 (Unsigned.UInt8.to_int p.version);
       check string "augmentation" "" p.augmentation;
       check int "code_align" 1 (Unsigned.UInt64.to_int p.code_alignment_factor);
@@ -1838,20 +1852,33 @@ let test_write_eh_frame_cie_fde () =
     }
   in
   let buf = Buffer.create 128 in
-  Dwarf_write.write_eh_frame buf
-    [ Dwarf.EHFrame.EH_CIE cie; Dwarf.EHFrame.EH_FDE fde ];
+  Dwarf_write.write_eh_frame buf [ Eh_frame.EH_CIE cie; Eh_frame.EH_FDE fde ];
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let section = Dwarf.EHFrame.parse_section cur (Buffer.length buf) in
+  let section = Eh_frame.parse_section cur (Buffer.length buf) in
   check int "2 entries" 2 (List.length section.entries);
   (match List.nth section.entries 0 with
-  | Dwarf.EHFrame.EH_CIE p ->
+  | Eh_frame.EH_CIE p ->
       check int "cie version" 1 (Unsigned.UInt8.to_int p.version)
   | _ -> fail "first should be CIE");
-  match List.nth section.entries 1 with
-  | Dwarf.EHFrame.EH_FDE p ->
-      check int "fde addr_range" 0x80 (Unsigned.UInt64.to_int p.address_range)
-  | _ -> fail "second should be FDE"
+  let fde' =
+    match List.nth section.entries 1 with
+    | Eh_frame.EH_FDE p -> p
+    | _ -> fail "second should be FDE"
+  in
+  check int "fde addr_range" 0x80 (Unsigned.UInt64.to_int fde'.address_range);
+  (* The FDE's cie_pointer must resolve back to the CIE (at section offset 0).
+     This catches an off-by-N in the cie_pointer arithmetic in either the
+     reader or the writer. *)
+  match
+    Eh_frame.find_cie_for_fde section
+      (Unsigned.UInt32.of_int (Unsigned.UInt64.to_int fde'.cie_pointer))
+      (Unsigned.UInt64.to_int fde'.offset)
+  with
+  | Some cie' ->
+      check int "FDE resolves to CIE at offset 0" 0
+        (Unsigned.UInt64.to_int cie'.offset)
+  | None -> fail "FDE should resolve to its CIE"
 
 let test_write_eh_cie_augmented () =
   let aug_data = "\x1b" in
@@ -1883,19 +1910,74 @@ let test_write_eh_cie_augmented () =
   done;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let section = Dwarf.EHFrame.parse_section cur (Buffer.length buf) in
+  let section = Eh_frame.parse_section cur (Buffer.length buf) in
   let cie_entry =
     List.find
-      (function Dwarf.EHFrame.EH_CIE _ -> true | _ -> false)
+      (function Eh_frame.EH_CIE _ -> true | _ -> false)
       section.entries
   in
   match cie_entry with
-  | Dwarf.EHFrame.EH_CIE p -> (
+  | Eh_frame.EH_CIE p -> (
       check string "augmentation" "zR" p.augmentation;
       match p.augmentation_data with
       | Some d -> check int "aug data len" 1 (String.length d)
       | None -> fail "expected augmentation data")
   | _ -> fail "expected EH_CIE"
+
+let test_write_eh_frame_zr_roundtrip () =
+  (* A spec-compliant CIE announces the FDE pointer encoding via 'R'. Byte 0x1b
+     is DW_EH_PE_pcrel | DW_EH_PE_sdata4, what GCC/Clang emit on x86-64. The
+     writer must encode initial_location/address_range to match that encoding,
+     and the reader must decode them back to the original values. *)
+  let aug_data = "\x1b" in
+  let cie : Dwarf.CallFrame.common_information_entry =
+    {
+      format = Dwarf.DWARF32;
+      length = Unsigned.UInt64.of_int 0;
+      cie_id = Unsigned.UInt64.of_int 0;
+      version = Unsigned.UInt8.of_int 1;
+      augmentation = "zR";
+      address_size = Unsigned.UInt8.of_int 8;
+      segment_selector_size = Unsigned.UInt8.of_int 0;
+      code_alignment_factor = Unsigned.UInt64.of_int 1;
+      data_alignment_factor = Signed.Int64.of_int (-8);
+      return_address_register = Unsigned.UInt64.of_int 16;
+      augmentation_length =
+        Some (Unsigned.UInt64.of_int (String.length aug_data));
+      augmentation_data = Some aug_data;
+      initial_instructions = "";
+      span =
+        { start = Unsigned.UInt64.of_int 0; size = Unsigned.UInt64.of_int 0 };
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let fde : Dwarf.CallFrame.frame_description_entry =
+    {
+      format = Dwarf.DWARF32;
+      length = Unsigned.UInt64.of_int 0;
+      cie_pointer = Unsigned.UInt64.of_int 0;
+      initial_location = Unsigned.UInt64.of_int 0x401000;
+      address_range = Unsigned.UInt64.of_int 0x80;
+      augmentation_length = Some (Unsigned.UInt64.of_int 0);
+      augmentation_data = Some "";
+      instructions = "";
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let buf = Buffer.create 128 in
+  Dwarf_write.write_eh_frame buf [ Eh_frame.EH_CIE cie; Eh_frame.EH_FDE fde ];
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let section = Eh_frame.parse_section cur (Buffer.length buf) in
+  let fde' =
+    match List.nth section.entries 1 with
+    | Eh_frame.EH_FDE p -> p
+    | _ -> fail "second should be FDE"
+  in
+  check int "initial_location" 0x401000
+    (Unsigned.UInt64.to_int fde'.initial_location);
+  check int "address_range" 0x80 (Unsigned.UInt64.to_int fde'.address_range)
 
 (* Stage 13: .debug_aranges tests *)
 
@@ -1925,10 +2007,10 @@ let test_write_aranges_set () =
   Dwarf_write.write_aranges_set buf aset;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let _fmt, _unit_length = Dwarf.parse_initial_length cur in
+  let _fmt, _unit_length = read_initial_length cur in
   let version = Object.Buffer.Read.u16 cur in
   check int "version" 2 (Unsigned.UInt16.to_int version);
-  let debug_info_off = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let debug_info_off = read_offset Dwarf.DWARF32 cur in
   check int "debug_info_offset" 0 (Unsigned.UInt64.to_int debug_info_off);
   let addr_sz = Object.Buffer.Read.u8 cur in
   check int "address_size" 8 (Unsigned.UInt8.to_int addr_sz);
@@ -1961,11 +2043,11 @@ let test_write_aranges_empty () =
   Dwarf_write.write_aranges_set buf aset;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let _fmt, unit_length = Dwarf.parse_initial_length cur in
+  let _fmt, unit_length = read_initial_length cur in
   let expected_body = 2 + 4 + 1 + 1 + 4 + (1 * 8 * 2) in
   check int "unit_length" expected_body (Unsigned.UInt64.to_int unit_length);
   let _version = Object.Buffer.Read.u16 cur in
-  let _off = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let _off = read_offset Dwarf.DWARF32 cur in
   let _addr_sz = Object.Buffer.Read.u8 cur in
   let _seg_sz = Object.Buffer.Read.u8 cur in
   for _ = 1 to 4 do
@@ -2044,13 +2126,13 @@ let test_write_debug_str_offsets () =
   check int "version" 5 (Unsigned.UInt16.to_int parsed_header.version);
   check int "padding" 0 (Unsigned.UInt16.to_int parsed_header.padding);
   (* Read the 4 offsets manually *)
-  let o0 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let o0 = read_offset Dwarf.DWARF32 cur in
   check int "offset 0" 0 (Unsigned.UInt64.to_int o0);
-  let o1 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let o1 = read_offset Dwarf.DWARF32 cur in
   check int "offset 1" 10 (Unsigned.UInt64.to_int o1);
-  let o2 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let o2 = read_offset Dwarf.DWARF32 cur in
   check int "offset 2" 25 (Unsigned.UInt64.to_int o2);
-  let o3 = Dwarf.read_offset_for_format Dwarf.DWARF32 cur in
+  let o3 = read_offset Dwarf.DWARF32 cur in
   check int "offset 3" 42 (Unsigned.UInt64.to_int o3)
 
 let test_write_debug_addr_segments () =
@@ -2165,7 +2247,7 @@ let test_write_debug_names_simple () =
   Dwarf_write.write_debug_names buf sec;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let _fmt, _unit_length = Dwarf.parse_initial_length cur in
+  let _fmt, _unit_length = read_initial_length cur in
   let version = Object.Buffer.Read.u16 cur in
   check int "version" 5 (Unsigned.UInt16.to_int version);
   let _padding = Object.Buffer.Read.u16 cur in
@@ -2880,6 +2962,46 @@ let test_debug_frame_dwarf64 () =
         (Unsigned.UInt64.to_int64 p.initial_location)
   | _ -> fail "second entry should be FDE"
 
+(* A DWARF64 FDE whose cie_pointer has all-ones low 32 bits must still be
+   classified as an FDE. The section parser must compare the full 8-byte
+   CIE_id against the 64-bit sentinel, not just its first four bytes -- those
+   alone equal the 32-bit sentinel and would mis-classify the FDE as a CIE. *)
+let test_debug_frame_dwarf64_fde_low32_allones () =
+  let cie =
+    { (Dwarf.CallFrame.create_default_cie ()) with format = Dwarf.DWARF64 }
+  in
+  let fde : Dwarf.CallFrame.frame_description_entry =
+    {
+      format = Dwarf.DWARF64;
+      length = Unsigned.UInt64.of_int 0;
+      cie_pointer = Unsigned.UInt64.of_int 0xFFFFFFFF;
+      initial_location = Unsigned.UInt64.of_int 0x401000;
+      address_range = Unsigned.UInt64.of_int 0x80;
+      augmentation_length = None;
+      augmentation_data = None;
+      instructions = "";
+      span = { start = Unsigned.UInt64.zero; size = Unsigned.UInt64.zero };
+      offset = Unsigned.UInt64.of_int 0;
+    }
+  in
+  let buf = Buffer.create 256 in
+  Dwarf_write.write_debug_frame buf
+    [ Dwarf.CallFrame.CIE cie; Dwarf.CallFrame.FDE fde ];
+  let obj_buf = object_buffer_of_buffer buf in
+  let cur = Object.Buffer.cursor obj_buf ~at:0 in
+  let section =
+    Dwarf.CallFrame.parse_debug_frame_section cur (Buffer.length buf)
+  in
+  check int "entry_count" 2 section.entry_count;
+  (match List.nth section.entries 0 with
+  | Dwarf.CallFrame.CIE _ -> ()
+  | _ -> fail "first entry should be CIE");
+  match List.nth section.entries 1 with
+  | Dwarf.CallFrame.FDE p ->
+      check int64 "fde cie_pointer preserved" 0xFFFFFFFFL
+        (Unsigned.UInt64.to_int64 p.cie_pointer)
+  | _ -> fail "second entry should be FDE (not mis-classified as CIE)"
+
 let test_aranges_dwarf64 () =
   let header : Dwarf.DebugAranges.header =
     {
@@ -2904,7 +3026,7 @@ let test_aranges_dwarf64 () =
   Dwarf_write.write_aranges_set buf aset;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  let fmt, _unit_length = Dwarf.parse_initial_length cur in
+  let fmt, _unit_length = read_initial_length cur in
   check
     (module struct
       type t = Dwarf.dwarf_format
@@ -2915,7 +3037,7 @@ let test_aranges_dwarf64 () =
     "format is DWARF64" Dwarf.DWARF64 fmt;
   let version = Object.Buffer.Read.u16 cur in
   check int "version" 2 (Unsigned.UInt16.to_int version);
-  let debug_info_off = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  let debug_info_off = read_offset Dwarf.DWARF64 cur in
   check int "debug_info_offset" 0 (Unsigned.UInt64.to_int debug_info_off);
   let addr_sz = Object.Buffer.Read.u8 cur in
   check int "address_size" 8 (Unsigned.UInt8.to_int addr_sz);
@@ -3001,11 +3123,11 @@ let test_debug_str_offsets_dwarf64 () =
       let pp fmt v = Format.fprintf fmt "%s" (Dwarf.string_of_dwarf_format v)
     end)
     "format is DWARF64" Dwarf.DWARF64 parsed_header.format;
-  let o0 = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  let o0 = read_offset Dwarf.DWARF64 cur in
   check int "offset 0" 0 (Unsigned.UInt64.to_int o0);
-  let o1 = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  let o1 = read_offset Dwarf.DWARF64 cur in
   check int "offset 1" 10 (Unsigned.UInt64.to_int o1);
-  let o2 = Dwarf.read_offset_for_format Dwarf.DWARF64 cur in
+  let o2 = read_offset Dwarf.DWARF64 cur in
   check int "offset 2" 25 (Unsigned.UInt64.to_int o2)
 
 let test_debug_macro_dwarf64 () =
@@ -3285,6 +3407,8 @@ let () =
           test_case "eh cie roundtrip" `Quick test_write_eh_cie_roundtrip;
           test_case "eh frame cie+fde" `Quick test_write_eh_frame_cie_fde;
           test_case "eh cie augmented" `Quick test_write_eh_cie_augmented;
+          test_case "eh frame zR roundtrip" `Quick
+            test_write_eh_frame_zr_roundtrip;
         ] );
       ( "aranges",
         [
@@ -3332,6 +3456,8 @@ let () =
           test_case "debug_info" `Quick test_debug_info_dwarf64;
           test_case "cie" `Quick test_cie_dwarf64;
           test_case "debug_frame" `Quick test_debug_frame_dwarf64;
+          test_case "debug_frame_fde_low32_allones" `Quick
+            test_debug_frame_dwarf64_fde_low32_allones;
           test_case "aranges" `Quick test_aranges_dwarf64;
           test_case "debug_addr" `Quick test_debug_addr_dwarf64;
           test_case "debug_str_offsets" `Quick test_debug_str_offsets_dwarf64;

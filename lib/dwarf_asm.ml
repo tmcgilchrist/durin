@@ -70,7 +70,7 @@ let emit_attribute_value fmt (value : Dwarf.DIE.attribute_value)
       match Unsigned.UInt8.to_int enc.address_size with
       | 4 -> emit_4byte fmt (Int64.to_int (Unsigned.UInt64.to_int64 a))
       | 8 -> emit_8byte fmt (Unsigned.UInt64.to_int64 a)
-      | n -> failwith (Printf.sprintf "Unsupported address size: %d" n))
+      | n -> fail (Printf.sprintf "Unsupported address size: %d" n))
   | DW_FORM_addrx, IndexedAddress (idx, _) ->
       emit_uleb128 fmt (Unsigned.UInt64.of_int idx)
   | DW_FORM_flag_present, Flag _ -> ()
@@ -80,7 +80,7 @@ let emit_attribute_value fmt (value : Dwarf.DIE.attribute_value)
   | DW_FORM_block, Block b ->
       emit_uleb128 fmt (Unsigned.UInt64.of_int (String.length b));
       String.iter (fun c -> emit_byte fmt (Char.code c)) b
-  | _ -> failwith "Unsupported form/value for asm"
+  | _ -> fail "Unsupported form/value for asm"
 
 let rec emit_die fmt (die : Dwarf.DIE.t) (enc : Dwarf.encoding)
     (lookup : int -> u64) =
@@ -102,7 +102,7 @@ let emit_abbrev_table fmt (abbrevs : Dwarf.abbrev array) =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       emit_uleb128 fmt a.code;
-      emit_uleb128 fmt (Dwarf.uint64_of_abbreviation_tag a.tag);
+      emit_uleb128 fmt (Dwarf.u64_of_abbreviation_tag a.tag);
       emit_byte fmt (if a.has_children then 1 else 0);
       List.iter
         (fun (spec : Dwarf.attr_spec) ->

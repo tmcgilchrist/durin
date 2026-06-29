@@ -572,7 +572,7 @@ let dump_debug_info filename =
 
             (* Get the abbreviation table for this compilation unit *)
             let abbrev_offset = header.debug_abbrev_offset in
-            let _, abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
+            let abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
 
             (* Get the root DIE for this compilation unit *)
             match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
@@ -850,7 +850,7 @@ let dump_debug_aranges filename =
             Printf.printf "< 0><0x%08x>  DW_TAG_compile_unit\n" cu_die_offset;
 
             (* Get abbreviation table for DIE parsing *)
-            let _, abbrev_table =
+            let abbrev_table =
               Dwarf.get_abbrev_table (Dwarf.create buffer)
                 (Dwarf.CompileUnit.header unit).debug_abbrev_offset
             in
@@ -994,7 +994,7 @@ let dump_debug_abbrev filename =
     | Some (_offset, _size) ->
         (* Create DWARF context and parse abbreviation table *)
         let dwarf = Dwarf.create buffer in
-        let _dwarf, abbrev_table =
+        let abbrev_table =
           Dwarf.get_abbrev_table dwarf (Unsigned.UInt64.of_int 0)
         in
 
@@ -1031,7 +1031,7 @@ let dump_debug_abbrev filename =
               else "DW_children_no"
             in
             let tag_str = Dwarf.string_of_abbreviation_tag abbrev.Dwarf.tag in
-            let tag_u64 = Dwarf.uint64_of_abbreviation_tag abbrev.Dwarf.tag in
+            let tag_u64 = Dwarf.u64_of_abbreviation_tag abbrev.Dwarf.tag in
 
             Format.printf "<%5d><0x%08x><code:%4d> @[<h>%-27s@] %s@." code_int
               !current_offset code_int tag_str children_str;
@@ -1610,9 +1610,7 @@ let dump_eh_frame filename =
             ~at:(Unsigned.UInt64.to_int section.sh_offset)
         in
         let section_size = Unsigned.UInt64.to_int section.sh_size in
-        let eh_frame_section =
-          Dwarf.EHFrame.parse_section cursor section_size
-        in
+        let eh_frame_section = Eh_frame.parse_section cursor section_size in
 
         (* Separate FDE and CIE entries for display *)
         let fde_entries = ref [] in
@@ -1621,170 +1619,161 @@ let dump_eh_frame filename =
         List.iter
           (fun entry ->
             match entry with
-            | Dwarf.EHFrame.EH_FDE fde -> fde_entries := fde :: !fde_entries
-            | Dwarf.EHFrame.EH_CIE cie -> cie_entries := cie :: !cie_entries)
+            | Eh_frame.EH_FDE fde -> fde_entries := fde :: !fde_entries
+            | Eh_frame.EH_CIE cie -> cie_entries := cie :: !cie_entries)
           eh_frame_section.entries;
 
         (* Display FDE entries first (system format) *)
         List.rev !fde_entries
         |> List.iteri (fun i fde ->
-               let open Dwarf.CallFrame in
-               let start_addr = Unsigned.UInt64.to_int64 fde.initial_location in
-               let end_addr =
-                 Int64.add start_addr
-                   (Unsigned.UInt64.to_int64 fde.address_range)
-               in
-               let cie_offset = Unsigned.UInt64.to_int fde.cie_pointer in
-               let fde_length = Unsigned.UInt64.to_int fde.length in
-               let fde_offset = Unsigned.UInt64.to_int fde.offset in
+            let open Dwarf.CallFrame in
+            let start_addr = Unsigned.UInt64.to_int64 fde.initial_location in
+            let end_addr =
+              Int64.add start_addr (Unsigned.UInt64.to_int64 fde.address_range)
+            in
+            let cie_offset = Unsigned.UInt64.to_int fde.cie_pointer in
+            let fde_length = Unsigned.UInt64.to_int fde.length in
+            let fde_offset = Unsigned.UInt64.to_int fde.offset in
 
-               Printf.printf "fde:\n";
+            Printf.printf "fde:\n";
 
-               (* Resolve function name from address range using symbol table *)
-               let function_name =
-                 resolve_function_name buffer start_addr end_addr
-               in
+            (* Resolve function name from address range using symbol table *)
+            let function_name =
+              resolve_function_name buffer start_addr end_addr
+            in
 
-               Printf.printf
-                 "<    %d><0x%08Lx:0x%08Lx><%s><cie offset 0x%08x::cie \
-                  index     0><fde offset 0x%08x length: 0x%08x>\n"
-                 i start_addr end_addr function_name cie_offset fde_offset
-                 fde_length;
-               (* Display actual augmentation data length *)
-               let aug_len =
-                 match fde.augmentation_length with
-                 | Some len -> Unsigned.UInt64.to_int len
-                 | None -> 0
-               in
-               Printf.printf "       <eh aug data len 0x%x>\n" aug_len;
+            Printf.printf
+              "<    %d><0x%08Lx:0x%08Lx><%s><cie offset 0x%08x::cie index     \
+               0><fde offset 0x%08x length: 0x%08x>\n"
+              i start_addr end_addr function_name cie_offset fde_offset
+              fde_length;
+            (* Display actual augmentation data length *)
+            let aug_len =
+              match fde.augmentation_length with
+              | Some len -> Unsigned.UInt64.to_int len
+              | None -> 0
+            in
+            Printf.printf "       <eh aug data len 0x%x>\n" aug_len;
 
-               (* Find the corresponding CIE for this FDE using library function *)
-               let corresponding_cie =
-                 match
-                   Dwarf.EHFrame.find_cie_for_fde eh_frame_section
-                     (Unsigned.UInt32.of_int
-                        (Unsigned.UInt64.to_int fde.cie_pointer))
-                     fde_offset
-                 with
-                 | Some cie -> cie
-                 | None ->
-                     (* Enhanced error reporting with diagnostic information *)
-                     let total_cies = List.length !cie_entries in
-                     Printf.eprintf
-                       "Warning: No CIE found for FDE %d (cie_pointer=0x%x, \
-                        fde_offset=0x%x)\n"
-                       i cie_offset fde_offset;
-                     Printf.eprintf
-                       "  Available CIEs: %d, Address range: 0x%08Lx-0x%08Lx\n"
-                       total_cies start_addr end_addr;
-                     Printf.eprintf "  Using default x86_64 CIE as fallback\n";
-                     Dwarf.CallFrame.create_default_cie ()
-               in
+            (* Find the corresponding CIE for this FDE using library function *)
+            let corresponding_cie =
+              match
+                Eh_frame.find_cie_for_fde eh_frame_section
+                  (Unsigned.UInt32.of_int
+                     (Unsigned.UInt64.to_int fde.cie_pointer))
+                  fde_offset
+              with
+              | Some cie -> cie
+              | None ->
+                  (* Enhanced error reporting with diagnostic information *)
+                  let total_cies = List.length !cie_entries in
+                  Printf.eprintf
+                    "Warning: No CIE found for FDE %d (cie_pointer=0x%x, \
+                     fde_offset=0x%x)\n"
+                    i cie_offset fde_offset;
+                  Printf.eprintf
+                    "  Available CIEs: %d, Address range: 0x%08Lx-0x%08Lx\n"
+                    total_cies start_addr end_addr;
+                  Printf.eprintf "  Using default x86_64 CIE as fallback\n";
+                  Dwarf.CallFrame.create_default_cie ()
+            in
 
-               (* Parse CFI instructions for this FDE with enhanced parser *)
-               let code_alignment =
-                 Unsigned.UInt64.to_int64
-                   corresponding_cie.code_alignment_factor
-               in
-               let data_alignment =
-                 Signed.Int64.to_int64 corresponding_cie.data_alignment_factor
-               in
+            (* Parse CFI instructions for this FDE with enhanced parser *)
+            let code_alignment =
+              Unsigned.UInt64.to_int64 corresponding_cie.code_alignment_factor
+            in
+            let data_alignment =
+              Signed.Int64.to_int64 corresponding_cie.data_alignment_factor
+            in
 
-               (* Get proper initial state from CIE instead of hardcoded fallback *)
-               let initial_state =
-                 Dwarf.CallFrame.parse_initial_state corresponding_cie
-               in
+            (* Get proper initial state from CIE instead of hardcoded fallback *)
+            let initial_state =
+              Dwarf.CallFrame.parse_initial_state corresponding_cie
+            in
 
-               (* Parse FDE instructions with proper initial state *)
-               let state_changes =
-                 parse_cfi_instructions_with_initial_state initial_state
-                   fde.instructions code_alignment data_alignment
-               in
+            (* Parse FDE instructions with proper initial state *)
+            let state_changes =
+              parse_cfi_instructions_with_initial_state initial_state
+                fde.instructions code_alignment data_alignment
+            in
 
-               if List.length state_changes > 0 then
-                 List.iter
-                   (fun (pc_offset, cfi_state) ->
-                     let pc_addr = Int64.add start_addr pc_offset in
-                     let state_desc = format_cfi_state cfi_state in
-                     Printf.printf "        0x%08Lx: %s\n" pc_addr state_desc)
-                   state_changes
-               else
-                 (* Show initial state if no state changes occur *)
-                 let initial_desc = format_cfi_state initial_state in
-                 Printf.printf "        0x%08Lx: %s\n" start_addr initial_desc);
+            if List.length state_changes > 0 then
+              List.iter
+                (fun (pc_offset, cfi_state) ->
+                  let pc_addr = Int64.add start_addr pc_offset in
+                  let state_desc = format_cfi_state cfi_state in
+                  Printf.printf "        0x%08Lx: %s\n" pc_addr state_desc)
+                state_changes
+            else
+              (* Show initial state if no state changes occur *)
+              let initial_desc = format_cfi_state initial_state in
+              Printf.printf "        0x%08Lx: %s\n" start_addr initial_desc);
 
         (* Display CIE entries (system format) *)
         Printf.printf "\n cie:\n";
         List.rev !cie_entries
         |> List.iteri (fun i cie ->
-               let open Dwarf.CallFrame in
-               Printf.printf "<    %d> version      %d\n" i
-                 (Unsigned.UInt8.to_int cie.version);
-               Printf.printf "  cie section offset    %d 0x%08x\n" i (i * 32);
-               (* Placeholder offset *)
-               Printf.printf "  augmentation                  %s\n"
-                 cie.augmentation;
-               Printf.printf "  code_alignment_factor         %Ld\n"
-                 (Unsigned.UInt64.to_int64 cie.code_alignment_factor);
-               Printf.printf "  data_alignment_factor         %Ld\n"
-                 (Signed.Int64.to_int64 cie.data_alignment_factor);
-               Printf.printf "  return_address_register       %Ld\n"
-                 (Unsigned.UInt64.to_int64 cie.return_address_register);
+            let open Dwarf.CallFrame in
+            Printf.printf "<    %d> version      %d\n" i
+              (Unsigned.UInt8.to_int cie.version);
+            Printf.printf "  cie section offset    %d 0x%08x\n" i (i * 32);
+            (* Placeholder offset *)
+            Printf.printf "  augmentation                  %s\n"
+              cie.augmentation;
+            Printf.printf "  code_alignment_factor         %Ld\n"
+              (Unsigned.UInt64.to_int64 cie.code_alignment_factor);
+            Printf.printf "  data_alignment_factor         %Ld\n"
+              (Signed.Int64.to_int64 cie.data_alignment_factor);
+            Printf.printf "  return_address_register       %Ld\n"
+              (Unsigned.UInt64.to_int64 cie.return_address_register);
 
-               (* Show augmentation data if present *)
-               (match cie.augmentation_data with
-               | Some data ->
-                   Printf.printf "  eh aug data len                0x%x bytes "
-                     (String.length data);
-                   (* Parse and display augmentation data bytes *)
-                   if String.length data > 0 then (
-                     for i = 0 to String.length data - 1 do
-                       Printf.printf "0x%02x " (Char.code data.[i])
-                     done;
-                     Printf.printf "\n";
-                     (* Decode augmentation string meanings for common types *)
-                     match cie.augmentation with
-                     | "zR" when String.length data >= 1 ->
-                         let encoding = Char.code data.[0] in
-                         let encoding_type =
-                           Dwarf.EHFrameHdr.encoding_of_u8 encoding
-                         in
-                         let encoding_desc =
-                           match encoding_type with
-                           | Dwarf.EHFrameHdr.DW_EH_PE_pcrel ->
-                               "PC-relative signed 4-byte"
-                           | DW_EH_PE_datarel -> "data-relative signed 4-byte"
-                           | DW_EH_PE_sdata4 -> "signed 4-byte"
-                           | _ -> "unknown encoding"
-                         in
-                         Printf.printf "    FDE encoding: %s (0x%02x)\n"
-                           encoding_desc encoding
-                     | _ -> ())
-                   else Printf.printf "\n"
-               | None -> Printf.printf "  eh aug data len                0x0\n");
+            (* Show augmentation data if present *)
+            (match cie.augmentation_data with
+            | Some data ->
+                Printf.printf "  eh aug data len                0x%x bytes "
+                  (String.length data);
+                (* Parse and display augmentation data bytes *)
+                if String.length data > 0 then (
+                  for i = 0 to String.length data - 1 do
+                    Printf.printf "0x%02x " (Char.code data.[i])
+                  done;
+                  Printf.printf "\n";
+                  (* Decode augmentation string meanings for common types *)
+                  match cie.augmentation with
+                  | "zR" when String.length data >= 1 ->
+                      let encoding = Char.code data.[0] in
+                      let encoding_type = Eh_encoding.encoding_of_u8 encoding in
+                      let encoding_desc =
+                        Eh_encoding.string_of_encoding encoding_type
+                      in
+                      Printf.printf "    FDE encoding: %s (0x%02x)\n"
+                        encoding_desc encoding
+                  | _ -> ())
+                else Printf.printf "\n"
+            | None -> Printf.printf "  eh aug data len                0x0\n");
 
-               Printf.printf "  bytes of initial instructions %d\n"
-                 (String.length cie.initial_instructions);
-               Printf.printf "  cie length                    %Ld\n"
-                 (Unsigned.UInt64.to_int64 cie.length);
+            Printf.printf "  bytes of initial instructions %d\n"
+              (String.length cie.initial_instructions);
+            Printf.printf "  cie length                    %Ld\n"
+              (Unsigned.UInt64.to_int64 cie.length);
 
-               if String.length cie.initial_instructions > 0 then (
-                 Printf.printf "  initial instructions\n";
-                 (* Parse CIE initial instructions using enhanced parser *)
-                 let code_alignment =
-                   Unsigned.UInt64.to_int64 cie.code_alignment_factor
-                 in
-                 let data_alignment =
-                   Signed.Int64.to_int64 cie.data_alignment_factor
-                 in
-                 let initial_rules =
-                   Dwarf.CallFrame.parse_cfi_instructions
-                     cie.initial_instructions code_alignment data_alignment
-                 in
-                 List.iteri
-                   (fun idx (_pc_offset, rule_desc) ->
-                     Printf.printf "   %d %s\n" idx rule_desc)
-                   initial_rules));
+            if String.length cie.initial_instructions > 0 then (
+              Printf.printf "  initial instructions\n";
+              (* Parse CIE initial instructions using enhanced parser *)
+              let code_alignment =
+                Unsigned.UInt64.to_int64 cie.code_alignment_factor
+              in
+              let data_alignment =
+                Signed.Int64.to_int64 cie.data_alignment_factor
+              in
+              let initial_rules =
+                Dwarf.CallFrame.parse_cfi_instructions cie.initial_instructions
+                  code_alignment data_alignment
+              in
+              List.iteri
+                (fun idx (_pc_offset, rule_desc) ->
+                  Printf.printf "   %d %s\n" idx rule_desc)
+                initial_rules));
 
         (* Add diagnostic summary for multiple CIE handling *)
         if List.length !cie_entries > 1 then (
@@ -1848,17 +1837,10 @@ let dump_eh_frame_hdr filename =
         let section_addr = eh_frame_hdr_section.sh_addr in
 
         let cursor = Object.Buffer.cursor buffer ~at:section_offset in
-        let eh_frame_hdr = Dwarf.EHFrameHdr.parse_section cursor section_addr in
+        let eh_frame_hdr = Eh_frame_header.parse_section cursor section_addr in
 
         (* Helper function to describe encoding *)
-        let describe_encoding = function
-          | Dwarf.EHFrameHdr.DW_EH_PE_absptr -> "absolute pointer"
-          | DW_EH_PE_omit -> "omit"
-          | DW_EH_PE_udata4 -> "unsigned 4-byte"
-          | DW_EH_PE_pcrel -> "PC-relative signed 4-byte"
-          | DW_EH_PE_datarel -> "data-relative signed 4-byte"
-          | _ -> "other"
-        in
+        let describe_encoding = Eh_encoding.string_of_encoding in
 
         (* Display header information *)
         Printf.printf "version: %d\n"
@@ -1884,7 +1866,7 @@ let dump_eh_frame_hdr filename =
           "--------------------------------------------------";
         Array.iteri
           (fun i entry ->
-            let open Dwarf.EHFrameHdr in
+            let open Eh_frame_header in
             let pc_addr = Unsigned.UInt64.to_int64 entry.initial_location in
             let fde_offset = Unsigned.UInt64.to_int64 entry.fde_address in
             let description =

@@ -8,7 +8,7 @@ let test_eh_frame_parse_succeeds binary_path =
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let size = Unsigned.UInt64.to_int section.sh_size in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let parsed = Dwarf.EHFrame.parse_section cur size in
+      let parsed = Eh_frame.parse_section cur size in
       check bool "has entries" true (List.length parsed.entries > 0)
 
 let test_eh_frame_has_cie binary_path =
@@ -18,10 +18,10 @@ let test_eh_frame_has_cie binary_path =
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let size = Unsigned.UInt64.to_int section.sh_size in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let parsed = Dwarf.EHFrame.parse_section cur size in
+      let parsed = Eh_frame.parse_section cur size in
       let has_cie =
         List.exists
-          (fun e -> match e with Dwarf.EHFrame.EH_CIE _ -> true | _ -> false)
+          (fun e -> match e with Eh_frame.EH_CIE _ -> true | _ -> false)
           parsed.entries
       in
       check bool "has at least one CIE" true has_cie
@@ -33,10 +33,10 @@ let test_eh_frame_has_fde binary_path =
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let size = Unsigned.UInt64.to_int section.sh_size in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let parsed = Dwarf.EHFrame.parse_section cur size in
+      let parsed = Eh_frame.parse_section cur size in
       let has_fde =
         List.exists
-          (fun e -> match e with Dwarf.EHFrame.EH_FDE _ -> true | _ -> false)
+          (fun e -> match e with Eh_frame.EH_FDE _ -> true | _ -> false)
           parsed.entries
       in
       check bool "has at least one FDE" true has_fde
@@ -48,11 +48,11 @@ let test_eh_frame_fde_fields_valid binary_path =
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let size = Unsigned.UInt64.to_int section.sh_size in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let parsed = Dwarf.EHFrame.parse_section cur size in
+      let parsed = Eh_frame.parse_section cur size in
       List.iter
         (fun e ->
           match e with
-          | Dwarf.EHFrame.EH_FDE fde ->
+          | Eh_frame.EH_FDE fde ->
               check bool "address_range > 0" true
                 (Unsigned.UInt64.to_int64 fde.address_range > 0L)
           | _ -> ())
@@ -65,11 +65,11 @@ let test_eh_frame_cie_fields_valid binary_path =
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let size = Unsigned.UInt64.to_int section.sh_size in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let parsed = Dwarf.EHFrame.parse_section cur size in
+      let parsed = Eh_frame.parse_section cur size in
       List.iter
         (fun e ->
           match e with
-          | Dwarf.EHFrame.EH_CIE cie ->
+          | Eh_frame.EH_CIE cie ->
               check bool "code_alignment_factor > 0" true
                 (Unsigned.UInt64.to_int64 cie.code_alignment_factor > 0L);
               check bool "return_address_register reasonable" true
@@ -83,7 +83,7 @@ let test_eh_frame_hdr_parse_succeeds binary_path =
   | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let hdr = Dwarf.EHFrameHdr.parse_section cur section.sh_addr in
+      let hdr = Eh_frame_header.parse_section cur section.sh_addr in
       check int "version is 1" 1 (Unsigned.UInt8.to_int hdr.version)
 
 let test_eh_frame_hdr_has_entries binary_path =
@@ -92,7 +92,7 @@ let test_eh_frame_hdr_has_entries binary_path =
   | Some (buffer, section) ->
       let offset = Unsigned.UInt64.to_int section.sh_offset in
       let cur = Object.Buffer.cursor ~at:offset buffer in
-      let hdr = Dwarf.EHFrameHdr.parse_section cur section.sh_addr in
+      let hdr = Eh_frame_header.parse_section cur section.sh_addr in
       check bool "fde_count > 0" true (Unsigned.UInt32.to_int hdr.fde_count > 0);
       check bool "search_table non-empty" true
         (Array.length hdr.search_table > 0)

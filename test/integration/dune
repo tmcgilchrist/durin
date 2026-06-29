@@ -1,18 +1,43 @@
-(test
- (name test_debug_line)
+; Integration tests: build binaries with the system toolchain (see the rules
+; in ../fixtures/dune) and verify durin can read them back. They are sensitive
+; to the toolchain version, so they run under the `integration` alias rather
+; than `runtest`:
+;   dune build @integration
+
+(executables
+ (names
+  test_debug_line
+  test_dwarf4_integration
+  test_debug_macro_integration
+  test_debug_aranges_integration
+  test_debug_str_integration
+  test_debug_line_str_integration
+  test_debug_loclists_integration
+  test_debug_rnglists_integration
+  test_debug_str_offsets_integration
+  test_debug_addr_integration
+  test_debug_frame_integration
+  test_eh_frame_integration
+  test_debug_line_integration
+  test_debug_info_integration
+  test_debug_abbrev_integration
+  test_debug_pubnames_integration
+  test_debug_names_integration)
+ (libraries durin object alcotest cmdliner test_helpers))
+
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world)
- (libraries durin object alcotest cmdliner)
- (build_if
+ (enabled_if
   (and
    (= %{system} "macosx")
    (= %{architecture} "arm64")))
  (action
   (run %{exe:test_debug_line.exe} --binary %{dep:../fixtures/hello_world})))
 
-(test
- (name test_dwarf4_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/dwarf4_linux)
- (libraries durin object alcotest cmdliner)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -23,10 +48,9 @@
    --binary
    %{dep:../fixtures/dwarf4_linux})))
 
-(test
- (name test_debug_macro_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/test_macros_linux)
- (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -37,10 +61,9 @@
    --binary
    %{dep:../fixtures/test_macros_linux})))
 
-(test
- (name test_debug_aranges_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_linux)
- (libraries durin object alcotest cmdliner)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -51,10 +74,9 @@
    --binary
    %{dep:../fixtures/hello_world_linux})))
 
-(test
- (name test_debug_str_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_linux)
- (libraries durin object alcotest cmdliner)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -65,10 +87,9 @@
    --binary
    %{dep:../fixtures/hello_world_linux})))
 
-(test
- (name test_debug_line_str_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_linux)
- (libraries durin object alcotest cmdliner)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -79,10 +100,9 @@
    --binary
    %{dep:../fixtures/hello_world_linux})))
 
-(test
- (name test_debug_loclists_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/loclists_rnglists_linux)
- (libraries durin object alcotest cmdliner)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -93,10 +113,9 @@
    --binary
    %{dep:../fixtures/loclists_rnglists_linux})))
 
-(test
- (name test_debug_rnglists_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/loclists_rnglists_linux)
- (libraries durin object alcotest cmdliner)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -107,10 +126,9 @@
    --binary
    %{dep:../fixtures/loclists_rnglists_linux})))
 
-(test
- (name test_debug_str_offsets_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_clang_linux)
- (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -121,10 +139,9 @@
    --binary
    %{dep:../fixtures/hello_world_clang_linux})))
 
-(test
- (name test_debug_addr_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_clang_linux)
- (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -135,10 +152,9 @@
    --binary
    %{dep:../fixtures/hello_world_clang_linux})))
 
-(test
- (name test_debug_frame_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_debug_frame_linux)
- (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -149,10 +165,9 @@
    --binary
    %{dep:../fixtures/hello_world_debug_frame_linux})))
 
-(test
- (name test_eh_frame_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_linux)
- (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -163,10 +178,9 @@
    --binary
    %{dep:../fixtures/hello_world_linux})))
 
-(test
- (name test_debug_line_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_linux)
- (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -177,10 +191,9 @@
    --binary
    %{dep:../fixtures/hello_world_linux})))
 
-(test
- (name test_debug_info_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_linux)
- (libraries durin object alcotest cmdliner)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -191,10 +204,9 @@
    --binary
    %{dep:../fixtures/hello_world_linux})))
 
-(test
- (name test_debug_abbrev_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_linux)
- (libraries durin object alcotest cmdliner)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -205,10 +217,9 @@
    --binary
    %{dep:../fixtures/hello_world_linux})))
 
-(test
- (name test_debug_pubnames_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_pubnames_linux)
- (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")
@@ -219,10 +230,9 @@
    --binary
    %{dep:../fixtures/hello_world_pubnames_linux})))
 
-(test
- (name test_debug_names_integration)
+(rule
+ (alias integration)
  (deps ../fixtures/hello_world_debug_names_linux)
- (libraries durin object alcotest cmdliner test_helpers)
  (enabled_if
   (and
    (= %{system} "linux")

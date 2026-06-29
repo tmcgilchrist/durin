@@ -306,7 +306,7 @@ let test_macro_entry_type_strings () =
 
 let test_macro_entry_type_of_u8 () =
   let check_type byte expected_str =
-    let t = Dwarf.macro_info_entry_type_of_u8 (Unsigned.UInt8.of_int byte) in
+    let t = Dwarf.macro_info_entry_type (Unsigned.UInt8.of_int byte) in
     check string
       (Printf.sprintf "byte 0x%02x" byte)
       expected_str

@@ -58,9 +58,7 @@ let test_matches_get_abbrev_table binary_path =
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) -> (
       let h = Dwarf.CompileUnit.header cu in
-      let _ctx, via_context =
-        Dwarf.get_abbrev_table ctx h.debug_abbrev_offset
-      in
+      let via_context = Dwarf.get_abbrev_table ctx h.debug_abbrev_offset in
       let via_module =
         Dwarf.DebugAbbrev.parse buffer
           (Unsigned.UInt32.of_int
