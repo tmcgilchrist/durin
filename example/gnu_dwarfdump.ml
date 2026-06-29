@@ -319,7 +319,7 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
                         try
                           let addr_base_offset = Unsigned.UInt64.of_int 0x10 in
                           match
-                            Dwarf.lookup_address_in_debug_addr buffer
+                            Dwarf.lookup_address_in_debug_addr dwarf
                               addr_base_offset index
                           with
                           | Some addr -> addr
@@ -364,7 +364,7 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
               try
                 let addr_base_offset = Unsigned.UInt64.of_int 0x10 in
                 match
-                  Dwarf.lookup_address_in_debug_addr buffer addr_base_offset
+                  Dwarf.lookup_address_in_debug_addr dwarf addr_base_offset
                     index
                 with
                 | Some addr -> addr
@@ -668,7 +668,7 @@ let dump_debug_str filename =
             else
               Printf.printf "name at offset 0x%08x, length %4d is ''\n"
                 entry.offset 0)
-          str_table.entries;
+          (Lazy.force str_table.entries);
         Printf.printf "\n"
   with
   | Sys_error msg ->
@@ -789,7 +789,7 @@ let dump_debug_line_str filename =
             else
               Printf.printf "name at offset 0x%08x, length %4d is ''\n"
                 entry.offset 0)
-          line_str_table.entries;
+          (Lazy.force line_str_table.entries);
         Printf.printf "\n"
   with
   | Sys_error msg ->
@@ -1226,7 +1226,7 @@ let dump_debug_names filename =
                             Array.find_opt
                               (fun entry ->
                                 entry.Dwarf.DebugStr.offset = str_offset)
-                              str_table.entries
+                              (Lazy.force str_table.entries)
                           in
                           match matching_entry with
                           | Some entry -> entry.content

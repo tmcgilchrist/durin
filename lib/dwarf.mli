@@ -1472,14 +1472,15 @@ val resolve_string_index : Object.Buffer.t -> dwarf_format -> int -> string
 (** Resolve a string index to its actual string value using debug_str sections
 *)
 
-val lookup_address_in_debug_addr : Object.Buffer.t -> u64 -> int -> u64 option
-(** Look up an address by index in the debug_addr section at given offset.
-    Returns Some address if found, None if not found or section missing *)
+val lookup_address_in_debug_addr : t -> u64 -> int -> u64 option
+(** Look up an address by index in the [.debug_addr] section. The parsed
+    contribution is cached on the context, so repeated lookups do not re-parse.
+    Returns [Some address] if found, [None] if not found or section missing. *)
 
-val resolve_address_index : Object.Buffer.t -> int -> u64 -> u64
-(** Resolve an address index to its actual address value using debug_addr
-    section. Returns the resolved address if found, or the index value as
-    fallback *)
+val resolve_address_index : t -> int -> u64 -> u64
+(** Resolve an address index to its actual address value using [.debug_addr]
+    (cached on the context). Returns the resolved address if found, or the index
+    value as fallback. *)
 
 type str_resolver = {
   string_at : int -> string;
@@ -2929,20 +2930,18 @@ module DebugStr : sig
   }
   (** Individual string entry with location and content information. *)
 
-  (* TODO Can we load this on-demand? All the strings in the section will
-     be very large! *)
   type t = {
-    entries : string_entry array;  (** Array of all strings in the section *)
+    entries : string_entry array Lazy.t;
+        (** All strings in the section, decoded only when forced with
+            [Lazy.force]. *)
     total_size : int;  (** Total size of the debug_str section *)
   }
   (** Complete parsed debug_str section *)
 
   val parse : Object.Buffer.t -> t option
-  (** Parse the complete .debug_str section from buffer.
-
-      @param buffer Object buffer containing the DWARF data
-      @return Optional parsed string table, None if section not found
-      @raise Parse_error if section format is invalid *)
+  (** Locate the .debug_str section in [buffer]. Returns [None] if the section
+      is absent; otherwise [Some t] whose [entries] are decoded lazily on first
+      force (so this call itself does not scan the section). *)
 end
 
 (** Line string table parsing for .debug_line_str section.
@@ -2962,17 +2961,17 @@ module DebugLineStr : sig
   (** Individual string entry with location and content information. *)
 
   type t = {
-    entries : string_entry array;  (** Array of all strings in the section *)
+    entries : string_entry array Lazy.t;
+        (** All strings in the section, decoded only when forced with
+            [Lazy.force]. *)
     total_size : int;  (** Total size of the debug_line_str section *)
   }
   (** Complete parsed debug_line_str section *)
 
   val parse : Object.Buffer.t -> t option
-  (** Parse the complete .debug_line_str section from buffer.
-
-      @param buffer Object buffer containing the DWARF data
-      @return Optional parsed line string table, None if section not found
-      @raise Parse_error if section format is invalid *)
+  (** Locate the .debug_line_str section in [buffer]. Returns [None] if the
+      section is absent; otherwise [Some t] whose [entries] are decoded lazily
+      on first force (so this call itself does not scan the section). *)
 
   val iter : (string_entry -> unit) -> t -> unit
   (** Iterate over every string entry in the section. *)
@@ -3225,9 +3224,10 @@ module DebugAddr : sig
         let first_address = addr_table.entries.(0).address
       ]}
 
-      Performance note: This function parses the entire contribution eagerly.
-      For large address tables, consider lazy parsing if only specific indices
-      are needed. TODO Do we have a lazy parsing option in the library?
+      Performance note: this stateless parse decodes the entire contribution
+      eagerly. To resolve individual indices without re-parsing, use the
+      context-level {!resolve_address_index} / {!lookup_address_in_debug_addr},
+      which parse the contribution once and cache it on the context.
 
       Architecture note: The [address_size] field determines the width of
       addresses read from the section. This allows the same DWARF data to
@@ -3381,15 +3381,15 @@ module DebugLoclists : sig
   type location_list = { entries : location_entry list }
   (** A single decoded location list — the entries found at one offset. *)
 
-  (* TODO [parse] populates [lists] eagerly; consider lazy parsing for large
-     sections. *)
   type loclists_section = {
     header : header;
     offset_table : u64 array;  (** Section-relative offset of each list. *)
-    lists : location_list array;  (** The decoded lists, one per offset. *)
+    lists : location_list array Lazy.t;
+        (** All lists, decoded only when forced with [Lazy.force]. For one list
+            without forcing them all, see {!resolve_location_list}. *)
   }
   (** A parsed [.debug_loclists] contribution: its [header], the [offset_table]
-      indexing each list, and the decoded [lists] themselves. *)
+      indexing each list, and the [lists] themselves (forced on demand). *)
 
   val parse_header : Object.Buffer.cursor -> header
   (** Parse the header of a loclists contribution.
@@ -3463,15 +3463,15 @@ module DebugRnglists : sig
   type range_list = { entries : range_entry list }
   (** A single decoded range list — the entries found at one offset. *)
 
-  (* TODO [parse] populates [lists] eagerly; consider lazy parsing for large
-     sections. *)
   type rnglists_section = {
     header : header;
     offset_table : u64 array;  (** Section-relative offset of each list. *)
-    lists : range_list array;  (** The decoded lists, one per offset. *)
+    lists : range_list array Lazy.t;
+        (** All lists, decoded only when forced with [Lazy.force]. For one list
+            without forcing them all, see {!resolve_range_list}. *)
   }
   (** A parsed [.debug_rnglists] contribution: its [header], the [offset_table]
-      indexing each list, and the decoded [lists] themselves. *)
+      indexing each list, and the [lists] themselves (forced on demand). *)
 
   val parse_header : Object.Buffer.cursor -> header
   (** Parse the header of a rnglists contribution.
@@ -3568,6 +3568,8 @@ module SplitDwarf : sig
         (** Buffer containing the .dwo or .dwp file *)
     parent_buffer : Object.Buffer.t;
         (** Buffer containing the main executable *)
+    parent_ : t;
+        (** Context over [parent_buffer], used for cached address resolution. *)
     dwo_id : u64;  (** DWO identifier matching skeleton and split units *)
     contributions : (dwarf_section * int * int) list;
         (** Section contributions as (section, offset, size) from .dwp index *)

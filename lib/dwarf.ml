@@ -2829,43 +2829,45 @@ module DebugStr = struct
   }
 
   type t = {
-    entries : string_entry array;  (** All strings in the section *)
+    entries : string_entry array Lazy.t;
+        (* All strings, decoded only when forced with [Lazy.force]. *)
     total_size : int;  (** Total size of the section in bytes *)
   }
 
   let parse buffer : t option =
     match find_debug_section_by_type buffer Debug_str with
     | None -> None
-    | Some (section_offset, section_size) -> (
-        try
-          let section_start = Unsigned.UInt64.to_int section_offset in
-          let section_end =
-            section_start + Unsigned.UInt64.to_int section_size
-          in
-          let cursor = Object.Buffer.cursor buffer ~at:section_start in
-
-          (* Single pass: collect strings using list accumulation *)
-          let rec collect_strings acc current_pos string_offset =
-            if current_pos >= section_end then List.rev acc
-            else
-              match Object.Buffer.Read.zero_string cursor () with
-              | Some str ->
-                  let str_len = String.length str in
-                  let entry =
-                    { offset = string_offset; length = str_len; content = str }
-                  in
-                  let next_pos = current_pos + str_len + 1 in
-                  (* +1 for null terminator *)
-                  let next_offset = string_offset + str_len + 1 in
-                  collect_strings (entry :: acc) next_pos next_offset
-              | None -> List.rev acc (* Break on read error *)
-          in
-
-          let string_list = collect_strings [] section_start 0 in
-          let entries = Array.of_list string_list in
-
-          Some { entries; total_size = Unsigned.UInt64.to_int section_size }
-        with _ -> None)
+    | Some (section_offset, section_size) ->
+        let section_start = Unsigned.UInt64.to_int section_offset in
+        let section_end = section_start + Unsigned.UInt64.to_int section_size in
+        let entries =
+          lazy
+            (try
+               let cursor = Object.Buffer.cursor buffer ~at:section_start in
+               (* Single pass: collect strings using list accumulation *)
+               let rec collect_strings acc current_pos string_offset =
+                 if current_pos >= section_end then List.rev acc
+                 else
+                   match Object.Buffer.Read.zero_string cursor () with
+                   | Some str ->
+                       let str_len = String.length str in
+                       let entry =
+                         {
+                           offset = string_offset;
+                           length = str_len;
+                           content = str;
+                         }
+                       in
+                       let next_pos = current_pos + str_len + 1 in
+                       (* +1 for null terminator *)
+                       let next_offset = string_offset + str_len + 1 in
+                       collect_strings (entry :: acc) next_pos next_offset
+                   | None -> List.rev acc (* Break on read error *)
+               in
+               Array.of_list (collect_strings [] section_start 0)
+             with _ -> [||])
+        in
+        Some { entries; total_size = Unsigned.UInt64.to_int section_size }
 end
 
 (** Debug Line String Tables (.debug_line_str section) - DWARF 5 Section 7.26 *)
@@ -2877,53 +2879,55 @@ module DebugLineStr = struct
   }
 
   type t = {
-    entries : string_entry array;  (** All strings in the section *)
+    entries : string_entry array Lazy.t;
+        (* All strings, decoded only when forced with [Lazy.force]. *)
     total_size : int;  (** Total size of the section in bytes *)
   }
 
   let parse buffer : t option =
     match find_debug_section_by_type buffer Debug_line_str with
     | None -> None
-    | Some (section_offset, section_size) -> (
-        try
-          let section_start = Unsigned.UInt64.to_int section_offset in
-          let section_end =
-            section_start + Unsigned.UInt64.to_int section_size
-          in
-          let cursor = Object.Buffer.cursor buffer ~at:section_start in
+    | Some (section_offset, section_size) ->
+        let section_start = Unsigned.UInt64.to_int section_offset in
+        let section_end = section_start + Unsigned.UInt64.to_int section_size in
+        let entries =
+          lazy
+            (try
+               let cursor = Object.Buffer.cursor buffer ~at:section_start in
+               (* Single pass: collect strings using list accumulation *)
+               let rec collect_strings acc current_pos string_offset =
+                 if current_pos >= section_end then List.rev acc
+                 else
+                   match Object.Buffer.Read.zero_string cursor () with
+                   | Some str ->
+                       let str_len = String.length str in
+                       let entry =
+                         {
+                           offset = string_offset;
+                           length = str_len;
+                           content = str;
+                         }
+                       in
+                       let next_pos = current_pos + str_len + 1 in
+                       (* +1 for null terminator *)
+                       let next_offset = string_offset + str_len + 1 in
+                       collect_strings (entry :: acc) next_pos next_offset
+                   | None -> List.rev acc (* Break on read error *)
+               in
+               Array.of_list (collect_strings [] section_start 0)
+             with exn ->
+               Printf.eprintf "Error parsing debug_line_str section: %s\n"
+                 (Printexc.to_string exn);
+               [||])
+        in
+        Some { entries; total_size = Unsigned.UInt64.to_int section_size }
 
-          (* Single pass: collect strings using list accumulation *)
-          let rec collect_strings acc current_pos string_offset =
-            if current_pos >= section_end then List.rev acc
-            else
-              match Object.Buffer.Read.zero_string cursor () with
-              | Some str ->
-                  let str_len = String.length str in
-                  let entry =
-                    { offset = string_offset; length = str_len; content = str }
-                  in
-                  let next_pos = current_pos + str_len + 1 in
-                  (* +1 for null terminator *)
-                  let next_offset = string_offset + str_len + 1 in
-                  collect_strings (entry :: acc) next_pos next_offset
-              | None -> List.rev acc (* Break on read error *)
-          in
-
-          let string_list = collect_strings [] section_start 0 in
-          let entries = Array.of_list string_list in
-
-          Some { entries; total_size = Unsigned.UInt64.to_int section_size }
-        with exn ->
-          Printf.eprintf "Error parsing debug_line_str section: %s\n"
-            (Printexc.to_string exn);
-          None)
-
-  let iter f debug_line_str = Array.iter f debug_line_str.entries
+  let iter f debug_line_str = Array.iter f (Lazy.force debug_line_str.entries)
 
   let find_string_at_offset debug_line_str offset =
     Array.find_map
       (fun entry -> if entry.offset = offset then Some entry.content else None)
-      debug_line_str.entries
+      (Lazy.force debug_line_str.entries)
 end
 
 (** Address Tables (.debug_addr section) - DWARF 5 Section 7.27 *)
@@ -3282,7 +3286,8 @@ module DebugLoclists = struct
   type loclists_section = {
     header : header;
     offset_table : u64 array;
-    lists : location_list array;
+    lists : location_list array Lazy.t;
+        (* All lists, decoded only when forced with [Lazy.force]. *)
   }
 
   let parse_header cur =
@@ -3372,12 +3377,13 @@ module DebugLoclists = struct
           let header = parse_header cursor in
           let offset_table = parse_offset_table cursor header in
           let lists =
-            Array.map
-              (fun off ->
-                let pos = section_start + Unsigned.UInt64.to_int off in
-                let c = Object.Buffer.cursor buffer ~at:pos in
-                parse_location_list c header.address_size)
-              offset_table
+            lazy
+              (Array.map
+                 (fun off ->
+                   let pos = section_start + Unsigned.UInt64.to_int off in
+                   let c = Object.Buffer.cursor buffer ~at:pos in
+                   parse_location_list c header.address_size)
+                 offset_table)
           in
           Some { header; offset_table; lists }
         with _ -> None)
@@ -3417,7 +3423,8 @@ module DebugRnglists = struct
   type rnglists_section = {
     header : header;
     offset_table : u64 array;
-    lists : range_list array;
+    lists : range_list array Lazy.t;
+        (* All lists, decoded only when forced with [Lazy.force]. *)
   }
 
   let parse_header cur =
@@ -3493,12 +3500,13 @@ module DebugRnglists = struct
           let header = parse_header cursor in
           let offset_table = parse_offset_table cursor header in
           let lists =
-            Array.map
-              (fun off ->
-                let pos = section_start + Unsigned.UInt64.to_int off in
-                let c = Object.Buffer.cursor buffer ~at:pos in
-                parse_range_list c header.address_size)
-              offset_table
+            lazy
+              (Array.map
+                 (fun off ->
+                   let pos = section_start + Unsigned.UInt64.to_int off in
+                   let c = Object.Buffer.cursor buffer ~at:pos in
+                   parse_range_list c header.address_size)
+                 offset_table)
           in
           Some { header; offset_table; lists }
         with _ -> None)
@@ -6591,27 +6599,21 @@ module DebugAbbrev = struct
         List.rev !tables
 end
 
-let lookup_address_in_debug_addr (buffer : Object.Buffer.t) (_addr_base : u64)
-    (index : int) =
-  (* Find the debug_addr section *)
-  match find_debug_section_by_type buffer Debug_addr with
+let lookup_address_in_debug_addr (dwarf : t) (_addr_base : u64) (index : int) =
+  (* [addr_base] is an offset into the section; the whole contribution is
+     parsed (once, cached) and indexed. *)
+  match get_section dwarf Debug_addr with
   | None -> None
   | Some (section_offset, _) -> (
       try
-        (* addr_base is an offset from the beginning of the debug_addr section to the address data *)
-        (* We need to parse the entire section, not start at addr_base *)
-        let parsed_addr = DebugAddr.parse buffer section_offset in
-
-        (* Check if index is within bounds *)
+        let parsed_addr = get_addr_table dwarf section_offset in
         if index >= 0 && index < Array.length parsed_addr.entries then
           Some parsed_addr.entries.(index).address
         else None
       with _ -> None)
 
-let resolve_address_index (buffer : Object.Buffer.t) (index : int)
-    (addr_base : u64) =
-  (* Try to resolve address index using debug_addr section *)
-  match lookup_address_in_debug_addr buffer addr_base index with
+let resolve_address_index (dwarf : t) (index : int) (addr_base : u64) =
+  match lookup_address_in_debug_addr dwarf addr_base index with
   | Some address -> address
   | None ->
       (* Fall back to returning the index value if resolution fails *)
@@ -6621,6 +6623,7 @@ module SplitDwarf = struct
   type dwo_context = {
     dwo_buffer : Object.Buffer.t;
     parent_buffer : Object.Buffer.t;
+    parent_ : t; (* Context over [parent_buffer], for cached addr resolution. *)
     dwo_id : u64;
     contributions : (dwarf_section * int * int) list;
   }
@@ -6746,7 +6749,15 @@ module SplitDwarf = struct
     let open Object.Buffer in
     try
       let dwo_buffer = parse dwo_path in
-      let ctx = { dwo_buffer; parent_buffer; dwo_id; contributions = [] } in
+      let ctx =
+        {
+          dwo_buffer;
+          parent_buffer;
+          parent_ = create parent_buffer;
+          dwo_id;
+          contributions = [];
+        }
+      in
       match find_debug_section_by_type dwo_buffer Debug_info_dwo with
       | None -> None
       | Some (section_offset, _) -> (
@@ -6768,7 +6779,7 @@ module SplitDwarf = struct
         let s = resolve_string_index_dwo ctx.dwo_buffer format index in
         { attr with value = DIE.IndexedString (index, s) }
     | DIE.IndexedAddress (index, _) ->
-        let addr = resolve_address_index ctx.parent_buffer index addr_base in
+        let addr = resolve_address_index ctx.parent_ index addr_base in
         { attr with value = DIE.IndexedAddress (index, addr) }
     | _ -> attr
 
@@ -6920,6 +6931,7 @@ module SplitDwarf = struct
     {
       dwo_buffer = dwp_ctx.dwp_buffer;
       parent_buffer = dwp_ctx.parent_buffer;
+      parent_ = create dwp_ctx.parent_buffer;
       dwo_id = entry.dwo_id;
       contributions;
     }

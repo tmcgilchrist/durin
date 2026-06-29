@@ -301,7 +301,7 @@ let resolve_file_index buffer stmt_list_offset file_index =
         else None
   with _ -> None
 
-let resolve_address_attribute buffer die attr_name addr_value cu_addr_base =
+let resolve_address_attribute dwarf die attr_name addr_value cu_addr_base =
   (* Check if this is an address attribute that might need resolution *)
   match attr_name with
   | Dwarf.DW_AT_low_pc | Dwarf.DW_AT_entry_pc -> (
@@ -309,7 +309,7 @@ let resolve_address_attribute buffer die attr_name addr_value cu_addr_base =
       match cu_addr_base with
       | Some addr_base ->
           let index = Unsigned.UInt64.to_int addr_value in
-          Dwarf.resolve_address_index buffer index addr_base
+          Dwarf.resolve_address_index dwarf index addr_base
       | None -> addr_value)
   | Dwarf.DW_AT_high_pc -> (
       (* DW_AT_high_pc with constant form is an offset from DW_AT_low_pc *)
@@ -322,7 +322,7 @@ let resolve_address_attribute buffer die attr_name addr_value cu_addr_base =
           match cu_addr_base with
           | Some addr_base ->
               let resolved_low_pc =
-                Dwarf.resolve_address_index buffer
+                Dwarf.resolve_address_index dwarf
                   (Unsigned.UInt64.to_int low_pc_idx)
                   addr_base
               in
@@ -353,7 +353,7 @@ let resolve_type_reference buffer abbrev_table encoding debug_info_offset
     | None -> None
   with _ -> None
 
-let rec print_die die depth buffer stmt_list_offset cu_addr_base
+let rec print_die die depth dwarf buffer stmt_list_offset cu_addr_base
     debug_info_offset abbrev_table encoding =
   (* Indentation pattern from test expectations:
      - All DIEs: no leading spaces before offset
@@ -380,7 +380,7 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
             (* Special handling for DW_AT_high_pc which might be an offset from DW_AT_low_pc *)
             if attr.Dwarf.DIE.attr = Dwarf.DW_AT_high_pc then
               let resolved_addr =
-                resolve_address_attribute buffer die attr.Dwarf.DIE.attr u
+                resolve_address_attribute dwarf die attr.Dwarf.DIE.attr u
                   cu_addr_base
               in
               Printf.sprintf "(0x%016Lx)"
@@ -405,13 +405,13 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
         | Dwarf.DIE.SData i -> Printf.sprintf "(%Ld)" i
         | Dwarf.DIE.Address a ->
             let resolved_addr =
-              resolve_address_attribute buffer die attr.Dwarf.DIE.attr a
+              resolve_address_attribute dwarf die attr.Dwarf.DIE.attr a
                 cu_addr_base
             in
             Printf.sprintf "(0x%016Lx)" (Unsigned.UInt64.to_int64 resolved_addr)
         | Dwarf.DIE.IndexedAddress (_, a) ->
             let resolved_addr =
-              resolve_address_attribute buffer die attr.Dwarf.DIE.attr a
+              resolve_address_attribute dwarf die attr.Dwarf.DIE.attr a
                 cu_addr_base
             in
             Printf.sprintf "(0x%016Lx)" (Unsigned.UInt64.to_int64 resolved_addr)
@@ -469,7 +469,7 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
   (* Print children *)
   Seq.iter
     (fun child ->
-      print_die child (depth + 1) buffer stmt_list_offset cu_addr_base
+      print_die child (depth + 1) dwarf buffer stmt_list_offset cu_addr_base
         debug_info_offset abbrev_table encoding)
     die.Dwarf.DIE.children
 
@@ -553,7 +553,8 @@ let dump_debug_info filename =
                   in
                   (* Get encoding for DIE parsing *)
                   let encoding = Dwarf.CompileUnit.encoding unit in
-                  print_die root_die 0 buffer stmt_list_offset cu_addr_base
+                  print_die root_die 0 dwarf buffer stmt_list_offset
+                    cu_addr_base
                     (Unsigned.UInt64.to_int debug_info_offset)
                     abbrev_table encoding;
                   (* Add NULL entry at the end of the compilation unit *)
@@ -688,7 +689,7 @@ let dump_debug_names filename =
                               Array.find_opt
                                 (fun entry ->
                                   entry.Dwarf.DebugStr.offset = str_offset)
-                                str_table.entries
+                                (Lazy.force str_table.entries)
                             in
                             match matching_entry with
                             | Some entry -> entry.content
@@ -864,7 +865,7 @@ let dump_debug_str filename =
               if entry.length > 0 then
                 Printf.printf "0x%08x: \"%s\"\n" entry.offset entry.content
               else Printf.printf "0x%08x: \"\"\n" entry.offset)
-            str_table.entries)
+            (Lazy.force str_table.entries))
 
 let dump_debug_line_str filename =
   handle_dwarf_errors (fun () ->
@@ -883,7 +884,7 @@ let dump_debug_line_str filename =
               if entry.length > 0 then
                 Printf.printf "0x%08x: \"%s\"\n" entry.offset entry.content
               else Printf.printf "0x%08x: \"\"\n" entry.offset)
-            line_str_table.entries)
+            (Lazy.force line_str_table.entries))
 
 let dump_debug_addr filename =
   handle_dwarf_errors (fun () ->
