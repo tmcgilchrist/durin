@@ -25,7 +25,10 @@ let process_file filename =
           Dwarf.get_abbrev_table dwarf header.debug_abbrev_offset
         in
         let producer =
-          match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+          match
+            Dwarf.CompileUnit.root_die unit abbrev_table
+              (Dwarf.context_str_resolver dwarf)
+          with
           | None -> "<no root DIE>"
           | Some root_die -> (
               match Dwarf.DIE.find_attribute root_die Dwarf.DW_AT_producer with

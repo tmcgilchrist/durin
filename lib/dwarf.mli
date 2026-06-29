@@ -1481,6 +1481,24 @@ val resolve_address_index : Object.Buffer.t -> int -> u64 -> u64
     section. Returns the resolved address if found, or the index value as
     fallback *)
 
+type str_resolver = {
+  string_at : int -> string;
+      (** [.debug_str] offset to string (DW_FORM_strp, DW_FORM_GNU_strp_alt). *)
+  line_string_at : int -> string;
+      (** [.debug_line_str] offset to string (DW_FORM_line_strp). *)
+  indexed_string : dwarf_format -> int -> string;
+      (** [.debug_str_offsets] index to string (DW_FORM_strx,
+          DW_FORM_GNU_str_index). *)
+}
+(** How the DIE parser resolves the string forms. The low-level parser is
+    injected with one of these; the high-level context supplies a caching
+    implementation built from its section caches, while {!buffer_str_resolver}
+    is the uncached version that re-reads the sections on each call. *)
+
+val buffer_str_resolver : Object.Buffer.t -> str_resolver
+(** The uncached {!str_resolver} that reads the string sections directly from a
+    buffer on every lookup. Used by the stateless low-level parsing path. *)
+
 (** Debugging Information Entry (DIE) represent low-level information about a
     source program.
 
@@ -1545,19 +1563,21 @@ module DIE : sig
     Object.Buffer.cursor ->
     (u64, abbrev) Hashtbl.t ->
     encoding ->
-    Object.Buffer.t ->
+    str_resolver ->
     t option
-  (** Parse a single DIE from a buffer using abbreviation table. *)
+  (** Parse a single DIE from a buffer using abbreviation table. The
+      {!str_resolver} resolves the string-form attribute values. *)
 
   val parse_attribute_value :
     Object.Buffer.cursor ->
     attribute_form_encoding ->
     encoding ->
-    Object.Buffer.t ->
+    str_resolver ->
     ?implicit_const:int64 ->
     unit ->
     attribute_value
-  (** Parse a single attribute value from a buffer. *)
+  (** Parse a single attribute value from a buffer. The {!str_resolver} resolves
+      the string forms (DW_FORM_strp, DW_FORM_line_strp, DW_FORM_strx, …). *)
 
   val find_attribute : t -> attribute_encoding -> attribute_value option
   (** Find an attribute by name in a DIE *)
@@ -1626,44 +1646,33 @@ module CompileUnit : sig
   (** Extract encoding parameters (format, address_size, version) from the unit.
       This provides the context needed for parsing DIE attributes. *)
 
-  val root_die : t -> (u64, abbrev) Hashtbl.t -> Object.Buffer.t -> DIE.t option
-  (** Get the root DIE for this compilation unit. *)
+  val root_die : t -> (u64, abbrev) Hashtbl.t -> str_resolver -> DIE.t option
+  (** Get the root DIE for this compilation unit. The {!str_resolver} resolves
+      string-form attribute values. *)
 
   val die_cursor :
     t ->
     (u64, abbrev) Hashtbl.t ->
-    Object.Buffer.t ->
-    Object.Buffer.cursor * (u64, abbrev) Hashtbl.t * encoding * Object.Buffer.t
-  (** Get cursor, abbrev table, encoding, and buffer positioned at the first DIE
-      of this compilation unit. *)
+    str_resolver ->
+    Object.Buffer.cursor * (u64, abbrev) Hashtbl.t * encoding * str_resolver
+  (** Get cursor, abbrev table, encoding, and string resolver positioned at the
+      first DIE of this compilation unit. *)
 end
 
 val skip_attribute_value :
-  Object.Buffer.cursor ->
-  attribute_form_encoding ->
-  encoding ->
-  Object.Buffer.t ->
-  unit
+  Object.Buffer.cursor -> attribute_form_encoding -> encoding -> unit
 (** Skip past a single attribute value in the buffer without allocating.
 
     @raise Parse_error if the attribute form is unknown. *)
 
 val skip_die :
-  Object.Buffer.cursor ->
-  (u64, abbrev) Hashtbl.t ->
-  encoding ->
-  Object.Buffer.t ->
-  unit
+  Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> encoding -> unit
 (** Skip an entire DIE (attributes + children if any).
 
     @raise Parse_error if a DIE attribute form is unknown. *)
 
 val skip_children :
-  Object.Buffer.cursor ->
-  (u64, abbrev) Hashtbl.t ->
-  encoding ->
-  Object.Buffer.t ->
-  unit
+  Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> encoding -> unit
 (** Skip all remaining children at the current nesting level.
 
     @raise Parse_error if a DIE attribute form is unknown. *)
@@ -1677,8 +1686,14 @@ module DieCursor : sig
   type t
 
   val create :
-    Object.Buffer.t -> (u64, abbrev) Hashtbl.t -> encoding -> int -> t
-  (** Create cursor starting at buffer offset. *)
+    Object.Buffer.t ->
+    str_resolver ->
+    (u64, abbrev) Hashtbl.t ->
+    encoding ->
+    int ->
+    t
+  (** Create cursor starting at buffer offset. The {!str_resolver} resolves
+      string-form attribute values as DIEs are parsed. *)
 
   val next : t -> (DIE.t * bool) option
   (** Parse next DIE. Returns (die, has_children). Returns None at
@@ -3210,6 +3225,42 @@ module DebugAddr : sig
       addresses read from the section. This allows the same DWARF data to
       support both 32-bit and 64-bit architectures. *)
 end
+
+(** {2 Cached section accessors}
+
+    Context-level accessors that parse a section on first request and cache the
+    result for reuse. Each is the memoizing, high-level counterpart of the
+    matching stateless {!DebugStr.parse} / {!DebugStrOffsets.parse} / … — see
+    {!get_abbrev_table}. *)
+
+val get_str_offsets : t -> u32 -> DebugStrOffsets.t
+(** Return the [.debug_str_offsets] contribution at the given offset, parsed
+    once and cached. *)
+
+val get_addr_table : t -> u64 -> DebugAddr.t
+(** Return the [.debug_addr] contribution at the given offset, parsed once and
+    cached. *)
+
+val get_debug_str : t -> DebugStr.t option
+(** Return the parsed [.debug_str] section ([None] if absent), parsed once and
+    cached. *)
+
+val get_debug_line_str : t -> DebugLineStr.t option
+(** Return the parsed [.debug_line_str] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_section : t -> dwarf_section -> (u64 * u64) option
+(** Locate a debug section, returning its [(offset, size)] within the object
+    file ([None] if absent). The result is cached, avoiding the repeated
+    object-file section-table scan that {!find_debug_section_by_type} performs.
+*)
+
+val context_str_resolver : t -> str_resolver
+(** The cached counterpart of {!buffer_str_resolver}. Resolves DIE string-form
+    attribute values by reading directly from the string sections (so
+    suffix-shared offsets resolve correctly) while looking those sections up
+    through the context's section cache. Prefer this over {!buffer_str_resolver}
+    when reading through a context. *)
 
 (** Address range table parsing for .debug_aranges section.
 

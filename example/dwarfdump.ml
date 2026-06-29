@@ -340,7 +340,10 @@ let resolve_type_reference buffer abbrev_table encoding debug_info_offset
       debug_info_offset + Unsigned.UInt64.to_int die_offset
     in
     let cursor = Object.Buffer.cursor buffer ~at:absolute_offset in
-    match Dwarf.DIE.parse_die cursor abbrev_table encoding buffer with
+    match
+      Dwarf.DIE.parse_die cursor abbrev_table encoding
+        (Dwarf.buffer_str_resolver buffer)
+    with
     | Some die -> (
         (* Look for DW_AT_name attribute in the referenced DIE *)
         match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
@@ -524,7 +527,10 @@ let dump_debug_info filename =
               let abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
 
               (* Get the root DIE for this compilation unit *)
-              match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+              match
+                Dwarf.CompileUnit.root_die unit abbrev_table
+                  (Dwarf.context_str_resolver dwarf)
+              with
               | None ->
                   Printf.printf
                     "  No root DIE found for this compilation unit\n"

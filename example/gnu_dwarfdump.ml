@@ -575,7 +575,10 @@ let dump_debug_info filename =
             let abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
 
             (* Get the root DIE for this compilation unit *)
-            match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+            match
+              Dwarf.CompileUnit.root_die unit abbrev_table
+                (Dwarf.context_str_resolver dwarf)
+            with
             | None ->
                 Printf.printf "  No root DIE found for this compilation unit\n"
             | Some root_die ->
@@ -595,7 +598,10 @@ let dump_debug_info filename =
 
                 (* Collect DIE names using a separate parse *)
                 let die_names =
-                  match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+                  match
+                    Dwarf.CompileUnit.root_die unit abbrev_table
+                      (Dwarf.context_str_resolver dwarf)
+                  with
                   | Some name_die ->
                       collect_die_names name_die
                         (Unsigned.UInt64.to_int debug_info_offset)
@@ -856,7 +862,10 @@ let dump_debug_aranges filename =
             in
 
             (* Parse and print root DIE attributes *)
-            match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+            match
+              Dwarf.CompileUnit.root_die unit abbrev_table
+                (Dwarf.context_str_resolver dwarf)
+            with
             | Some root_die ->
                 (* Parse and print root DIE attributes with system dwarfdump formatting *)
                 let attributes = root_die.Dwarf.DIE.attributes in
