@@ -3226,42 +3226,6 @@ module DebugAddr : sig
       support both 32-bit and 64-bit architectures. *)
 end
 
-(** {2 Cached section accessors}
-
-    Context-level accessors that parse a section on first request and cache the
-    result for reuse. Each is the memoizing, high-level counterpart of the
-    matching stateless {!DebugStr.parse} / {!DebugStrOffsets.parse} / … — see
-    {!get_abbrev_table}. *)
-
-val get_str_offsets : t -> u32 -> DebugStrOffsets.t
-(** Return the [.debug_str_offsets] contribution at the given offset, parsed
-    once and cached. *)
-
-val get_addr_table : t -> u64 -> DebugAddr.t
-(** Return the [.debug_addr] contribution at the given offset, parsed once and
-    cached. *)
-
-val get_debug_str : t -> DebugStr.t option
-(** Return the parsed [.debug_str] section ([None] if absent), parsed once and
-    cached. *)
-
-val get_debug_line_str : t -> DebugLineStr.t option
-(** Return the parsed [.debug_line_str] section ([None] if absent), parsed once
-    and cached. *)
-
-val get_section : t -> dwarf_section -> (u64 * u64) option
-(** Locate a debug section, returning its [(offset, size)] within the object
-    file ([None] if absent). The result is cached, avoiding the repeated
-    object-file section-table scan that {!find_debug_section_by_type} performs.
-*)
-
-val context_str_resolver : t -> str_resolver
-(** The cached counterpart of {!buffer_str_resolver}. Resolves DIE string-form
-    attribute values by reading directly from the string sections (so
-    suffix-shared offsets resolve correctly) while looking those sections up
-    through the context's section cache. Prefer this over {!buffer_str_resolver}
-    when reading through a context. *)
-
 (** Address range table parsing for .debug_aranges section.
 
     This module provides support for parsing DWARF Address Range Tables, which
@@ -3527,6 +3491,54 @@ module DebugRnglists : sig
 
       @raise Parse_error if an unknown range list entry kind is encountered. *)
 end
+
+(** {2 Cached section accessors}
+
+    Context-level accessors that parse a section on first request and cache the
+    result for reuse. Each is the memoizing, high-level counterpart of the
+    matching stateless {!DebugStr.parse} / {!DebugStrOffsets.parse} / … — see
+    {!get_abbrev_table}. *)
+
+val get_str_offsets : t -> u32 -> DebugStrOffsets.t
+(** Return the [.debug_str_offsets] contribution at the given offset, parsed
+    once and cached. *)
+
+val get_addr_table : t -> u64 -> DebugAddr.t
+(** Return the [.debug_addr] contribution at the given offset, parsed once and
+    cached. *)
+
+val get_debug_str : t -> DebugStr.t option
+(** Return the parsed [.debug_str] section ([None] if absent), parsed once and
+    cached. *)
+
+val get_debug_line_str : t -> DebugLineStr.t option
+(** Return the parsed [.debug_line_str] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_aranges : t -> DebugAranges.aranges_set option
+(** Return the parsed [.debug_aranges] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_loclists : t -> DebugLoclists.loclists_section option
+(** Return the parsed [.debug_loclists] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_rnglists : t -> DebugRnglists.rnglists_section option
+(** Return the parsed [.debug_rnglists] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_section : t -> dwarf_section -> (u64 * u64) option
+(** Locate a debug section, returning its [(offset, size)] within the object
+    file ([None] if absent). The result is cached, avoiding the repeated
+    object-file section-table scan that {!find_debug_section_by_type} performs.
+*)
+
+val context_str_resolver : t -> str_resolver
+(** The cached counterpart of {!buffer_str_resolver}. Resolves DIE string-form
+    attribute values by reading directly from the string sections (so
+    suffix-shared offsets resolve correctly) while looking those sections up
+    through the context's section cache. Prefer this over {!buffer_str_resolver}
+    when reading through a context. *)
 
 (** Split DWARF support for .dwo files and .dwp packages.
 
