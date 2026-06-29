@@ -2988,7 +2988,15 @@ val create : Object.Buffer.t -> t
     data initially; sections are parsed and cached on first access. *)
 
 val parse_compile_units : t -> CompileUnit.t Seq.t
-(** Parse all compile units from the [Debug_info] section lazily *)
+(** Parse all compile units from the [Debug_info] section lazily. Each traversal
+    re-parses the section; for repeated iteration prefer the cached
+    {!compile_units}. *)
+
+val compile_units : t -> CompileUnit.t Seq.t
+(** Compile units from the [Debug_info] section, materialised once and cached in
+    the context. The cached, high-level counterpart of {!parse_compile_units}:
+    the first call forces and stores the full list, later calls iterate the
+    cached list without re-parsing. *)
 
 val get_abbrev_table : t -> size_t -> (u64, abbrev) Hashtbl.t
 (** Return the abbreviation table at the given [.debug_abbrev] offset, parsing

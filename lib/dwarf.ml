@@ -3528,6 +3528,7 @@ type t = {
   aranges_ : DebugAranges.aranges_set option memo ref;
   loclists_ : DebugLoclists.loclists_section option memo ref;
   rnglists_ : DebugRnglists.rnglists_section option memo ref;
+  compile_units_ : CompileUnit.t list memo ref;
 }
 
 let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
@@ -6491,7 +6492,17 @@ let create buffer =
     aranges_ = ref Unparsed;
     loclists_ = ref Unparsed;
     rnglists_ = ref Unparsed;
+    compile_units_ = ref Unparsed;
   }
+
+(* Memoized counterpart of [parse_compile_units]: materialises the unit list
+   once (forcing the lazy sequence) and caches it, then hands back a sequence
+   over the cached list. Prefer this when iterating the units more than once;
+   use [parse_compile_units] for a one-shot, uncached lazy traversal. *)
+let compile_units dwarf =
+  List.to_seq
+    (memo dwarf.compile_units_ (fun () ->
+         List.of_seq (parse_compile_units dwarf)))
 
 (* Locate a debug section, caching the (offset, size) result. The underlying
    [find_debug_section_by_type] re-reads the whole ELF/Mach-O section table on
