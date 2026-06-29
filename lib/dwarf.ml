@@ -524,32 +524,22 @@ module DebugMacro = struct
 
   let parse_unit (cur : Object.Buffer.cursor) =
     let header = parse_header cur in
-    let entries = ref [] in
-    let rec loop () =
-      (* TODO Can this be done with a fold? *)
+    (* Entries are a cursor-driven stream with no length prefix, so this is an
+       unfold (read until the terminator), not a fold over a collection. *)
+    let rec loop acc =
       match parse_entry cur header.format with
-      | None -> List.rev !entries
-      | Some entry ->
-          entries := entry :: !entries;
-          loop ()
+      | None -> List.rev acc
+      | Some entry -> loop (entry :: acc)
     in
-    let entries_list = loop () in
-    { header; entries = entries_list }
+    { header; entries = loop [] }
 
   let parse_section (cur : Object.Buffer.cursor) section_size =
-    let start_pos = cur.position in
-    let end_pos = start_pos + section_size in
-    let units = ref [] in
-    let rec loop () =
-      (* TODO Can this be done with a fold? *)
-      if cur.position >= end_pos then List.rev !units
-      else
-        let u = parse_unit cur in
-        units := u :: !units;
-        loop ()
+    let end_pos = cur.position + section_size in
+    let rec loop acc =
+      if cur.position >= end_pos then List.rev acc
+      else loop (parse_unit cur :: acc)
     in
-    let units_list = loop () in
-    { units = units_list }
+    { units = loop [] }
 end
 
 module DebugMacinfo = struct
@@ -583,8 +573,10 @@ module DebugMacinfo = struct
     constant : u64 option;
   }
 
-  type section = { entries : entry list }
-  (* TODO How large is this list, should it be lazily parsed? *)
+  type section = { entries : entry list Lazy.t }
+  (* [entries] are decoded only when forced with [Lazy.force]. *)
+  (* TODO DWARF 4 (and earlier) macro format, revisit when filling
+     out macro support. *)
 
   let parse_entry (cur : Object.Buffer.cursor) =
     let open Object.Buffer in
@@ -618,20 +610,23 @@ module DebugMacinfo = struct
         }
 
   let parse_section (cur : Object.Buffer.cursor) section_size =
-    let end_pos = cur.position + section_size in
-    let entries = ref [] in
-    let rec loop () =
-      (* TODO Can this be done with a fold? *)
-      if cur.position >= end_pos then List.rev !entries
-      else
-        match parse_entry cur with
-        | None -> List.rev !entries
-        | Some entry ->
-            entries := entry :: !entries;
-            loop ()
+    (* Capture the start so the thunk parses from a fresh cursor, independent
+       of any later mutation of [cur]. *)
+    let buffer = cur.buffer and start_pos = cur.position in
+    let entries =
+      lazy
+        (let cur = Object.Buffer.cursor buffer ~at:start_pos in
+         let end_pos = cur.position + section_size in
+         let rec loop acc =
+           if cur.position >= end_pos then List.rev acc
+           else
+             match parse_entry cur with
+             | None -> List.rev acc
+             | Some entry -> loop (entry :: acc)
+         in
+         loop [])
     in
-    let entries_list = loop () in
-    { entries = entries_list }
+    { entries }
 end
 
 type call_frame_instruction =
@@ -967,11 +962,7 @@ let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) =
               let ref_size =
                 match encoding with
                 | Some enc when Unsigned.UInt16.to_int enc.version <= 4 -> 4
-                | Some enc -> (
-                    (* TODO Does this exist elsewhere? *)
-                    match enc.format with
-                    | DWARF32 -> 4
-                    | DWARF64 -> 8)
+                | Some enc -> offset_size_for_format enc.format
                 | None -> 4
               in
               if pos + ref_size < String.length expr_bytes then

@@ -1287,7 +1287,11 @@ module DebugMacinfo : sig
   }
   (** A single macinfo entry. *)
 
-  type section = { entries : entry list }
+  type section = {
+    entries : entry list Lazy.t;
+        (** The decoded entries, materialised only when forced with
+            [Lazy.force]. *)
+  }
   (** Complete parsed .debug_macinfo section. *)
 
   val parse_entry : Object.Buffer.cursor -> entry option
@@ -1296,8 +1300,9 @@ module DebugMacinfo : sig
       @raise Parse_error if a macinfo entry type is unknown. *)
 
   val parse_section : Object.Buffer.cursor -> int -> section
-  (** Parse the entire .debug_macinfo section. The [int] parameter is the
-      section size in bytes.
+  (** Parse the .debug_macinfo section starting at the cursor; the [int]
+      parameter is the section size in bytes. The entries are decoded lazily on
+      first force, so this call does not consume the cursor.
 
       @raise Parse_error if the section is malformed. *)
 end
