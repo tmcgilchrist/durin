@@ -2351,12 +2351,13 @@ module CallFrame : sig
   (** Create the initial CFI state with the CFA defaults for [arch] (default
       {!X86_64}): {!X86_64} starts at [rsp + 8], {!ARM64} at [sp + 0]. *)
 
-  val parse_initial_state : common_information_entry -> cfi_state
+  val parse_initial_state : ?arch:arch -> common_information_entry -> cfi_state
   (** Parse CIE initial instructions to establish proper initial CFI state.
 
       This function processes the initial_instructions field of a CIE to
       establish the baseline Call Frame Information state that FDEs can modify.
-  *)
+      [arch] (default {!X86_64}) supplies the default CFA when the CIE carries
+      no initial instructions. *)
 
   val parse_cfi_instructions : string -> int64 -> int64 -> (int * string) list
   (** Parse CFI instructions into human-readable descriptions.

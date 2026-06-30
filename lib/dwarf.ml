@@ -4750,15 +4750,29 @@ module CallFrame = struct
      defaults: the return-address register and the initial CFA rule. *)
   type arch = X86_64 | ARM64
 
+  (* The DWARF register ABI facts per architecture live in {!Dwarf_arch}; these
+     select them for an {!arch}. *)
+  let arch_default_cfa = function
+    | X86_64 -> Dwarf_arch.X86_64.default_cfa
+    | ARM64 -> Dwarf_arch.ARM64.default_cfa
+
+  let arch_return_address_register = function
+    | X86_64 -> Dwarf_arch.X86_64.return_address_register
+    | ARM64 -> Dwarf_arch.ARM64.return_address_register
+
   let create_default_cie ?(arch = X86_64) () =
-    let ra_register, initial_instructions =
+    let Dwarf_arch.Register cfa_reg, cfa_off = arch_default_cfa arch in
+    let (Dwarf_arch.Register ra_register) = arch_return_address_register arch in
+    let initial_instructions =
       match arch with
-      (* System V AMD64 ABI: CFA = rsp(7) + 8; return address rip(16) saved at
-         CFA-8, i.e. 1 * data_alignment_factor (-8). *)
+      (* System V AMD64 ABI: the return address is pushed on the stack at entry,
+         so it is recorded at CFA - 8 (1 * data_alignment_factor). *)
       | X86_64 ->
-          (16, encode_instructions [ CFA_def_cfa (7, 8); CFA_offset (16, 1) ])
-      (* AAPCS64: CFA = sp(31) + 0; return address held in x30 (LR). *)
-      | ARM64 -> (30, encode_instructions [ CFA_def_cfa (31, 0) ])
+          encode_instructions
+            [ CFA_def_cfa (cfa_reg, cfa_off); CFA_offset (ra_register, 1) ]
+      (* AAPCS64: the return address is held in x30 (LR), not on the stack, so
+         there is no initial save rule. *)
+      | ARM64 -> encode_instructions [ CFA_def_cfa (cfa_reg, cfa_off) ]
     in
     {
       format = DWARF32;
@@ -4973,30 +4987,29 @@ module CallFrame = struct
     with End_of_file | _ ->
       { entries = List.rev !entries; entry_count = !entry_count }
 
-  (* TODO This is x86_64 specific, we want to support ARM64 as well *)
-  (* Create initial CFI state with architecture-specific CFA defaults. *)
+  (* Create initial CFI state with the architecture's default CFA rule. *)
   let initial_cfi_state ?(arch = X86_64) () =
-    let cfa_register, cfa_offset =
-      match arch with X86_64 -> (7, 8L) (* rsp + 8 *) | ARM64 -> (31, 0L)
-      (* sp + 0 *)
-    in
+    let Dwarf_arch.Register cfa_register, cfa_off = arch_default_cfa arch in
     {
       cfa_register;
-      cfa_offset;
+      cfa_offset = Int64.of_int cfa_off;
       register_rules = Hashtbl.create 32;
       pc_offset = 0;
       state_stack = [];
     }
 
-  (* Parse CIE initial instructions to establish proper initial CFI state *)
-  let parse_initial_state (cie : common_information_entry) : cfi_state =
+  (* Parse CIE initial instructions to establish proper initial CFI state. The
+     [arch] supplies the default CFA when the CIE carries no initial
+     instructions. *)
+  let parse_initial_state ?(arch = X86_64) (cie : common_information_entry) :
+      cfi_state =
     if String.length cie.initial_instructions = 0 then
       (* No initial instructions, use architecture-aware defaults *)
-      initial_cfi_state ()
+      initial_cfi_state ~arch ()
     else
       (* Parse CIE initial instructions to establish baseline state *)
       let data_alignment = Signed.Int64.to_int64 cie.data_alignment_factor in
-      let initial_state = initial_cfi_state () in
+      let initial_state = initial_cfi_state ~arch () in
 
       (* Apply CIE initial instructions to the default state *)
       let rec apply_initial_instructions state pos =

@@ -17,6 +17,15 @@ module type ARCH = sig
   val name_to_register : string -> register option
   (** Convert a register name to its register number for this architecture.
       Returns None if the name is not recognized. *)
+
+  val default_cfa : register * int
+  (** The default Canonical Frame Address rule at function entry: the register
+      holding the stack pointer and the byte offset added to it. Used as the
+      baseline CFA when a CIE carries no initial instructions. *)
+
+  val return_address_register : register
+  (** The DWARF register number that holds the return address per this
+      architecture's ABI. *)
 end
 
 module X86_64 : ARCH
