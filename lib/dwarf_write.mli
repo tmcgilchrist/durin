@@ -25,10 +25,10 @@ val write_sleb128 : Buffer.t -> i64 -> unit
 (** Append a value in signed LEB128 variable-length encoding. *)
 
 val write_initial_length : Buffer.t -> Dwarf.dwarf_format -> int -> unit
-(** Append a DWARF initial-length field sized by {!Dwarf.dwarf_format}. *)
+(** Append a DWARF initial-length field sized by {!type:Dwarf.dwarf_format}. *)
 
 val write_offset : Buffer.t -> Dwarf.dwarf_format -> u64 -> unit
-(** Append a section offset, sized by {!Dwarf.dwarf_format}. *)
+(** Append a section offset, sized by {!type:Dwarf.dwarf_format}. *)
 
 val write_address : Buffer.t -> int -> u64 -> unit
 (** Append a target address whose width in bytes is given by the [int] argument
@@ -43,7 +43,7 @@ val write_null_terminated_string : Buffer.t -> string -> unit
 
 val form_for_attribute_value :
   Dwarf.DIE.attribute_value -> Dwarf.attribute_form_encoding
-(** Pick an {!Dwarf.attribute_form_encoding} capable of encoding the given
+(** Pick an {!type:Dwarf.attribute_form_encoding} capable of encoding the given
     {!Dwarf.DIE.attribute_value}. *)
 
 type die_shape = {
@@ -86,8 +86,8 @@ val write_attribute_value :
   Dwarf.encoding ->
   unit
 (** Serialise an {!Dwarf.DIE.attribute_value} with the given
-    {!Dwarf.attribute_form_encoding} under the {!Dwarf.encoding}, appending the
-    bytes to the buffer.
+    {!type:Dwarf.attribute_form_encoding} under the {!Dwarf.encoding}, appending
+    the bytes to the buffer.
 
     @raise Dwarf.Parse_error
       if the form/value combination or address size is unsupported. *)

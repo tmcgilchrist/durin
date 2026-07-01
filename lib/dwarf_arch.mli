@@ -1,22 +1,25 @@
-(** DWARF Architecture Support
+(** DWARF architecture support: the per-target DWARF register conventions.
 
-    This module provides architecture-specific register definitions and naming.
-    The core expression evaluator is architecture-independent - it only works
-    with register numbers. These modules provide human-readable names for
-    displaying and parsing register references. *)
+    DWARF identifies registers by number; the meaning of a number is
+    architecture-specific. Each module below maps those numbers to and from
+    canonical register names (for display and parsing) and supplies the two CFI
+    ABI facts {!Dwarf.CallFrame} needs — the default Canonical Frame Address
+    rule and the return-address register — per the target's published ABI. *)
 
-(** Architecture-independent register type - just a number *)
-type register = Register of int
+type register =
+  | Register of int
+      (** A DWARF register, identified by its architecture-specific number. *)
 
-(** Architecture module signature *)
+(** The DWARF register conventions of one architecture. Each module below
+    implements this against the target's published ABI. *)
 module type ARCH = sig
   val register_name : register -> string option
-  (** Convert a register number to its canonical name for this architecture.
-      Returns None if the register number is not recognized. *)
+  (** The canonical name of a register for this architecture (e.g. [rsp],
+      [x30]), or [None] if the number is not recognised. *)
 
   val name_to_register : string -> register option
-  (** Convert a register name to its register number for this architecture.
-      Returns None if the name is not recognized. *)
+  (** The register number for a canonical name, or [None] if unrecognised. The
+      inverse of {!register_name}. *)
 
   val default_cfa : register * int
   (** The default Canonical Frame Address rule at function entry: the register
@@ -24,21 +27,21 @@ module type ARCH = sig
       baseline CFA when a CIE carries no initial instructions. *)
 
   val return_address_register : register
-  (** The DWARF register number that holds the return address per this
-      architecture's ABI. *)
+  (** The DWARF register that holds the return address per this architecture's
+      ABI. *)
 end
 
 module X86_64 : ARCH
-(** x86-64 / AMD64 architecture *)
+(** x86-64 / AMD64, per the System V AMD64 ABI. *)
 
 module ARM64 : ARCH
-(** AArch64 / ARM64 architecture *)
+(** AArch64 / ARM64, per the AArch64 DWARF conventions (AAPCS64). *)
 
 module RISCV : ARCH
-(** RISC-V architecture *)
+(** RISC-V, per the RISC-V ELF psABI. *)
 
 module PowerPC64 : ARCH
-(** PowerPC 64-bit architecture *)
+(** PowerPC 64-bit, per the Power Architecture 64-Bit ELF V2 ABI. *)
 
 module S390X : ARCH
-(** s390x architecture *)
+(** s390x, per the z/Architecture ELF ABI. *)

@@ -3544,7 +3544,7 @@ val get_rnglists : t -> DebugRnglists.rnglists_section option
 val get_section : t -> dwarf_section -> (u64 * u64) option
 (** Locate a debug section, returning its [(offset, size)] within the object
     file ([None] if absent). The result is cached, avoiding the repeated
-    object-file section-table scan that {!find_debug_section_by_type} performs.
+    object-file section-table scan that [find_debug_section_by_type] performs.
 *)
 
 val context_str_resolver : t -> str_resolver

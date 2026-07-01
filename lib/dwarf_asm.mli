@@ -1,6 +1,6 @@
 open Dwarf_types
 
-(** Emit DWARF as assembler text (via a {!Format.formatter}), the textual
+(** Emit DWARF as assembler text (via a [Format.formatter]), the textual
     counterpart of the binary {!Dwarf_write} *)
 
 (** {2 Primitive Assembly Directives} *)
@@ -45,13 +45,13 @@ val emit_initial_length :
   end_label:string ->
   unit
 (** Emit a DWARF initial-length field as the assembler-computed difference
-    [end_label - start_label], sized by {!Dwarf.dwarf_format}. Using labels lets
-    the assembler fill in the length, so the section body need not be measured
-    up front. *)
+    [end_label - start_label], sized by {!type:Dwarf.dwarf_format}. Using labels
+    lets the assembler fill in the length, so the section body need not be
+    measured up front. *)
 
 val emit_offset : Format.formatter -> Dwarf.dwarf_format -> string -> unit
 (** Emit a section offset as a reference to the given label, sized by
-    {!Dwarf.dwarf_format} (4 bytes for [DWARF32], 8 for [DWARF64]). *)
+    {!type:Dwarf.dwarf_format} (4 bytes for [DWARF32], 8 for [DWARF64]). *)
 
 val emit_attribute_value :
   Format.formatter ->
@@ -60,8 +60,8 @@ val emit_attribute_value :
   Dwarf.encoding ->
   unit
 (** Emit an {!Dwarf.DIE.attribute_value} with the given
-    {!Dwarf.attribute_form_encoding} under the {!Dwarf.encoding} as assembly
-    directives. The assembler-text counterpart of
+    {!type:Dwarf.attribute_form_encoding} under the {!Dwarf.encoding} as
+    assembly directives. The assembler-text counterpart of
     {!Dwarf_write.write_attribute_value}.
 
     @raise Dwarf.Parse_error

@@ -254,29 +254,24 @@ let dump_debug_line filename =
             entries;
           Printf.printf "\n")
 
-(* TODO Move into main dwarf.ml library when implementing CFI parsing.
-   Replace with Dwarf.parse_dwarf_expression plus ARM64 specific registers
-*)
 let decode_simple_dwarf_expression block_data =
-  (* Simple decoder for common DWARF expressions, especially register references *)
-  if String.length block_data = 0 then None
-  else
-    let opcode = Char.code block_data.[0] in
-    match opcode with
-    (* DW_OP_reg0 - DW_OP_reg31: 0x50-0x6f *)
-    | n when n >= 0x50 && n <= 0x6f ->
-        let reg_num = n - 0x50 in
-        (* ARM64 register names *)
-        let reg_name =
-          match reg_num with
-          | 29 -> "W29" (* Frame pointer *)
-          | 30 -> "W30" (* Link register *)
-          | n when n <= 30 -> Printf.sprintf "x%d" n
-          | _ -> Printf.sprintf "reg%d" n
-        in
-        Some (Printf.sprintf "DW_OP_reg%d %s" reg_num reg_name)
-    (* Add more opcodes as needed *)
-    | _ -> None
+  (* Decode with the library, annotating bare register operations
+     (DW_OP_reg0-31) with their AArch64 names from {!Dwarf_arch.ARM64}. *)
+  match Dwarf.parse_dwarf_expression block_data with
+  | [] -> None
+  | ops ->
+      let describe (op : Dwarf.dwarf_expression_operation) =
+        let s = Dwarf.string_of_dwarf_operation op in
+        let byte = Dwarf.int_of_operation_encoding op.opcode in
+        if byte >= 0x50 && byte <= 0x6f then
+          match
+            Dwarf_arch.ARM64.register_name (Dwarf_arch.Register (byte - 0x50))
+          with
+          | Some name -> Printf.sprintf "%s %s" s name
+          | None -> s
+        else s
+      in
+      Some (String.concat ", " (List.map describe ops))
 
 let resolve_file_index buffer stmt_list_offset file_index =
   (* Try to find the debug_line section and resolve file index to filename *)
