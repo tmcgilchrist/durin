@@ -1287,11 +1287,7 @@ module DebugMacinfo : sig
   }
   (** A single macinfo entry. *)
 
-  type section = {
-    entries : entry list Lazy.t;
-        (** The decoded entries, materialised only when forced with
-            [Lazy.force]. *)
-  }
+  type section = { entries : entry list Lazy.t  (** The decoded entries. *) }
   (** Complete parsed .debug_macinfo section. *)
 
   val parse_entry : Object.Buffer.cursor -> entry option
@@ -2937,9 +2933,7 @@ module DebugStr : sig
   (** Individual string entry with location and content information. *)
 
   type t = {
-    entries : string_entry array Lazy.t;
-        (** All strings in the section, decoded only when forced with
-            [Lazy.force]. *)
+    entries : string_entry array Lazy.t;  (** All strings in the section. *)
     total_size : int;  (** Total size of the debug_str section *)
   }
   (** Complete parsed debug_str section *)
@@ -2967,9 +2961,7 @@ module DebugLineStr : sig
   (** Individual string entry with location and content information. *)
 
   type t = {
-    entries : string_entry array Lazy.t;
-        (** All strings in the section, decoded only when forced with
-            [Lazy.force]. *)
+    entries : string_entry array Lazy.t;  (** All strings in the section. *)
     total_size : int;  (** Total size of the debug_line_str section *)
   }
   (** Complete parsed debug_line_str section *)
