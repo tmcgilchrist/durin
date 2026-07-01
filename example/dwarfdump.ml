@@ -254,29 +254,24 @@ let dump_debug_line filename =
             entries;
           Printf.printf "\n")
 
-(* TODO Move into main dwarf.ml library when implementing CFI parsing.
-   Replace with Dwarf.parse_dwarf_expression plus ARM64 specific registers
-*)
 let decode_simple_dwarf_expression block_data =
-  (* Simple decoder for common DWARF expressions, especially register references *)
-  if String.length block_data = 0 then None
-  else
-    let opcode = Char.code block_data.[0] in
-    match opcode with
-    (* DW_OP_reg0 - DW_OP_reg31: 0x50-0x6f *)
-    | n when n >= 0x50 && n <= 0x6f ->
-        let reg_num = n - 0x50 in
-        (* ARM64 register names *)
-        let reg_name =
-          match reg_num with
-          | 29 -> "W29" (* Frame pointer *)
-          | 30 -> "W30" (* Link register *)
-          | n when n <= 30 -> Printf.sprintf "x%d" n
-          | _ -> Printf.sprintf "reg%d" n
-        in
-        Some (Printf.sprintf "DW_OP_reg%d %s" reg_num reg_name)
-    (* Add more opcodes as needed *)
-    | _ -> None
+  (* Decode with the library, annotating bare register operations
+     (DW_OP_reg0-31) with their AArch64 names from {!Dwarf_arch.ARM64}. *)
+  match Dwarf.parse_dwarf_expression block_data with
+  | [] -> None
+  | ops ->
+      let describe (op : Dwarf.dwarf_expression_operation) =
+        let s = Dwarf.string_of_dwarf_operation op in
+        let byte = Dwarf.int_of_operation_encoding op.opcode in
+        if byte >= 0x50 && byte <= 0x6f then
+          match
+            Dwarf_arch.ARM64.register_name (Dwarf_arch.Register (byte - 0x50))
+          with
+          | Some name -> Printf.sprintf "%s %s" s name
+          | None -> s
+        else s
+      in
+      Some (String.concat ", " (List.map describe ops))
 
 let resolve_file_index buffer stmt_list_offset file_index =
   (* Try to find the debug_line section and resolve file index to filename *)
@@ -301,7 +296,7 @@ let resolve_file_index buffer stmt_list_offset file_index =
         else None
   with _ -> None
 
-let resolve_address_attribute buffer die attr_name addr_value cu_addr_base =
+let resolve_address_attribute dwarf die attr_name addr_value cu_addr_base =
   (* Check if this is an address attribute that might need resolution *)
   match attr_name with
   | Dwarf.DW_AT_low_pc | Dwarf.DW_AT_entry_pc -> (
@@ -309,7 +304,7 @@ let resolve_address_attribute buffer die attr_name addr_value cu_addr_base =
       match cu_addr_base with
       | Some addr_base ->
           let index = Unsigned.UInt64.to_int addr_value in
-          Dwarf.resolve_address_index buffer index addr_base
+          Dwarf.resolve_address_index dwarf index addr_base
       | None -> addr_value)
   | Dwarf.DW_AT_high_pc -> (
       (* DW_AT_high_pc with constant form is an offset from DW_AT_low_pc *)
@@ -322,7 +317,7 @@ let resolve_address_attribute buffer die attr_name addr_value cu_addr_base =
           match cu_addr_base with
           | Some addr_base ->
               let resolved_low_pc =
-                Dwarf.resolve_address_index buffer
+                Dwarf.resolve_address_index dwarf
                   (Unsigned.UInt64.to_int low_pc_idx)
                   addr_base
               in
@@ -340,7 +335,10 @@ let resolve_type_reference buffer abbrev_table encoding debug_info_offset
       debug_info_offset + Unsigned.UInt64.to_int die_offset
     in
     let cursor = Object.Buffer.cursor buffer ~at:absolute_offset in
-    match Dwarf.DIE.parse_die cursor abbrev_table encoding buffer with
+    match
+      Dwarf.DIE.parse_die cursor abbrev_table encoding
+        (Dwarf.buffer_str_resolver buffer)
+    with
     | Some die -> (
         (* Look for DW_AT_name attribute in the referenced DIE *)
         match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
@@ -350,7 +348,7 @@ let resolve_type_reference buffer abbrev_table encoding debug_info_offset
     | None -> None
   with _ -> None
 
-let rec print_die die depth buffer stmt_list_offset cu_addr_base
+let rec print_die die depth dwarf buffer stmt_list_offset cu_addr_base
     debug_info_offset abbrev_table encoding =
   (* Indentation pattern from test expectations:
      - All DIEs: no leading spaces before offset
@@ -377,7 +375,7 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
             (* Special handling for DW_AT_high_pc which might be an offset from DW_AT_low_pc *)
             if attr.Dwarf.DIE.attr = Dwarf.DW_AT_high_pc then
               let resolved_addr =
-                resolve_address_attribute buffer die attr.Dwarf.DIE.attr u
+                resolve_address_attribute dwarf die attr.Dwarf.DIE.attr u
                   cu_addr_base
               in
               Printf.sprintf "(0x%016Lx)"
@@ -402,13 +400,13 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
         | Dwarf.DIE.SData i -> Printf.sprintf "(%Ld)" i
         | Dwarf.DIE.Address a ->
             let resolved_addr =
-              resolve_address_attribute buffer die attr.Dwarf.DIE.attr a
+              resolve_address_attribute dwarf die attr.Dwarf.DIE.attr a
                 cu_addr_base
             in
             Printf.sprintf "(0x%016Lx)" (Unsigned.UInt64.to_int64 resolved_addr)
         | Dwarf.DIE.IndexedAddress (_, a) ->
             let resolved_addr =
-              resolve_address_attribute buffer die attr.Dwarf.DIE.attr a
+              resolve_address_attribute dwarf die attr.Dwarf.DIE.attr a
                 cu_addr_base
             in
             Printf.sprintf "(0x%016Lx)" (Unsigned.UInt64.to_int64 resolved_addr)
@@ -466,7 +464,7 @@ let rec print_die die depth buffer stmt_list_offset cu_addr_base
   (* Print children *)
   Seq.iter
     (fun child ->
-      print_die child (depth + 1) buffer stmt_list_offset cu_addr_base
+      print_die child (depth + 1) dwarf buffer stmt_list_offset cu_addr_base
         debug_info_offset abbrev_table encoding)
     die.Dwarf.DIE.children
 
@@ -524,7 +522,10 @@ let dump_debug_info filename =
               let abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
 
               (* Get the root DIE for this compilation unit *)
-              match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+              match
+                Dwarf.CompileUnit.root_die unit abbrev_table
+                  (Dwarf.context_str_resolver dwarf)
+              with
               | None ->
                   Printf.printf
                     "  No root DIE found for this compilation unit\n"
@@ -547,7 +548,8 @@ let dump_debug_info filename =
                   in
                   (* Get encoding for DIE parsing *)
                   let encoding = Dwarf.CompileUnit.encoding unit in
-                  print_die root_die 0 buffer stmt_list_offset cu_addr_base
+                  print_die root_die 0 dwarf buffer stmt_list_offset
+                    cu_addr_base
                     (Unsigned.UInt64.to_int debug_info_offset)
                     abbrev_table encoding;
                   (* Add NULL entry at the end of the compilation unit *)
@@ -682,7 +684,7 @@ let dump_debug_names filename =
                               Array.find_opt
                                 (fun entry ->
                                   entry.Dwarf.DebugStr.offset = str_offset)
-                                str_table.entries
+                                (Lazy.force str_table.entries)
                             in
                             match matching_entry with
                             | Some entry -> entry.content
@@ -858,7 +860,7 @@ let dump_debug_str filename =
               if entry.length > 0 then
                 Printf.printf "0x%08x: \"%s\"\n" entry.offset entry.content
               else Printf.printf "0x%08x: \"\"\n" entry.offset)
-            str_table.entries)
+            (Lazy.force str_table.entries))
 
 let dump_debug_line_str filename =
   handle_dwarf_errors (fun () ->
@@ -877,7 +879,7 @@ let dump_debug_line_str filename =
               if entry.length > 0 then
                 Printf.printf "0x%08x: \"%s\"\n" entry.offset entry.content
               else Printf.printf "0x%08x: \"\"\n" entry.offset)
-            line_str_table.entries)
+            (Lazy.force line_str_table.entries))
 
 let dump_debug_addr filename =
   handle_dwarf_errors (fun () ->

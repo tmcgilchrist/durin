@@ -122,11 +122,11 @@ let addr_to_location _buffer header entries addr =
       else ("??", 0)
 
 (* Resolve DIE address attribute considering addr_base *)
-let resolve_die_address buffer addr_base addr_value =
+let resolve_die_address dwarf addr_base addr_value =
   match addr_base with
   | Some base ->
       let index = Unsigned.UInt64.to_int addr_value in
-      Dwarf.resolve_address_index buffer index base
+      Dwarf.resolve_address_index dwarf index base
   | None -> addr_value
 
 (* Find function name for address by searching debug_info DIEs *)
@@ -141,7 +141,10 @@ let find_function_name buffer addr =
           let header = Dwarf.CompileUnit.header unit in
           let abbrev_offset = header.debug_abbrev_offset in
           let abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
-          match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+          match
+            Dwarf.CompileUnit.root_die unit abbrev_table
+              (Dwarf.context_str_resolver dwarf)
+          with
           | None -> search_cu rest
           | Some root_die -> (
               (* Get addr_base from root DIE if present *)
@@ -155,7 +158,7 @@ let find_function_name buffer addr =
               let resolve_attr_address = function
                 | Dwarf.DIE.Address a -> Some a
                 | Dwarf.DIE.IndexedAddress (_, idx) ->
-                    Some (resolve_die_address buffer addr_base idx)
+                    Some (resolve_die_address dwarf addr_base idx)
                 | _ -> None
               in
               let get_die_name die =

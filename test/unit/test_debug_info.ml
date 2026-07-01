@@ -233,7 +233,8 @@ let test_dw_form_ref_addr () =
   in
   let value =
     Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_ref_addr encoding
-      buffer ()
+      (Dwarf.buffer_str_resolver buffer)
+      ()
   in
   match value with
   | Dwarf.DIE.Reference offset ->
@@ -250,7 +251,8 @@ let test_dw_form_indirect () =
   in
   let value =
     Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_indirect encoding
-      buffer ()
+      (Dwarf.buffer_str_resolver buffer)
+      ()
   in
   match value with
   | Dwarf.DIE.UData v ->
@@ -314,7 +316,9 @@ let test_dw_form_addr_4byte () =
     { format = Dwarf.DWARF32; address_size = u8 4; version = u16 4 }
   in
   let value =
-    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_addr encoding buffer ()
+    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_addr encoding
+      (Dwarf.buffer_str_resolver buffer)
+      ()
   in
   match value with
   | Dwarf.DIE.Address addr ->
@@ -329,7 +333,9 @@ let test_dw_form_addr_8byte () =
     { format = Dwarf.DWARF32; address_size = u8 8; version = u16 5 }
   in
   let value =
-    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_addr encoding buffer ()
+    Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_addr encoding
+      (Dwarf.buffer_str_resolver buffer)
+      ()
   in
   match value with
   | Dwarf.DIE.Address addr ->
@@ -348,7 +354,8 @@ let test_dw_form_implicit_const () =
   in
   let value =
     Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_implicit_const encoding
-      buffer ~implicit_const:42L ()
+      (Dwarf.buffer_str_resolver buffer)
+      ~implicit_const:42L ()
   in
   match value with
   | Dwarf.DIE.SData v ->
@@ -363,7 +370,8 @@ let test_dw_form_implicit_const_negative () =
   in
   let value =
     Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_implicit_const encoding
-      buffer ~implicit_const:(-5L) ()
+      (Dwarf.buffer_str_resolver buffer)
+      ~implicit_const:(-5L) ()
   in
   match value with
   | Dwarf.DIE.SData v ->
@@ -381,7 +389,8 @@ let test_dw_form_loclistx () =
   in
   let value =
     Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_loclistx encoding
-      buffer ()
+      (Dwarf.buffer_str_resolver buffer)
+      ()
   in
   match value with
   | Dwarf.DIE.UData v ->
@@ -397,7 +406,8 @@ let test_dw_form_rnglistx () =
   in
   let value =
     Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_rnglistx encoding
-      buffer ()
+      (Dwarf.buffer_str_resolver buffer)
+      ()
   in
   match value with
   | Dwarf.DIE.UData v ->
@@ -413,7 +423,8 @@ let test_dw_form_ref_udata () =
   in
   let value =
     Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_ref_udata encoding
-      buffer ()
+      (Dwarf.buffer_str_resolver buffer)
+      ()
   in
   match value with
   | Dwarf.DIE.Reference v ->
@@ -429,7 +440,8 @@ let test_dw_form_ref_sig8 () =
   in
   let value =
     Dwarf.DIE.parse_attribute_value cursor Dwarf.DW_FORM_ref_sig8 encoding
-      buffer ()
+      (Dwarf.buffer_str_resolver buffer)
+      ()
   in
   match value with
   | Dwarf.DIE.Reference v ->

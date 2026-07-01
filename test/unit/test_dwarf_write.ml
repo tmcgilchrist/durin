@@ -478,7 +478,9 @@ let roundtrip_attr_value value form enc =
   Dwarf_write.write_attribute_value buf value form enc;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  Dwarf.DIE.parse_attribute_value cur form enc obj_buf ()
+  Dwarf.DIE.parse_attribute_value cur form enc
+    (Dwarf.buffer_str_resolver obj_buf)
+    ()
 
 let test_write_attr_string () =
   let result =
@@ -622,7 +624,9 @@ let parse_form_from_bytes bytes form enc =
   Buffer.add_string buf bytes;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  Dwarf.DIE.parse_attribute_value cur form enc obj_buf ()
+  Dwarf.DIE.parse_attribute_value cur form enc
+    (Dwarf.buffer_str_resolver obj_buf)
+    ()
 
 let test_parse_gnu_addr_index () =
   let buf = Buffer.create 8 in
@@ -695,7 +699,10 @@ let test_write_die_simple () =
   Dwarf_write.write_die buf die default_encoding lookup;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  match Dwarf.DIE.parse_die cur table default_encoding obj_buf with
+  match
+    Dwarf.DIE.parse_die cur table default_encoding
+      (Dwarf.buffer_str_resolver obj_buf)
+  with
   | None -> fail "expected Some die"
   | Some parsed -> (
       check int "tag" 0x11
@@ -737,7 +744,10 @@ let test_write_die_with_children () =
   Dwarf_write.write_die buf parent default_encoding lookup;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  match Dwarf.DIE.parse_die cur table default_encoding obj_buf with
+  match
+    Dwarf.DIE.parse_die cur table default_encoding
+      (Dwarf.buffer_str_resolver obj_buf)
+  with
   | None -> fail "expected Some die"
   | Some parsed -> (
       check int "parent tag" 0x11
@@ -773,7 +783,10 @@ let test_write_die_language_roundtrip () =
   Dwarf_write.write_die buf die default_encoding lookup;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  match Dwarf.DIE.parse_die cur table default_encoding obj_buf with
+  match
+    Dwarf.DIE.parse_die cur table default_encoding
+      (Dwarf.buffer_str_resolver obj_buf)
+  with
   | None -> fail "expected Some die"
   | Some parsed -> (
       let lang_attr = List.nth parsed.attributes 1 in
@@ -850,13 +863,19 @@ let test_write_die_forest () =
   Dwarf_write.write_die_forest buf [ die1; die2 ] default_encoding lookup;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
-  (match Dwarf.DIE.parse_die cur table default_encoding obj_buf with
+  (match
+     Dwarf.DIE.parse_die cur table default_encoding
+       (Dwarf.buffer_str_resolver obj_buf)
+   with
   | None -> fail "expected first die"
   | Some d1 -> (
       match (List.hd d1.attributes).value with
       | String s -> check string "first die name" "a.c" s
       | _ -> fail "expected String"));
-  match Dwarf.DIE.parse_die cur table default_encoding obj_buf with
+  match
+    Dwarf.DIE.parse_die cur table default_encoding
+      (Dwarf.buffer_str_resolver obj_buf)
+  with
   | None -> fail "expected second die"
   | Some d2 -> (
       match (List.hd d2.attributes).value with
@@ -901,7 +920,9 @@ let test_write_compile_unit () =
   check int "address_size" 8 (Unsigned.UInt8.to_int header.address_size);
   check int64 "debug_abbrev_offset" 0L
     (Unsigned.UInt64.to_int64 header.debug_abbrev_offset);
-  match Dwarf.DIE.parse_die cur table enc obj_buf with
+  match
+    Dwarf.DIE.parse_die cur table enc (Dwarf.buffer_str_resolver obj_buf)
+  with
   | None -> fail "expected die"
   | Some parsed ->
       check int "tag" 0x11
@@ -931,7 +952,10 @@ let test_write_debug_info_simple () =
   let _span, header = Dwarf.parse_compile_unit_header info_cur in
   check int "version" 5 (Unsigned.UInt16.to_int header.version);
   check int "address_size" 8 (Unsigned.UInt8.to_int header.address_size);
-  match Dwarf.DIE.parse_die info_cur abbrev_table enc info_buf with
+  match
+    Dwarf.DIE.parse_die info_cur abbrev_table enc
+      (Dwarf.buffer_str_resolver info_buf)
+  with
   | None -> fail "expected die"
   | Some parsed -> (
       check int "tag" 0x11
@@ -981,7 +1005,10 @@ let test_write_debug_info_with_children () =
   let info_buf = object_buffer_of_string info_str in
   let info_cur = Object.Buffer.cursor info_buf ~at:0 in
   let _span, _header = Dwarf.parse_compile_unit_header info_cur in
-  match Dwarf.DIE.parse_die info_cur abbrev_table enc info_buf with
+  match
+    Dwarf.DIE.parse_die info_cur abbrev_table enc
+      (Dwarf.buffer_str_resolver info_buf)
+  with
   | None -> fail "expected die"
   | Some parsed -> (
       match parsed.children () with
@@ -1698,6 +1725,25 @@ let test_write_cfi_initial_state () =
   | Some (Dwarf.CallFrame.Rule_offset off) ->
       check int "r16 offset" (-8) (Int64.to_int off)
   | _ -> fail "r16 should have Rule_offset"
+
+let test_cie_arch_defaults () =
+  let open Dwarf.CallFrame in
+  (* Default is x86-64: return address rip(16), initial CFA = rsp(7) + 8. *)
+  let x86 = create_default_cie () in
+  check int "x86-64 RA register" 16
+    (Unsigned.UInt64.to_int x86.return_address_register);
+  let x86_state = parse_initial_state x86 in
+  check int "x86-64 cfa_register" 7 x86_state.cfa_register;
+  check int "x86-64 cfa_offset" 8 (Int64.to_int x86_state.cfa_offset);
+  (* ARM64: return address x30(30), initial CFA = sp(31) + 0. *)
+  let arm = create_default_cie ~arch:ARM64 () in
+  check int "ARM64 RA register" 30
+    (Unsigned.UInt64.to_int arm.return_address_register);
+  let arm_state = parse_initial_state arm in
+  check int "ARM64 cfa_register" 31 arm_state.cfa_register;
+  check int "ARM64 cfa_offset" 0 (Int64.to_int arm_state.cfa_offset);
+  check int "ARM64 initial_cfi_state cfa_register" 31
+    (initial_cfi_state ~arch:ARM64 ()).cfa_register
 
 let test_write_debug_frame_section () =
   let cie = Dwarf.CallFrame.create_default_cie () in
@@ -2835,7 +2881,9 @@ let test_compile_unit_dwarf64 () =
   check int "address_size" 8 (Unsigned.UInt8.to_int header.address_size);
   let unit_length = Unsigned.UInt64.to_int header.unit_length in
   check int "unit_length + 12 = total" total (unit_length + 12);
-  match Dwarf.DIE.parse_die cur table enc obj_buf with
+  match
+    Dwarf.DIE.parse_die cur table enc (Dwarf.buffer_str_resolver obj_buf)
+  with
   | None -> fail "expected die"
   | Some parsed -> check int "attr count" 2 (List.length parsed.attributes)
 
@@ -2879,7 +2927,10 @@ let test_debug_info_dwarf64 () =
   let unit_length = Unsigned.UInt64.to_int header.unit_length in
   check int "unit_length + 12 = total" (String.length info_str)
     (unit_length + 12);
-  match Dwarf.DIE.parse_die info_cur abbrev_table enc info_buf with
+  match
+    Dwarf.DIE.parse_die info_cur abbrev_table enc
+      (Dwarf.buffer_str_resolver info_buf)
+  with
   | None -> fail "expected die"
   | Some parsed -> (
       match parsed.children () with
@@ -3399,6 +3450,7 @@ let () =
         [
           test_case "cie roundtrip" `Quick test_write_cie_roundtrip;
           test_case "cfi initial state" `Quick test_write_cfi_initial_state;
+          test_case "cie arch defaults" `Quick test_cie_arch_defaults;
           test_case "debug_frame section" `Quick test_write_debug_frame_section;
           test_case "advance_loc" `Quick test_write_cfi_advance_loc;
         ] );

@@ -38,7 +38,10 @@ let test_root_die_exists binary_path =
   | Some (cu, _) ->
       let h = Dwarf.CompileUnit.header cu in
       let abbrev_table = Dwarf.get_abbrev_table ctx h.debug_abbrev_offset in
-      let root = Dwarf.CompileUnit.root_die cu abbrev_table buffer in
+      let root =
+        Dwarf.CompileUnit.root_die cu abbrev_table
+          (Dwarf.context_str_resolver ctx)
+      in
       check bool "root DIE exists" true (Option.is_some root)
 
 let test_root_die_is_compile_unit binary_path =
@@ -50,7 +53,10 @@ let test_root_die_is_compile_unit binary_path =
   | Some (cu, _) -> (
       let h = Dwarf.CompileUnit.header cu in
       let abbrev_table = Dwarf.get_abbrev_table ctx h.debug_abbrev_offset in
-      match Dwarf.CompileUnit.root_die cu abbrev_table buffer with
+      match
+        Dwarf.CompileUnit.root_die cu abbrev_table
+          (Dwarf.context_str_resolver ctx)
+      with
       | None -> fail "expected root DIE"
       | Some die ->
           check bool "tag is DW_TAG_compile_unit" true
@@ -65,7 +71,10 @@ let test_root_die_has_attributes binary_path =
   | Some (cu, _) -> (
       let h = Dwarf.CompileUnit.header cu in
       let abbrev_table = Dwarf.get_abbrev_table ctx h.debug_abbrev_offset in
-      match Dwarf.CompileUnit.root_die cu abbrev_table buffer with
+      match
+        Dwarf.CompileUnit.root_die cu abbrev_table
+          (Dwarf.context_str_resolver ctx)
+      with
       | None -> fail "expected root DIE"
       | Some die ->
           check bool "has attributes" true (List.length die.attributes > 0))
@@ -79,7 +88,10 @@ let test_root_die_attribute_values binary_path =
   | Some (cu, _) -> (
       let h = Dwarf.CompileUnit.header cu in
       let abbrev_table = Dwarf.get_abbrev_table ctx h.debug_abbrev_offset in
-      match Dwarf.CompileUnit.root_die cu abbrev_table buffer with
+      match
+        Dwarf.CompileUnit.root_die cu abbrev_table
+          (Dwarf.context_str_resolver ctx)
+      with
       | None -> fail "expected root DIE"
       | Some die -> (
           (match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with

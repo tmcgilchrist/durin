@@ -1287,7 +1287,11 @@ module DebugMacinfo : sig
   }
   (** A single macinfo entry. *)
 
-  type section = { entries : entry list }
+  type section = {
+    entries : entry list Lazy.t;
+        (** The decoded entries, materialised only when forced with
+            [Lazy.force]. *)
+  }
   (** Complete parsed .debug_macinfo section. *)
 
   val parse_entry : Object.Buffer.cursor -> entry option
@@ -1296,8 +1300,9 @@ module DebugMacinfo : sig
       @raise Parse_error if a macinfo entry type is unknown. *)
 
   val parse_section : Object.Buffer.cursor -> int -> section
-  (** Parse the entire .debug_macinfo section. The [int] parameter is the
-      section size in bytes.
+  (** Parse the .debug_macinfo section starting at the cursor; the [int]
+      parameter is the section size in bytes. The entries are decoded lazily on
+      first force, so this call does not consume the cursor.
 
       @raise Parse_error if the section is malformed. *)
 end
@@ -1472,14 +1477,33 @@ val resolve_string_index : Object.Buffer.t -> dwarf_format -> int -> string
 (** Resolve a string index to its actual string value using debug_str sections
 *)
 
-val lookup_address_in_debug_addr : Object.Buffer.t -> u64 -> int -> u64 option
-(** Look up an address by index in the debug_addr section at given offset.
-    Returns Some address if found, None if not found or section missing *)
+val lookup_address_in_debug_addr : t -> u64 -> int -> u64 option
+(** Look up an address by index in the [.debug_addr] section. The parsed
+    contribution is cached on the context, so repeated lookups do not re-parse.
+    Returns [Some address] if found, [None] if not found or section missing. *)
 
-val resolve_address_index : Object.Buffer.t -> int -> u64 -> u64
-(** Resolve an address index to its actual address value using debug_addr
-    section. Returns the resolved address if found, or the index value as
-    fallback *)
+val resolve_address_index : t -> int -> u64 -> u64
+(** Resolve an address index to its actual address value using [.debug_addr]
+    (cached on the context). Returns the resolved address if found, or the index
+    value as fallback. *)
+
+type str_resolver = {
+  string_at : int -> string;
+      (** [.debug_str] offset to string (DW_FORM_strp, DW_FORM_GNU_strp_alt). *)
+  line_string_at : int -> string;
+      (** [.debug_line_str] offset to string (DW_FORM_line_strp). *)
+  indexed_string : dwarf_format -> int -> string;
+      (** [.debug_str_offsets] index to string (DW_FORM_strx,
+          DW_FORM_GNU_str_index). *)
+}
+(** How the DIE parser resolves the string forms. The low-level parser is
+    injected with one of these; the high-level context supplies a caching
+    implementation built from its section caches, while {!buffer_str_resolver}
+    is the uncached version that re-reads the sections on each call. *)
+
+val buffer_str_resolver : Object.Buffer.t -> str_resolver
+(** The uncached {!str_resolver} that reads the string sections directly from a
+    buffer on every lookup. Used by the stateless low-level parsing path. *)
 
 (** Debugging Information Entry (DIE) represent low-level information about a
     source program.
@@ -1545,19 +1569,21 @@ module DIE : sig
     Object.Buffer.cursor ->
     (u64, abbrev) Hashtbl.t ->
     encoding ->
-    Object.Buffer.t ->
+    str_resolver ->
     t option
-  (** Parse a single DIE from a buffer using abbreviation table. *)
+  (** Parse a single DIE from a buffer using abbreviation table. The
+      {!str_resolver} resolves the string-form attribute values. *)
 
   val parse_attribute_value :
     Object.Buffer.cursor ->
     attribute_form_encoding ->
     encoding ->
-    Object.Buffer.t ->
+    str_resolver ->
     ?implicit_const:int64 ->
     unit ->
     attribute_value
-  (** Parse a single attribute value from a buffer. *)
+  (** Parse a single attribute value from a buffer. The {!str_resolver} resolves
+      the string forms (DW_FORM_strp, DW_FORM_line_strp, DW_FORM_strx, …). *)
 
   val find_attribute : t -> attribute_encoding -> attribute_value option
   (** Find an attribute by name in a DIE *)
@@ -1626,44 +1652,33 @@ module CompileUnit : sig
   (** Extract encoding parameters (format, address_size, version) from the unit.
       This provides the context needed for parsing DIE attributes. *)
 
-  val root_die : t -> (u64, abbrev) Hashtbl.t -> Object.Buffer.t -> DIE.t option
-  (** Get the root DIE for this compilation unit. *)
+  val root_die : t -> (u64, abbrev) Hashtbl.t -> str_resolver -> DIE.t option
+  (** Get the root DIE for this compilation unit. The {!str_resolver} resolves
+      string-form attribute values. *)
 
   val die_cursor :
     t ->
     (u64, abbrev) Hashtbl.t ->
-    Object.Buffer.t ->
-    Object.Buffer.cursor * (u64, abbrev) Hashtbl.t * encoding * Object.Buffer.t
-  (** Get cursor, abbrev table, encoding, and buffer positioned at the first DIE
-      of this compilation unit. *)
+    str_resolver ->
+    Object.Buffer.cursor * (u64, abbrev) Hashtbl.t * encoding * str_resolver
+  (** Get cursor, abbrev table, encoding, and string resolver positioned at the
+      first DIE of this compilation unit. *)
 end
 
 val skip_attribute_value :
-  Object.Buffer.cursor ->
-  attribute_form_encoding ->
-  encoding ->
-  Object.Buffer.t ->
-  unit
+  Object.Buffer.cursor -> attribute_form_encoding -> encoding -> unit
 (** Skip past a single attribute value in the buffer without allocating.
 
     @raise Parse_error if the attribute form is unknown. *)
 
 val skip_die :
-  Object.Buffer.cursor ->
-  (u64, abbrev) Hashtbl.t ->
-  encoding ->
-  Object.Buffer.t ->
-  unit
+  Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> encoding -> unit
 (** Skip an entire DIE (attributes + children if any).
 
     @raise Parse_error if a DIE attribute form is unknown. *)
 
 val skip_children :
-  Object.Buffer.cursor ->
-  (u64, abbrev) Hashtbl.t ->
-  encoding ->
-  Object.Buffer.t ->
-  unit
+  Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> encoding -> unit
 (** Skip all remaining children at the current nesting level.
 
     @raise Parse_error if a DIE attribute form is unknown. *)
@@ -1677,8 +1692,14 @@ module DieCursor : sig
   type t
 
   val create :
-    Object.Buffer.t -> (u64, abbrev) Hashtbl.t -> encoding -> int -> t
-  (** Create cursor starting at buffer offset. *)
+    Object.Buffer.t ->
+    str_resolver ->
+    (u64, abbrev) Hashtbl.t ->
+    encoding ->
+    int ->
+    t
+  (** Create cursor starting at buffer offset. The {!str_resolver} resolves
+      string-form attribute values as DIEs are parsed. *)
 
   val next : t -> (DIE.t * bool) option
   (** Parse next DIE. Returns (die, has_children). Returns None at
@@ -2203,9 +2224,54 @@ module CallFrame : sig
       DWARF 5 specification, section 6.4.1 "Structure of Call Frame
       Information". *)
 
-  val create_default_cie : unit -> common_information_entry
-  (** Create a CIE with default values for x86-64 architecture. *)
-  (* TODO Maybe default to x86-64 but take an optional architecture here? *)
+  type cfi_op =
+    | CFA_advance_loc of int
+    | CFA_offset of int * int
+    | CFA_restore of int
+    | CFA_nop
+    | CFA_set_loc of int
+    | CFA_advance_loc1 of int
+    | CFA_advance_loc2 of int
+    | CFA_advance_loc4 of int
+    | CFA_offset_extended of int * int
+    | CFA_restore_extended of int
+    | CFA_undefined of int
+    | CFA_same_value of int
+    | CFA_register of int * int
+    | CFA_remember_state
+    | CFA_restore_state
+    | CFA_def_cfa of int * int
+    | CFA_def_cfa_register of int
+    | CFA_def_cfa_offset of int
+    | CFA_def_cfa_expression of string
+    | CFA_expression of int * string
+    | CFA_offset_extended_sf of int * int
+    | CFA_def_cfa_sf of int * int
+    | CFA_def_cfa_offset_sf of int
+    | CFA_val_offset of int * int
+    | CFA_val_offset_sf of int * int
+    | CFA_val_expression of int * string
+        (** A call frame instruction with its operands, for encoding the
+            [initial_instructions] of a CIE and the instructions of an FDE.
+
+            DWARF 5 specification, Table 7.29 "Call frame instruction
+            encodings". *)
+
+  val encode_instructions : cfi_op list -> string
+  (** Encode a list of call frame instructions to their byte representation (as
+      carried in [initial_instructions] and FDE instruction streams). *)
+
+  type arch =
+    | X86_64
+    | ARM64
+        (** Target architecture, selecting architecture-specific call frame
+            defaults (return-address register and the initial CFA rule). *)
+
+  val create_default_cie : ?arch:arch -> unit -> common_information_entry
+  (** Create a CIE with default values for the given [arch] (default {!X86_64}).
+      The return-address register and [initial_instructions] (the initial CFA
+      rule) are architecture-specific; the alignment factors and address size
+      are shared by the supported 64-bit targets. *)
 
   type frame_description_entry = {
     format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
@@ -2281,15 +2347,17 @@ module CallFrame : sig
   }
   (** CFI state for tracking register rules. *)
 
-  val initial_cfi_state : unit -> cfi_state
-  (** Create initial CFI state with architecture defaults *)
+  val initial_cfi_state : ?arch:arch -> unit -> cfi_state
+  (** Create the initial CFI state with the CFA defaults for [arch] (default
+      {!X86_64}): {!X86_64} starts at [rsp + 8], {!ARM64} at [sp + 0]. *)
 
-  val parse_initial_state : common_information_entry -> cfi_state
+  val parse_initial_state : ?arch:arch -> common_information_entry -> cfi_state
   (** Parse CIE initial instructions to establish proper initial CFI state.
 
       This function processes the initial_instructions field of a CIE to
       establish the baseline Call Frame Information state that FDEs can modify.
-  *)
+      [arch] (default {!X86_64}) supplies the default CFA when the CIE carries
+      no initial instructions. *)
 
   val parse_cfi_instructions : string -> int64 -> int64 -> (int * string) list
   (** Parse CFI instructions into human-readable descriptions.
@@ -2868,20 +2936,18 @@ module DebugStr : sig
   }
   (** Individual string entry with location and content information. *)
 
-  (* TODO Can we load this on-demand? All the strings in the section will
-     be very large! *)
   type t = {
-    entries : string_entry array;  (** Array of all strings in the section *)
+    entries : string_entry array Lazy.t;
+        (** All strings in the section, decoded only when forced with
+            [Lazy.force]. *)
     total_size : int;  (** Total size of the debug_str section *)
   }
   (** Complete parsed debug_str section *)
 
   val parse : Object.Buffer.t -> t option
-  (** Parse the complete .debug_str section from buffer.
-
-      @param buffer Object buffer containing the DWARF data
-      @return Optional parsed string table, None if section not found
-      @raise Parse_error if section format is invalid *)
+  (** Locate the .debug_str section in [buffer]. Returns [None] if the section
+      is absent; otherwise [Some t] whose [entries] are decoded lazily on first
+      force (so this call itself does not scan the section). *)
 end
 
 (** Line string table parsing for .debug_line_str section.
@@ -2901,17 +2967,17 @@ module DebugLineStr : sig
   (** Individual string entry with location and content information. *)
 
   type t = {
-    entries : string_entry array;  (** Array of all strings in the section *)
+    entries : string_entry array Lazy.t;
+        (** All strings in the section, decoded only when forced with
+            [Lazy.force]. *)
     total_size : int;  (** Total size of the debug_line_str section *)
   }
   (** Complete parsed debug_line_str section *)
 
   val parse : Object.Buffer.t -> t option
-  (** Parse the complete .debug_line_str section from buffer.
-
-      @param buffer Object buffer containing the DWARF data
-      @return Optional parsed line string table, None if section not found
-      @raise Parse_error if section format is invalid *)
+  (** Locate the .debug_line_str section in [buffer]. Returns [None] if the
+      section is absent; otherwise [Some t] whose [entries] are decoded lazily
+      on first force (so this call itself does not scan the section). *)
 
   val iter : (string_entry -> unit) -> t -> unit
   (** Iterate over every string entry in the section. *)
@@ -2927,7 +2993,15 @@ val create : Object.Buffer.t -> t
     data initially; sections are parsed and cached on first access. *)
 
 val parse_compile_units : t -> CompileUnit.t Seq.t
-(** Parse all compile units from the [Debug_info] section lazily *)
+(** Parse all compile units from the [Debug_info] section lazily. Each traversal
+    re-parses the section; for repeated iteration prefer the cached
+    {!compile_units}. *)
+
+val compile_units : t -> CompileUnit.t Seq.t
+(** Compile units from the [Debug_info] section, materialised once and cached in
+    the context. The cached, high-level counterpart of {!parse_compile_units}:
+    the first call forces and stores the full list, later calls iterate the
+    cached list without re-parsing. *)
 
 val get_abbrev_table : t -> size_t -> (u64, abbrev) Hashtbl.t
 (** Return the abbreviation table at the given [.debug_abbrev] offset, parsing
@@ -3156,9 +3230,10 @@ module DebugAddr : sig
         let first_address = addr_table.entries.(0).address
       ]}
 
-      Performance note: This function parses the entire contribution eagerly.
-      For large address tables, consider lazy parsing if only specific indices
-      are needed. TODO Do we have a lazy parsing option in the library?
+      Performance note: this stateless parse decodes the entire contribution
+      eagerly. To resolve individual indices without re-parsing, use the
+      context-level {!resolve_address_index} / {!lookup_address_in_debug_addr},
+      which parse the contribution once and cache it on the context.
 
       Architecture note: The [address_size] field determines the width of
       addresses read from the section. This allows the same DWARF data to
@@ -3312,15 +3387,15 @@ module DebugLoclists : sig
   type location_list = { entries : location_entry list }
   (** A single decoded location list — the entries found at one offset. *)
 
-  (* TODO [parse] populates [lists] eagerly; consider lazy parsing for large
-     sections. *)
   type loclists_section = {
     header : header;
     offset_table : u64 array;  (** Section-relative offset of each list. *)
-    lists : location_list array;  (** The decoded lists, one per offset. *)
+    lists : location_list array Lazy.t;
+        (** All lists, decoded only when forced with [Lazy.force]. For one list
+            without forcing them all, see {!resolve_location_list}. *)
   }
   (** A parsed [.debug_loclists] contribution: its [header], the [offset_table]
-      indexing each list, and the decoded [lists] themselves. *)
+      indexing each list, and the [lists] themselves (forced on demand). *)
 
   val parse_header : Object.Buffer.cursor -> header
   (** Parse the header of a loclists contribution.
@@ -3394,15 +3469,15 @@ module DebugRnglists : sig
   type range_list = { entries : range_entry list }
   (** A single decoded range list — the entries found at one offset. *)
 
-  (* TODO [parse] populates [lists] eagerly; consider lazy parsing for large
-     sections. *)
   type rnglists_section = {
     header : header;
     offset_table : u64 array;  (** Section-relative offset of each list. *)
-    lists : range_list array;  (** The decoded lists, one per offset. *)
+    lists : range_list array Lazy.t;
+        (** All lists, decoded only when forced with [Lazy.force]. For one list
+            without forcing them all, see {!resolve_range_list}. *)
   }
   (** A parsed [.debug_rnglists] contribution: its [header], the [offset_table]
-      indexing each list, and the decoded [lists] themselves. *)
+      indexing each list, and the [lists] themselves (forced on demand). *)
 
   val parse_header : Object.Buffer.cursor -> header
   (** Parse the header of a rnglists contribution.
@@ -3431,6 +3506,54 @@ module DebugRnglists : sig
       @raise Parse_error if an unknown range list entry kind is encountered. *)
 end
 
+(** {2 Cached section accessors}
+
+    Context-level accessors that parse a section on first request and cache the
+    result for reuse. Each is the memoizing, high-level counterpart of the
+    matching stateless {!DebugStr.parse} / {!DebugStrOffsets.parse} / … — see
+    {!get_abbrev_table}. *)
+
+val get_str_offsets : t -> u32 -> DebugStrOffsets.t
+(** Return the [.debug_str_offsets] contribution at the given offset, parsed
+    once and cached. *)
+
+val get_addr_table : t -> u64 -> DebugAddr.t
+(** Return the [.debug_addr] contribution at the given offset, parsed once and
+    cached. *)
+
+val get_debug_str : t -> DebugStr.t option
+(** Return the parsed [.debug_str] section ([None] if absent), parsed once and
+    cached. *)
+
+val get_debug_line_str : t -> DebugLineStr.t option
+(** Return the parsed [.debug_line_str] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_aranges : t -> DebugAranges.aranges_set option
+(** Return the parsed [.debug_aranges] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_loclists : t -> DebugLoclists.loclists_section option
+(** Return the parsed [.debug_loclists] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_rnglists : t -> DebugRnglists.rnglists_section option
+(** Return the parsed [.debug_rnglists] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_section : t -> dwarf_section -> (u64 * u64) option
+(** Locate a debug section, returning its [(offset, size)] within the object
+    file ([None] if absent). The result is cached, avoiding the repeated
+    object-file section-table scan that [find_debug_section_by_type] performs.
+*)
+
+val context_str_resolver : t -> str_resolver
+(** The cached counterpart of {!buffer_str_resolver}. Resolves DIE string-form
+    attribute values by reading directly from the string sections (so
+    suffix-shared offsets resolve correctly) while looking those sections up
+    through the context's section cache. Prefer this over {!buffer_str_resolver}
+    when reading through a context. *)
+
 (** Split DWARF support for .dwo files and .dwp packages.
 
     Split DWARF moves bulky debug information out of the main executable into
@@ -3451,6 +3574,8 @@ module SplitDwarf : sig
         (** Buffer containing the .dwo or .dwp file *)
     parent_buffer : Object.Buffer.t;
         (** Buffer containing the main executable *)
+    parent_ : t;
+        (** Context over [parent_buffer], used for cached address resolution. *)
     dwo_id : u64;  (** DWO identifier matching skeleton and split units *)
     contributions : (dwarf_section * int * int) list;
         (** Section contributions as (section, offset, size) from .dwp index *)

@@ -1,6 +1,6 @@
-/* TODO Where is this used?  */
 /* Test input for DWARF 4 integration tests.
-   Compiled with: gcc -gdwarf-4 -O1 -fdebug-types-section
+   Compiled with:
+     gcc -gdwarf-4 -O2 -fdebug-types-section -gno-variable-location-views
    Produces .debug_loc, .debug_types, and .debug_ranges sections. */
 #include <stdio.h>
 

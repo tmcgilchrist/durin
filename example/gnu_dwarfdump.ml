@@ -1,44 +1,6 @@
 (* An implementation of the "dwarfdump" utility for DWARF debugging information on Linux ELF files *)
 open Durin
 
-(* TODO Move into object? *)
-(* Helper function to map ELF machine type to architecture string *)
-let string_of_elf_machine = function
-  | `EM_386 -> "i386"
-  | `EM_X86_64 -> "x86-64"
-  | `EM_ARM -> "arm"
-  | `EM_AARCH64 -> "aarch64"
-  | `EM_MIPS -> "mips"
-  | `EM_PPC -> "powerpc"
-  | `EM_PPC64 -> "powerpc64"
-  | `EM_SPARC -> "sparc"
-  | `EM_SPARCV9 -> "sparcv9"
-  | `EM_IA_64 -> "ia64"
-  | `EM_S390 -> "s390"
-  | `EM_RISCV -> "riscv"
-  | `EM_68K -> "m68k"
-  | `EM_88K -> "m88k"
-  | `EM_PARISC -> "hppa"
-  | `EM_SH -> "sh"
-  | `EM_UNKNOWN x -> Printf.sprintf "unknown_%d" x
-  | _ -> "unknown"
-
-(* Helper function to get architecture string from ELF headers *)
-let get_architecture_string buffer =
-  try
-    let open Object.Elf in
-    let header, _section_array = read_elf buffer in
-    (* Extract architecture information from ELF header *)
-    let machine_str = string_of_elf_machine header.e_machine in
-    let class_str =
-      match header.e_ident.elf_class with
-      | `ELFCLASS32 -> "elf32"
-      | `ELFCLASS64 -> "elf64"
-      | `ELFCLASSNONE -> "elf"
-    in
-    Printf.sprintf "%s-%s" class_str machine_str
-  with _ -> "elf-unknown"
-
 (* Helper function to check if a string contains a substring *)
 let string_contains_substring s substring =
   try
@@ -319,7 +281,7 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
                         try
                           let addr_base_offset = Unsigned.UInt64.of_int 0x10 in
                           match
-                            Dwarf.lookup_address_in_debug_addr buffer
+                            Dwarf.lookup_address_in_debug_addr dwarf
                               addr_base_offset index
                           with
                           | Some addr -> addr
@@ -364,7 +326,7 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
               try
                 let addr_base_offset = Unsigned.UInt64.of_int 0x10 in
                 match
-                  Dwarf.lookup_address_in_debug_addr buffer addr_base_offset
+                  Dwarf.lookup_address_in_debug_addr dwarf addr_base_offset
                     index
                 with
                 | Some addr -> addr
@@ -458,51 +420,12 @@ and resolve_file_index buffer stmt_list_offset file_index =
 and decode_dwarf_expression block_data =
   if String.length block_data = 0 then ""
   else
-    (* Create a simple cursor-like interface for reading bytes *)
-    (* TODO I think we have this code elsewhere? *)
-    let pos = ref 0 in
-    let read_u8 () =
-      if !pos < String.length block_data then (
-        let byte = Char.code block_data.[!pos] in
-        pos := !pos + 1;
-        byte)
-      else failwith "Unexpected end of expression"
-    in
-    let read_uleb128 () =
-      let result = ref 0 in
-      let shift = ref 0 in
-      let rec loop () =
-        if !pos >= String.length block_data then !result
-        else
-          let byte = read_u8 () in
-          result := !result lor ((byte land 0x7f) lsl !shift);
-          shift := !shift + 7;
-          if byte land 0x80 <> 0 then loop () else !result
-      in
-      loop ()
-    in
-
-    let parts = ref [] in
+    (* Decode the expression bytecode with the library rather than re-reading
+       the bytes by hand. *)
     try
-      while !pos < String.length block_data do
-        let opcode = read_u8 () in
-        try
-          let op = Dwarf.operation_encoding opcode in
-          let op_str = Dwarf.string_of_operation_encoding op in
-          (* Check if this opcode has operands *)
-          let operand_str =
-            match op with
-            | Dwarf.DW_OP_addrx | Dwarf.DW_OP_constx | Dwarf.DW_OP_constu ->
-                let operand = read_uleb128 () in
-                Printf.sprintf " %d" operand
-            | _ -> ""
-          in
-          parts := !parts @ [ op_str ^ operand_str ]
-        with _ ->
-          (* Unknown opcode, just show hex *)
-          parts := !parts @ [ Printf.sprintf "0x%02x" opcode ]
-      done;
-      String.concat "\n                          " !parts
+      Dwarf.parse_dwarf_expression block_data
+      |> List.map Dwarf.string_of_dwarf_operation
+      |> String.concat "\n                          "
     with _ -> format_block_hex block_data
 
 and format_block_hex block_data =
@@ -575,7 +498,10 @@ let dump_debug_info filename =
             let abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
 
             (* Get the root DIE for this compilation unit *)
-            match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+            match
+              Dwarf.CompileUnit.root_die unit abbrev_table
+                (Dwarf.context_str_resolver dwarf)
+            with
             | None ->
                 Printf.printf "  No root DIE found for this compilation unit\n"
             | Some root_die ->
@@ -595,7 +521,10 @@ let dump_debug_info filename =
 
                 (* Collect DIE names using a separate parse *)
                 let die_names =
-                  match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+                  match
+                    Dwarf.CompileUnit.root_die unit abbrev_table
+                      (Dwarf.context_str_resolver dwarf)
+                  with
                   | Some name_die ->
                       collect_die_names name_die
                         (Unsigned.UInt64.to_int debug_info_offset)
@@ -662,7 +591,7 @@ let dump_debug_str filename =
             else
               Printf.printf "name at offset 0x%08x, length %4d is ''\n"
                 entry.offset 0)
-          str_table.entries;
+          (Lazy.force str_table.entries);
         Printf.printf "\n"
   with
   | Sys_error msg ->
@@ -783,7 +712,7 @@ let dump_debug_line_str filename =
             else
               Printf.printf "name at offset 0x%08x, length %4d is ''\n"
                 entry.offset 0)
-          line_str_table.entries;
+          (Lazy.force line_str_table.entries);
         Printf.printf "\n"
   with
   | Sys_error msg ->
@@ -856,7 +785,10 @@ let dump_debug_aranges filename =
             in
 
             (* Parse and print root DIE attributes *)
-            match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+            match
+              Dwarf.CompileUnit.root_die unit abbrev_table
+                (Dwarf.context_str_resolver dwarf)
+            with
             | Some root_die ->
                 (* Parse and print root DIE attributes with system dwarfdump formatting *)
                 let attributes = root_die.Dwarf.DIE.attributes in
@@ -1217,7 +1149,7 @@ let dump_debug_names filename =
                             Array.find_opt
                               (fun entry ->
                                 entry.Dwarf.DebugStr.offset = str_offset)
-                              str_table.entries
+                              (Lazy.force str_table.entries)
                           in
                           match matching_entry with
                           | Some entry -> entry.content
@@ -1384,7 +1316,7 @@ let dump_debug_addr filename =
 
     (* Output header matching llvm-dwarfdump format *)
     Printf.printf "%s:\tfile format %s\n\n.debug_addr contents:\n" filename
-      (get_architecture_string buffer);
+      (Dwarf.detect_format_and_arch buffer);
 
     (* Try to find the debug_addr section *)
     match get_section_offset buffer Dwarf.Debug_addr with
@@ -1447,7 +1379,7 @@ let dump_debug_frame filename =
     | Some (section_offset, section_size) ->
         (* Output header when section exists *)
         Printf.printf "%s:\tfile format %s\n\n.debug_frame contents:\n" filename
-          (get_architecture_string buffer);
+          (Dwarf.detect_format_and_arch buffer);
 
         (* Parse the debug_frame section using library function *)
         let cursor =
