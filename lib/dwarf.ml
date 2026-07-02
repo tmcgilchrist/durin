@@ -4015,7 +4015,7 @@ module DebugLine = struct
     in
     let bytes_read = ref 0 in
 
-    (* Initialize the line number state machine.
+    (* Initialise the line number state machine.
        DWARF 5: file register starts at 0 (0-based indices).
        DWARF 4: file register starts at 1 (1-based indices). *)
     let is_dwarf4 = version_int < 5 in
@@ -4049,7 +4049,7 @@ module DebugLine = struct
     in
 
     (* Helper function to create a line table entry.
-       Normalizes file_index to 0-based for both DWARF 4 and 5. *)
+       Normalises file_index to 0-based for both DWARF 4 and 5. *)
     let make_entry () =
       let normalized_file_index =
         if is_dwarf4 then
@@ -5432,7 +5432,7 @@ module DebugNames = struct
     comp_unit_offsets : u32 array;
     local_type_unit_offsets : u32 array;
     foreign_type_unit_signatures : u64 array;
-    buckets : u32 array;  (** Hash bucket organization *)
+    buckets : u32 array;  (** Hash bucket organisation *)
     hash_table : u32 array;
     name_table : debug_str_entry array;
     entry_offsets : u32 array;

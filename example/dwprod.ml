@@ -44,7 +44,7 @@ let process_file filename =
 
 (* Command line interface *)
 let filename =
-  let doc = "Binary file to analyze for DWARF debug information" in
+  let doc = "Binary file to analyse for DWARF debug information" in
   Cmdliner.Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
 let cmd =

@@ -2,7 +2,7 @@
 
     The [.eh_frame] section contains Call Frame Information used by the runtime
     exception handling mechanism. While similar to [.debug_frame], it has some
-    format differences optimized for runtime performance.
+    format differences optimised for runtime performance.
 
     The entry format reuses DWARF Call Frame Information ({!Dwarf.CallFrame};
     DWARF 5 specification, section 6.4 "Call Frame Information"), but the

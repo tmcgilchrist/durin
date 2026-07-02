@@ -1354,7 +1354,7 @@ let test_write_debug_loc_roundtrip () =
       ]
   in
   let buf = Buffer.create 64 in
-  Dwarf_write.write_debug_loc buf entries addr_size;
+  Dwarf_write.write_debug_loc buf entries ~address_size:addr_size;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let parsed = Dwarf.DebugLoc.parse_list cur addr_size in
@@ -1372,7 +1372,7 @@ let test_write_debug_ranges_roundtrip () =
       [ Range { begin_addr = u64 0x2000; end_addr = u64 0x3000 }; EndOfList ]
   in
   let buf = Buffer.create 64 in
-  Dwarf_write.write_debug_ranges buf entries addr_size;
+  Dwarf_write.write_debug_ranges buf entries ~address_size:addr_size;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let parsed = Dwarf.DebugRanges.parse_list cur addr_size in
@@ -1798,7 +1798,7 @@ let test_write_cfi_advance_loc () =
 let test_write_loclists_header_roundtrip () =
   let enc = default_encoding in
   let buf = Buffer.create 64 in
-  Dwarf_write.write_loclists_header buf enc 0 10;
+  Dwarf_write.write_loclists_header buf enc ~offset_entry_count:0 ~body_size:10;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let _fmt, unit_length = read_initial_length cur in

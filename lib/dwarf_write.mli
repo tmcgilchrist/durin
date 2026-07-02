@@ -106,9 +106,9 @@ val attribute_value_size :
 
 val write_die :
   Buffer.t -> Dwarf.DIE.t -> Dwarf.encoding -> (int -> u64) -> unit
-(** Serialise a DIE and its child subtree: the abbreviation code (from the
-    [(int -> u64)] lookup keyed on the DIE's offset), its attribute values, and
-    recursively its children terminated by a null entry.
+(** Serialise a DIE and its child subtree. This writes the abbreviation code
+    (from the [(int -> u64)] lookup keyed on the DIE's offset), its attribute
+    values, and recursively its children terminated by a null entry.
 
     @raise Dwarf.Parse_error
       if a DIE attribute uses an unsupported form/value combination. *)
@@ -130,8 +130,8 @@ val write_die_forest :
 
 val write_compile_unit :
   Buffer.t -> Dwarf.encoding -> Dwarf.DIE.t -> (int -> u64) -> u64 -> unit
-(** Serialise a complete compilation unit: the unit header (with the given
-    [.debug_abbrev] offset) followed by the root DIE and its subtree. The
+(** Serialise a complete compilation unit. This writes the unit header (with the
+    given [.debug_abbrev] offset) followed by the root DIE and its subtree. The
     [(int -> u64)] argument is the abbreviation-code lookup.
 
     @raise Dwarf.Parse_error
@@ -186,8 +186,8 @@ val write_expression :
 
 val write_location_entry :
   Buffer.t -> Dwarf.DebugLoclists.location_entry -> int -> unit
-(** Serialise a single [.debug_loclists] entry (a DW_LLE_ record) using the
-    given address size in bytes.
+(** Serialise a single [.debug_loclists] entry using the given address size in
+    bytes.
 
     @raise Dwarf.Parse_error if an unsupported address size is encountered. *)
 
@@ -200,8 +200,8 @@ val write_location_list :
 
 val write_range_entry :
   Buffer.t -> Dwarf.DebugRnglists.range_entry -> int -> unit
-(** Serialise a single [.debug_rnglists] entry (a DW_RLE_ record) using the
-    given address size in bytes.
+(** Serialise a single [.debug_rnglists] entry using the given address size in
+    bytes.
 
     @raise Dwarf.Parse_error if an unsupported address size is encountered. *)
 
@@ -211,23 +211,29 @@ val write_range_list : Buffer.t -> Dwarf.DebugRnglists.range_list -> int -> unit
 
     @raise Dwarf.Parse_error if an unsupported address size is encountered. *)
 
-val write_loclists_header : Buffer.t -> Dwarf.encoding -> int -> int -> unit
-(** Write a [.debug_loclists] contribution header. The [int] arguments are the
-    number of offset-table entries and the size in bytes of the lists body. *)
+val write_loclists_header :
+  Buffer.t -> Dwarf.encoding -> offset_entry_count:int -> body_size:int -> unit
+(** Write a [.debug_loclists] contribution header. [offset_entry_count] is the
+    number of offset-table entries and [body_size] is the size in bytes of the
+    lists body. *)
 
-val write_rnglists_header : Buffer.t -> Dwarf.encoding -> int -> int -> unit
-(** Write a [.debug_rnglists] contribution header. The [int] arguments are the
-    number of offset-table entries and the size in bytes of the lists body. *)
+val write_rnglists_header :
+  Buffer.t -> Dwarf.encoding -> offset_entry_count:int -> body_size:int -> unit
+(** Write a [.debug_rnglists] contribution header. [offset_entry_count] is the
+    number of offset-table entries and [body_size] is the size in bytes of the
+    lists body. *)
 
-val write_debug_loc : Buffer.t -> Dwarf.DebugLoc.entry list -> int -> unit
+val write_debug_loc :
+  Buffer.t -> Dwarf.DebugLoc.entry list -> address_size:int -> unit
 (** Serialise a legacy DWARF 4 [.debug_loc] location list using the given
-    address size in bytes.
+    [address_size] in bytes.
 
     @raise Dwarf.Parse_error if an unsupported address size is encountered. *)
 
-val write_debug_ranges : Buffer.t -> Dwarf.DebugRanges.entry list -> int -> unit
+val write_debug_ranges :
+  Buffer.t -> Dwarf.DebugRanges.entry list -> address_size:int -> unit
 (** Serialise a legacy DWARF 4 [.debug_ranges] range list using the given
-    address size in bytes.
+    [address_size] in bytes.
 
     @raise Dwarf.Parse_error if an unsupported address size is encountered. *)
 
@@ -253,7 +259,7 @@ val write_debug_line :
 (** Write call frame instructions into a [.debug_frame] or [.eh_frame] buffer.
     The instruction type {!Dwarf.CallFrame.cfi_op} and its byte encoding
     ({!Dwarf.CallFrame.encode_instructions}) live with the other CFI types in
-    {!Dwarf.CallFrame}; these are the buffer-writing wrappers.
+    {!Dwarf.CallFrame}.
 
     DWARF 5 specification, section 6.4.2 "Call Frame Instructions". *)
 
@@ -273,7 +279,8 @@ val write_fde : Buffer.t -> Dwarf.CallFrame.frame_description_entry -> unit
 
 val write_debug_frame :
   Buffer.t -> Dwarf.CallFrame.debug_frame_entry list -> unit
-(** Write a complete [.debug_frame] section: its CIEs and FDEs in order. *)
+(** Write a complete [.debug_frame] section. This writes its CIEs and FDEs in
+    order. *)
 
 (** {2 .eh_frame Writer} *)
 
@@ -299,33 +306,33 @@ val write_eh_frame : Buffer.t -> Eh_frame.eh_frame_entry list -> unit
 (** {2 .debug_aranges Writer} *)
 
 val write_aranges_set : Buffer.t -> Dwarf.DebugAranges.aranges_set -> unit
-(** Serialise a [.debug_aranges] set: its header followed by the address-range
-    descriptors, terminated by a zero entry.
+(** Serialise a [.debug_aranges] set. This writes its header followed by the
+    address-range descriptors, terminated by a zero entry.
 
     @raise Dwarf.Parse_error if an unsupported address size is encountered. *)
 
 (** {2 .debug_addr and .debug_str_offsets Writers} *)
 
 val write_debug_addr : Buffer.t -> Dwarf.DebugAddr.t -> unit
-(** Serialise a [.debug_addr] contribution: its header followed by the address
-    table.
+(** Serialise a [.debug_addr] contribution. This writes its header followed by
+    the address table.
 
     @raise Dwarf.Parse_error if an unsupported address size is encountered. *)
 
 val write_debug_str_offsets : Buffer.t -> Dwarf.DebugStrOffsets.t -> unit
-(** Serialise a [.debug_str_offsets] contribution: its header followed by the
-    array of offsets into [.debug_str]. *)
+(** Serialise a [.debug_str_offsets] contribution. This writes its header
+    followed by the array of offsets into [.debug_str]. *)
 
 (** {2 .debug_names Writer} *)
 
 val write_debug_names_abbrev_table :
   Buffer.t -> Dwarf.DebugNames.debug_names_abbrev list -> unit
-(** Write the abbreviation table of a [.debug_names] index — the per-entry
-    formats describing each name-index entry. *)
+(** Write the abbreviation table of a [.debug_names] index. *)
 
 val write_debug_names : Buffer.t -> Dwarf.DebugNames.debug_names_section -> unit
-(** Serialise a complete [.debug_names] accelerated name index: its header, the
-    hash and offset tables, the abbreviation table, and the entry pool. *)
+(** Serialise a complete [.debug_names] accelerated name index. This writes its
+    header, the hash and offset tables, the abbreviation table, and the entry
+    pool. *)
 
 (** {2 Split DWARF Index Writer} *)
 
@@ -338,14 +345,14 @@ val write_unit_index : Buffer.t -> Dwarf.SplitDwarf.unit_index -> unit
 
 val write_debug_macro_entry :
   Buffer.t -> Dwarf.dwarf_format -> Dwarf.DebugMacro.entry -> unit
-(** Serialise a single [.debug_macro] entry (a DW_MACRO_ record). *)
+(** Serialise a single [.debug_macro] entry. *)
 
 val write_debug_macro_unit : Buffer.t -> Dwarf.DebugMacro.macro_unit -> unit
-(** Serialise one macro unit: its header followed by its entries, terminated by
-    a null entry. *)
+(** Serialise one macro unit. This writes its header followed by its entries,
+    terminated by a null entry. *)
 
 val write_debug_macro : Buffer.t -> Dwarf.DebugMacro.section -> unit
-(** Serialise a complete [.debug_macro] section — all of its macro units. *)
+(** Serialise a complete [.debug_macro] section. *)
 
 (** {2 .debug_pubnames/.debug_pubtypes Writers} *)
 
@@ -354,16 +361,16 @@ val write_pubnames_set :
   Dwarf.DebugPubnames.header ->
   Dwarf.DebugPubnames.entry list ->
   unit
-(** Serialise a [.debug_pubnames] set: its header followed by the (offset, name)
-    pairs, terminated by a zero entry. *)
+(** Serialise a [.debug_pubnames] set. This writes its header followed by the
+    (offset, name) pairs, terminated by a zero entry. *)
 
 val write_pubtypes_set :
   Buffer.t ->
   Dwarf.DebugPubtypes.header ->
   Dwarf.DebugPubtypes.entry list ->
   unit
-(** Serialise a [.debug_pubtypes] set: its header followed by the (offset, name)
-    pairs, terminated by a zero entry. *)
+(** Serialise a [.debug_pubtypes] set. This writes its header followed by the
+    (offset, name) pairs, terminated by a zero entry. *)
 
 (** {2 .debug_types Writer} *)
 
@@ -376,10 +383,10 @@ val write_type_unit :
   u64 ->
   u64 ->
   unit
-(** Serialise a [.debug_types] type unit: the type-unit header followed by the
-    root DIE and its subtree. After the abbreviation-code lookup, the three
-    [u64] arguments are the type signature, the offset of the type DIE within
-    the unit, and the [.debug_abbrev] offset.
+(** Serialise a [.debug_types] type unit. This writes the type-unit header
+    followed by the root DIE and its subtree. After the abbreviation-code
+    lookup, the three [u64] arguments are the type signature, the offset of the
+    type DIE within the unit, and the [.debug_abbrev] offset.
 
     @raise Dwarf.Parse_error
       if a DIE attribute uses an unsupported form/value combination. *)

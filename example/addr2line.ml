@@ -241,7 +241,7 @@ let lookup_address buffer addr_str show_functions =
 
 (* Command-line interface *)
 let executable_file =
-  let doc = "Executable file to analyze" in
+  let doc = "Executable file to analyse" in
   Cmdliner.Arg.(
     value & opt (some string) None & info [ "e"; "exe" ] ~docv:"FILE" ~doc)
 

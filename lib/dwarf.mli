@@ -20,7 +20,7 @@ type unit_type =
 val unit_type : u8 -> unit_type
 (** Convert a u8 value to a unit_type
 
-    @raise Parse_error if the byte is not a recognized DWARF unit type. *)
+    @raise Parse_error if the byte is not a recognised DWARF unit type. *)
 
 val u8_of_unit_type : unit_type -> u8
 (** Convert a [unit_type] to its u8 encoding. *)
@@ -170,7 +170,7 @@ val children_determination : int -> children_determination
 (** Convert int to [children_determination].
 
     @raise Parse_error
-      if the value is not a recognized child determination code. *)
+      if the value is not a recognised child determination code. *)
 
 val int_of_children_determination : children_determination -> int
 (** Convert [children_determination] to int. *)
@@ -672,7 +672,7 @@ val location_list_entry : int -> location_list_entry
 (** Convert an int to a [location_list_entry].
 
     @raise Parse_error
-      if the value is not a recognized location list entry kind. *)
+      if the value is not a recognised location list entry kind. *)
 
 val int_of_location_list_entry : location_list_entry -> int
 (** Convert a [location_list_entry] to its integer encoding. *)
@@ -740,7 +740,7 @@ type decimal_sign =
 val decimal_sign : int -> decimal_sign
 (** Convert an int to a [decimal_sign].
 
-    @raise Parse_error if the value is not a recognized decimal sign code. *)
+    @raise Parse_error if the value is not a recognised decimal sign code. *)
 
 val int_of_decimal_sign : decimal_sign -> int
 (** Convert a [decimal_sign] to its integer encoding. *)
@@ -789,7 +789,7 @@ type accessibility =
 val accessibility : int -> accessibility
 (** Convert an int to an [accessibility].
 
-    @raise Parse_error if the value is not a recognized accessibility code. *)
+    @raise Parse_error if the value is not a recognised accessibility code. *)
 
 val int_of_accessibility : accessibility -> int
 (** Convert an [accessibility] to its integer encoding. *)
@@ -812,7 +812,7 @@ type visibility =
 val visibility : int -> visibility
 (** Convert an int to a [visibility].
 
-    @raise Parse_error if the value is not a recognized visibility code. *)
+    @raise Parse_error if the value is not a recognised visibility code. *)
 
 val int_of_visibility : visibility -> int
 (** Convert a [visibility] to its integer encoding. *)
@@ -835,7 +835,7 @@ type virtuality =
 val virtuality : int -> virtuality
 (** Convert an int to a [virtuality].
 
-    @raise Parse_error if the value is not a recognized virtuality code. *)
+    @raise Parse_error if the value is not a recognised virtuality code. *)
 
 val int_of_virtuality : virtuality -> int
 (** Convert a [virtuality] to its integer encoding. *)
@@ -919,7 +919,7 @@ type identifier =
 val identifier : int -> identifier
 (** Convert an int to an [identifier].
 
-    @raise Parse_error if the value is not a recognized identifier case code. *)
+    @raise Parse_error if the value is not a recognised identifier case code. *)
 
 val int_of_identifier : identifier -> int
 (** Convert an [identifier] to its integer encoding. *)
@@ -972,7 +972,7 @@ type inlined =
 val inlined : int -> inlined
 (** Convert an int to an [inlined].
 
-    @raise Parse_error if the value is not a recognized inline code. *)
+    @raise Parse_error if the value is not a recognised inline code. *)
 
 val int_of_inlined : inlined -> int
 (** Convert an [inlined] to its integer encoding. *)
@@ -994,7 +994,7 @@ type array_ordering =
 val array_ordering : int -> array_ordering
 (** Convert an int to an [array_ordering].
 
-    @raise Parse_error if the value is not a recognized array ordering. *)
+    @raise Parse_error if the value is not a recognised array ordering. *)
 
 val int_of_array_ordering : array_ordering -> int
 (** Convert an [array_ordering] to its integer encoding. *)
@@ -1017,7 +1017,7 @@ type discriminant =
 val discriminant : int -> discriminant
 (** Convert an int to a [discriminant].
 
-    @raise Parse_error if the value is not a recognized discriminant descriptor.
+    @raise Parse_error if the value is not a recognised discriminant descriptor.
 *)
 
 val int_of_discriminant : discriminant -> int
@@ -1068,7 +1068,7 @@ val defaulted_attribute : int -> defaulted_attribute
 (** Convert an int to a [defaulted_attribute].
 
     @raise Parse_error
-      if the value is not a recognized defaulted attribute code. *)
+      if the value is not a recognised defaulted attribute code. *)
 
 val int_of_defaulted_attribute : defaulted_attribute -> int
 (** Convert a [defaulted_attribute] to its integer encoding. *)
@@ -1256,6 +1256,9 @@ end
 
 (** Parser for the .debug_macinfo section (DWARF 4).
 
+    TODO Write this from the perspective of DWARF 4, then point to the DWARF 5
+    equivalent section.
+
     The debug_macinfo section is the DWARF 4 predecessor to .debug_macro. It
     contains macro definition and undefinition information in a simpler format
     without string table indirection.
@@ -1273,7 +1276,7 @@ module DebugMacinfo : sig
   val macinfo_type_of_int : int -> macinfo_type
   (** Convert an int to a [macinfo_type].
 
-      @raise Parse_error if the value is not a recognized macinfo type. *)
+      @raise Parse_error if the value is not a recognised macinfo type. *)
 
   val string_of_macinfo_type : macinfo_type -> string
   (** Convert a [macinfo_type] to its string representation. *)
@@ -1296,7 +1299,7 @@ module DebugMacinfo : sig
       @raise Parse_error if a macinfo entry type is unknown. *)
 
   val parse_section : Object.Buffer.cursor -> int -> section
-  (** Parse the .debug_macinfo section starting at the cursor; the [int]
+  (** Parse the .debug_macinfo section starting at the cursor. The [int]
       parameter is the section size in bytes. The entries are decoded lazily on
       first force, so this call does not consume the cursor.
 
@@ -1411,7 +1414,7 @@ type range_list_entry =
 val range_list_entry : int -> range_list_entry
 (** Convert an int to a [range_list_entry].
 
-    @raise Parse_error if the value is not a recognized range list entry kind.
+    @raise Parse_error if the value is not a recognised range list entry kind.
 *)
 
 val int_of_range_list_entry : range_list_entry -> int
@@ -1588,7 +1591,7 @@ end
 (** Compilation units represent individual source files and their debugging
     information in DWARF.
 
-    A compilation unit is a fundamental organizational structure in DWARF that
+    A compilation unit is a fundamental organisational structure in DWARF that
     contains all debugging information associated with the compilation of a
     single source file.
 
@@ -1609,7 +1612,7 @@ module CompileUnit : sig
     version : u16;  (** DWARF version (4 or 5) *)
     unit_type : unit_type;
         (** Unit type (compile, type, partial, skeleton, split_compile,
-            split_type). Synthesized as DW_UT_compile for DWARF 4. *)
+            split_type). Synthesised as DW_UT_compile for DWARF 4. *)
     debug_abbrev_offset : u64;  (** Offset into debug abbreviation table *)
     address_size : u8;  (** Size of addresses in bytes (4 or 8) *)
     span : span;  (** Span indicating the header's position and size *)
@@ -2505,7 +2508,7 @@ module DebugNames : sig
         (** Offsets to local type unit headers *)
     foreign_type_unit_signatures : u64 array;
         (** Type signatures for foreign type units *)
-    buckets : u32 array;  (** Hash bucket organization *)
+    buckets : u32 array;  (** Hash bucket organisation *)
     hash_table : u32 array;
         (** Hash buckets containing indices into name_table *)
     name_table : debug_str_entry array;
@@ -2833,7 +2836,7 @@ module DebugNames : sig
     entry_parse_result list -> (u32 * entry_parse_result list) list
   (** Group entries by their compilation unit.
 
-      This function organizes entries into groups based on their compilation
+      This function organises entries into groups based on their compilation
       unit index, leveraging the DWARF 5 DW_IDX_compile_unit attribute.
 
       @param entries List of entries to group
@@ -2843,7 +2846,7 @@ module DebugNames : sig
     entry_parse_result list -> (u32 * entry_parse_result list) list
   (** Group entries by their type unit.
 
-      This function organizes entries into groups based on their type unit
+      This function organises entries into groups based on their type unit
       index, leveraging the DWARF 5 DW_IDX_type_unit attribute.
 
       @param entries List of entries to group
@@ -3253,7 +3256,7 @@ end
 
     Each compilation unit can have its own address range table describing all
     the non-contiguous memory regions that contain code belonging to that unit.
-    This is essential for optimized code where functions may be split across
+    This is essential for optimised code where functions may be split across
     multiple memory regions.
 
     DWARF 5 specification, section 6.1.2 "Lookup by Address". *)
@@ -3324,12 +3327,12 @@ end
     describe where variables and parameters can be found during program
     execution. Location lists are essential for debuggers to track variable
     locations as they move between registers, memory locations, or become
-    temporarily unavailable during optimization.
+    temporarily unavailable during optimisation.
 
     The .debug_loclists section contains location descriptions that specify:
     - Address ranges where variables are valid
     - How to find variables (register, memory address, computed location)
-    - When variables are not available (optimized out, between scopes)
+    - When variables are not available (optimised out, between scopes)
 
     Each location list consists of a series of location list entries (LLE) that
     describe contiguous ranges of program counter values and the corresponding

@@ -610,7 +610,7 @@ let dump_debug_str_offsets filename =
     (* Try to get the debug_str_offsets section offset and size using conversion function *)
     match get_section_offset buffer Dwarf.Debug_str_offs with
     | None ->
-        (* Match system dwarfdump behavior: output empty line when section missing *)
+        (* Match system dwarfdump behaviour: output empty line when section missing *)
         Printf.printf "\n"
     | Some (section_offset, _section_size) ->
         (* Output header when section exists *)
@@ -1019,7 +1019,7 @@ let dump_debug_names filename =
     let actual_filename, is_debug = resolve_binary_path filename in
     let buffer = Object.Buffer.parse actual_filename in
 
-    (* Output empty content to match system dwarfdump behavior *)
+    (* Output empty content to match system dwarfdump behaviour *)
     Printf.printf "\n";
 
     (* Try to find the debug_names section *)
@@ -1284,7 +1284,7 @@ let dump_debug_loclists filename =
     match get_section_offset buffer Dwarf.Debug_loclists with
     | None ->
         (* No debug_loclists section found - this is normal for simple programs.
-           Show empty section output to match system dwarfdump behavior *)
+           Show empty section output to match system dwarfdump behaviour *)
         ()
     | Some (_section_offset, _section_size) -> (
         match Dwarf.DebugLoclists.parse buffer with
@@ -1841,7 +1841,7 @@ let dump_eh_frame_hdr filename =
 
 (* Command line interface matching dwarfdump's --debug-* options *)
 let filename =
-  let doc = "ELF binary file to analyze for DWARF debug information" in
+  let doc = "ELF binary file to analyse for DWARF debug information" in
   Cmdliner.Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
 let debug_line_flag =

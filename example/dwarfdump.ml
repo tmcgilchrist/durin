@@ -990,7 +990,7 @@ let dump_debug_loclists filename =
       match get_section_offset buffer Dwarf.Debug_loclists with
       | None ->
           (* No debug_loclists section found - this is normal for simple programs.
-             Show empty section output to match system dwarfdump behavior *)
+             Show empty section output to match system dwarfdump behaviour *)
           ()
       | Some (_section_offset, _section_size) -> (
           match Dwarf.DebugLoclists.parse buffer with
@@ -1009,7 +1009,7 @@ let dump_debug_loclists filename =
 
 (* Command line interface *)
 let filename =
-  let doc = "Binary file to analyze for DWARF debug information" in
+  let doc = "Binary file to analyse for DWARF debug information" in
   Cmdliner.Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
 let debug_line_flag =
@@ -1108,7 +1108,7 @@ let dwarfdump_cmd debug_line debug_info debug_names debug_abbrev
       false,
       false,
       false ) ->
-      (* Default behavior - dump debug line information *)
+      (* Default behaviour - dump debug line information *)
       dump_debug_line filename
 
 let cmd =

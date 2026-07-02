@@ -600,8 +600,8 @@ let write_range_list buf (list : Dwarf.DebugRnglists.range_list)
     (address_size : int) =
   List.iter (fun e -> write_range_entry buf e address_size) list.entries
 
-let write_loclists_header buf (enc : Dwarf.encoding) (offset_entry_count : int)
-    (body_size : int) =
+let write_loclists_header buf (enc : Dwarf.encoding) ~(offset_entry_count : int)
+    ~(body_size : int) =
   let header_content_size = 2 + 1 + 1 + 4 in
   let offset_table_size =
     offset_entry_count * Dwarf.offset_size_for_format enc.format
@@ -613,9 +613,9 @@ let write_loclists_header buf (enc : Dwarf.encoding) (offset_entry_count : int)
   write_u8 buf (Unsigned.UInt8.of_int 0);
   write_u32_le buf (Unsigned.UInt32.of_int offset_entry_count)
 
-let write_rnglists_header buf (enc : Dwarf.encoding) (offset_entry_count : int)
-    (body_size : int) =
-  write_loclists_header buf enc offset_entry_count body_size
+let write_rnglists_header buf (enc : Dwarf.encoding) ~(offset_entry_count : int)
+    ~(body_size : int) =
+  write_loclists_header buf enc ~offset_entry_count ~body_size
 
 let write_debug_loc_entry buf (entry : Dwarf.DebugLoc.entry)
     (address_size : int) =
@@ -637,7 +637,7 @@ let write_debug_loc_entry buf (entry : Dwarf.DebugLoc.entry)
       Buffer.add_string buf expr
 
 let write_debug_loc buf (entries : Dwarf.DebugLoc.entry list)
-    (address_size : int) =
+    ~(address_size : int) =
   List.iter (fun e -> write_debug_loc_entry buf e address_size) entries
 
 let write_debug_ranges_entry buf (entry : Dwarf.DebugRanges.entry)
@@ -658,7 +658,7 @@ let write_debug_ranges_entry buf (entry : Dwarf.DebugRanges.entry)
       write_address buf address_size end_addr
 
 let write_debug_ranges buf (entries : Dwarf.DebugRanges.entry list)
-    (address_size : int) =
+    ~(address_size : int) =
   List.iter (fun e -> write_debug_ranges_entry buf e address_size) entries
 
 (* Line Program Writer *)
