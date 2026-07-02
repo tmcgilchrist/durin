@@ -25,7 +25,10 @@ let process_file filename =
           Dwarf.get_abbrev_table dwarf header.debug_abbrev_offset
         in
         let producer =
-          match Dwarf.CompileUnit.root_die unit abbrev_table buffer with
+          match
+            Dwarf.CompileUnit.root_die unit abbrev_table
+              (Dwarf.context_str_resolver dwarf)
+          with
           | None -> "<no root DIE>"
           | Some root_die -> (
               match Dwarf.DIE.find_attribute root_die Dwarf.DW_AT_producer with
@@ -41,7 +44,7 @@ let process_file filename =
 
 (* Command line interface *)
 let filename =
-  let doc = "Binary file to analyze for DWARF debug information" in
+  let doc = "Binary file to analyse for DWARF debug information" in
   Cmdliner.Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
 let cmd =

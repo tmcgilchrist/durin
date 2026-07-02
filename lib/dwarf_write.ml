@@ -600,8 +600,8 @@ let write_range_list buf (list : Dwarf.DebugRnglists.range_list)
     (address_size : int) =
   List.iter (fun e -> write_range_entry buf e address_size) list.entries
 
-let write_loclists_header buf (enc : Dwarf.encoding) (offset_entry_count : int)
-    (body_size : int) =
+let write_loclists_header buf (enc : Dwarf.encoding) ~(offset_entry_count : int)
+    ~(body_size : int) =
   let header_content_size = 2 + 1 + 1 + 4 in
   let offset_table_size =
     offset_entry_count * Dwarf.offset_size_for_format enc.format
@@ -613,9 +613,9 @@ let write_loclists_header buf (enc : Dwarf.encoding) (offset_entry_count : int)
   write_u8 buf (Unsigned.UInt8.of_int 0);
   write_u32_le buf (Unsigned.UInt32.of_int offset_entry_count)
 
-let write_rnglists_header buf (enc : Dwarf.encoding) (offset_entry_count : int)
-    (body_size : int) =
-  write_loclists_header buf enc offset_entry_count body_size
+let write_rnglists_header buf (enc : Dwarf.encoding) ~(offset_entry_count : int)
+    ~(body_size : int) =
+  write_loclists_header buf enc ~offset_entry_count ~body_size
 
 let write_debug_loc_entry buf (entry : Dwarf.DebugLoc.entry)
     (address_size : int) =
@@ -637,7 +637,7 @@ let write_debug_loc_entry buf (entry : Dwarf.DebugLoc.entry)
       Buffer.add_string buf expr
 
 let write_debug_loc buf (entries : Dwarf.DebugLoc.entry list)
-    (address_size : int) =
+    ~(address_size : int) =
   List.iter (fun e -> write_debug_loc_entry buf e address_size) entries
 
 let write_debug_ranges_entry buf (entry : Dwarf.DebugRanges.entry)
@@ -658,7 +658,7 @@ let write_debug_ranges_entry buf (entry : Dwarf.DebugRanges.entry)
       write_address buf address_size end_addr
 
 let write_debug_ranges buf (entries : Dwarf.DebugRanges.entry list)
-    (address_size : int) =
+    ~(address_size : int) =
   List.iter (fun e -> write_debug_ranges_entry buf e address_size) entries
 
 (* Line Program Writer *)
@@ -894,124 +894,15 @@ let write_debug_line buf ?line_str_table
   Buffer.add_string buf (Buffer.contents hdr_buf);
   Buffer.add_string buf (Buffer.contents prog_buf)
 
-(* CFI Writer *)
+(* CFI writer: the instruction type [Dwarf.CallFrame.cfi_op] and its byte
+   encoding live in Dwarf.CallFrame; these helpers write the encoded bytes into
+   a buffer. *)
 
-type cfi_op =
-  | CFA_advance_loc of int
-  | CFA_offset of int * int
-  | CFA_restore of int
-  | CFA_nop
-  | CFA_set_loc of int
-  | CFA_advance_loc1 of int
-  | CFA_advance_loc2 of int
-  | CFA_advance_loc4 of int
-  | CFA_offset_extended of int * int
-  | CFA_restore_extended of int
-  | CFA_undefined of int
-  | CFA_same_value of int
-  | CFA_register of int * int
-  | CFA_remember_state
-  | CFA_restore_state
-  | CFA_def_cfa of int * int
-  | CFA_def_cfa_register of int
-  | CFA_def_cfa_offset of int
-  | CFA_def_cfa_expression of string
-  | CFA_expression of int * string
-  | CFA_offset_extended_sf of int * int
-  | CFA_def_cfa_sf of int * int
-  | CFA_def_cfa_offset_sf of int
-  | CFA_val_offset of int * int
-  | CFA_val_offset_sf of int * int
-  | CFA_val_expression of int * string
+let write_cfi_instruction buf op =
+  Buffer.add_string buf (Dwarf.CallFrame.encode_instructions [ op ])
 
-let write_cfi_instruction buf = function
-  | CFA_advance_loc delta ->
-      let b = 0x40 lor (delta land 0x3f) in
-      write_u8 buf (Unsigned.UInt8.of_int b)
-  | CFA_offset (reg, off) ->
-      let b = 0x80 lor (reg land 0x3f) in
-      write_u8 buf (Unsigned.UInt8.of_int b);
-      write_uleb128 buf (Unsigned.UInt64.of_int off)
-  | CFA_restore reg ->
-      let b = 0xc0 lor (reg land 0x3f) in
-      write_u8 buf (Unsigned.UInt8.of_int b)
-  | CFA_nop -> write_u8 buf (Unsigned.UInt8.of_int 0x00)
-  | CFA_set_loc addr ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x01);
-      write_u32_le buf (Unsigned.UInt32.of_int addr)
-  | CFA_advance_loc1 delta ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x02);
-      write_u8 buf (Unsigned.UInt8.of_int delta)
-  | CFA_advance_loc2 delta ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x03);
-      write_u16_le buf (Unsigned.UInt16.of_int delta)
-  | CFA_advance_loc4 delta ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x04);
-      write_u32_le buf (Unsigned.UInt32.of_int delta)
-  | CFA_offset_extended (reg, off) ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x05);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg);
-      write_uleb128 buf (Unsigned.UInt64.of_int off)
-  | CFA_restore_extended reg ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x06);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg)
-  | CFA_undefined reg ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x07);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg)
-  | CFA_same_value reg ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x08);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg)
-  | CFA_register (reg, target) ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x09);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg);
-      write_uleb128 buf (Unsigned.UInt64.of_int target)
-  | CFA_remember_state -> write_u8 buf (Unsigned.UInt8.of_int 0x0a)
-  | CFA_restore_state -> write_u8 buf (Unsigned.UInt8.of_int 0x0b)
-  | CFA_def_cfa (reg, off) ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x0c);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg);
-      write_uleb128 buf (Unsigned.UInt64.of_int off)
-  | CFA_def_cfa_register reg ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x0d);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg)
-  | CFA_def_cfa_offset off ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x0e);
-      write_uleb128 buf (Unsigned.UInt64.of_int off)
-  | CFA_def_cfa_expression expr ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x0f);
-      write_uleb128 buf (Unsigned.UInt64.of_int (String.length expr));
-      Buffer.add_string buf expr
-  | CFA_expression (reg, expr) ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x10);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg);
-      write_uleb128 buf (Unsigned.UInt64.of_int (String.length expr));
-      Buffer.add_string buf expr
-  | CFA_offset_extended_sf (reg, off) ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x11);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg);
-      write_sleb128 buf (Signed.Int64.of_int off)
-  | CFA_def_cfa_sf (reg, off) ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x12);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg);
-      write_sleb128 buf (Signed.Int64.of_int off)
-  | CFA_def_cfa_offset_sf off ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x13);
-      write_sleb128 buf (Signed.Int64.of_int off)
-  | CFA_val_offset (reg, off) ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x14);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg);
-      write_uleb128 buf (Unsigned.UInt64.of_int off)
-  | CFA_val_offset_sf (reg, off) ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x15);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg);
-      write_sleb128 buf (Signed.Int64.of_int off)
-  | CFA_val_expression (reg, expr) ->
-      write_u8 buf (Unsigned.UInt8.of_int 0x16);
-      write_uleb128 buf (Unsigned.UInt64.of_int reg);
-      write_uleb128 buf (Unsigned.UInt64.of_int (String.length expr));
-      Buffer.add_string buf expr
-
-let write_cfi_instructions buf ops = List.iter (write_cfi_instruction buf) ops
+let write_cfi_instructions buf ops =
+  Buffer.add_string buf (Dwarf.CallFrame.encode_instructions ops)
 
 let write_cie buf (cie : Dwarf.CallFrame.common_information_entry) =
   let fmt = cie.format in

@@ -55,7 +55,7 @@ val encoding_of_u8 : int -> encoding
     {!pe_application} and [indirect] components.
 
     @raise Dwarf.Parse_error
-      if the format or application nibble is not recognized. *)
+      if the format or application nibble is not recognised. *)
 
 val string_of_encoding : encoding -> string
 (** Human-readable description of an encoding, e.g.

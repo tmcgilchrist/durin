@@ -228,7 +228,7 @@ let dump_unwind_info filename =
 
 (* Command line interface *)
 let filename =
-  let doc = "Binary file to analyze for object information" in
+  let doc = "Binary file to analyse for object information" in
   Cmdliner.Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
 let unwind_info_flag =

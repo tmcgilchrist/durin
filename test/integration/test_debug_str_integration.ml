@@ -13,7 +13,9 @@ let test_parse_succeeds binary_path =
 let test_has_entries binary_path =
   match parse_str binary_path with
   | None -> fail "expected DebugStr.parse to return Some"
-  | Some t -> check bool "entries length > 0" true (Array.length t.entries > 0)
+  | Some t ->
+      check bool "entries length > 0" true
+        (Array.length (Lazy.force t.entries) > 0)
 
 let test_total_size_positive binary_path =
   match parse_str binary_path with
@@ -24,7 +26,7 @@ let test_offsets_ascending binary_path =
   match parse_str binary_path with
   | None -> fail "expected DebugStr.parse to return Some"
   | Some t ->
-      let entries = t.entries in
+      let entries = Lazy.force t.entries in
       let len = Array.length entries in
       for i = 1 to len - 1 do
         let prev = entries.(i - 1).offset in
@@ -42,7 +44,7 @@ let test_known_strings_present binary_path =
         Array.exists
           (fun (e : Dwarf.DebugStr.string_entry) ->
             String.equal e.content "main")
-          t.entries
+          (Lazy.force t.entries)
       in
       check bool "contains \"main\"" true has_main
 
@@ -55,7 +57,7 @@ let test_entry_fields_consistent binary_path =
           check int "length = String.length content" (String.length e.content)
             e.length;
           check bool "offset < total_size" true (e.offset < t.total_size))
-        t.entries
+        (Lazy.force t.entries)
 
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in

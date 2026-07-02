@@ -1,4 +1,4 @@
 (library
  (name durin)
  (package durin)
- (libraries object integers str))
+ (libraries object integers str unix))

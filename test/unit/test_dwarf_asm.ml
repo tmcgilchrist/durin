@@ -204,7 +204,9 @@ let test_assemble_debug_info_roundtrip () =
   let _span, header = Dwarf.parse_compile_unit_header cur in
   check int "version" 5 (Unsigned.UInt16.to_int header.version);
   check int "address_size" 8 (Unsigned.UInt8.to_int header.address_size);
-  match Dwarf.DIE.parse_die cur table enc obj_buf with
+  match
+    Dwarf.DIE.parse_die cur table enc (Dwarf.buffer_str_resolver obj_buf)
+  with
   | None -> fail "expected die"
   | Some parsed -> (
       check int "tag" 0x11
@@ -249,7 +251,9 @@ let test_assemble_debug_info_with_children () =
   let offset = Unsigned.UInt64.to_int info_sec.Object.Elf.sh_offset in
   let cur = Object.Buffer.cursor obj_buf ~at:offset in
   let _span, _header = Dwarf.parse_compile_unit_header cur in
-  match Dwarf.DIE.parse_die cur table enc obj_buf with
+  match
+    Dwarf.DIE.parse_die cur table enc (Dwarf.buffer_str_resolver obj_buf)
+  with
   | None -> fail "expected die"
   | Some parsed -> (
       match parsed.children () with
@@ -282,7 +286,9 @@ let test_assemble_emit_all () =
   let cur = Object.Buffer.cursor obj_buf ~at:offset in
   let _span, header = Dwarf.parse_compile_unit_header cur in
   check int "version" 5 (Unsigned.UInt16.to_int header.version);
-  match Dwarf.DIE.parse_die cur table enc obj_buf with
+  match
+    Dwarf.DIE.parse_die cur table enc (Dwarf.buffer_str_resolver obj_buf)
+  with
   | None -> fail "expected die"
   | Some parsed -> (
       check int "attr count" 2 (List.length parsed.attributes);

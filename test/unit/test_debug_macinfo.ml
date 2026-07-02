@@ -15,8 +15,8 @@ let test_macinfo_define () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let section = Dwarf.DebugMacinfo.parse_section cursor (List.length bytes) in
-  check int "one entry" 1 (List.length section.entries);
-  let entry = List.hd section.entries in
+  check int "one entry" 1 (List.length (Lazy.force section.entries));
+  let entry = List.hd (Lazy.force section.entries) in
   check string "type is define" "DW_MACINFO_define"
     (Dwarf.DebugMacinfo.string_of_macinfo_type entry.macinfo_type);
   (match entry.line_number with
@@ -31,14 +31,14 @@ let test_macinfo_start_end_file () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let section = Dwarf.DebugMacinfo.parse_section cursor (List.length bytes) in
-  check int "two entries" 2 (List.length section.entries);
-  let first = List.nth section.entries 0 in
+  check int "two entries" 2 (List.length (Lazy.force section.entries));
+  let first = List.nth (Lazy.force section.entries) 0 in
   check string "first is start_file" "DW_MACINFO_start_file"
     (Dwarf.DebugMacinfo.string_of_macinfo_type first.macinfo_type);
   (match first.file_index with
   | Some fi -> check int "file index is 0" 0 (Unsigned.UInt32.to_int fi)
   | None -> fail "expected file_index");
-  let second = List.nth section.entries 1 in
+  let second = List.nth (Lazy.force section.entries) 1 in
   check string "second is end_file" "DW_MACINFO_end_file"
     (Dwarf.DebugMacinfo.string_of_macinfo_type second.macinfo_type)
 
@@ -47,8 +47,8 @@ let test_macinfo_vendor_ext () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let section = Dwarf.DebugMacinfo.parse_section cursor (List.length bytes) in
-  check int "one entry" 1 (List.length section.entries);
-  let entry = List.hd section.entries in
+  check int "one entry" 1 (List.length (Lazy.force section.entries));
+  let entry = List.hd (Lazy.force section.entries) in
   check string "type is vendor_ext" "DW_MACINFO_vendor_ext"
     (Dwarf.DebugMacinfo.string_of_macinfo_type entry.macinfo_type);
   (match entry.constant with
@@ -63,7 +63,7 @@ let test_macinfo_empty () =
   let buffer = buffer_of_bytes bytes in
   let cursor = Object.Buffer.cursor buffer ~at:0 in
   let section = Dwarf.DebugMacinfo.parse_section cursor (List.length bytes) in
-  check int "no entries" 0 (List.length section.entries)
+  check int "no entries" 0 (List.length (Lazy.force section.entries))
 
 let () =
   run "debug_macinfo"

@@ -1,6 +1,7 @@
 module Dwarf = Dwarf
 module Dwarf_write = Dwarf_write
 module Dwarf_asm = Dwarf_asm
+module Dwarf_arch = Dwarf_arch
 module Elf_symbols = Elf_symbols
 module Eh_encoding = Eh_encoding
 module Eh_frame_header = Eh_frame_header

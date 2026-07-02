@@ -20,7 +20,7 @@ type unit_type =
 val unit_type : u8 -> unit_type
 (** Convert a u8 value to a unit_type
 
-    @raise Parse_error if the byte is not a recognized DWARF unit type. *)
+    @raise Parse_error if the byte is not a recognised DWARF unit type. *)
 
 val u8_of_unit_type : unit_type -> u8
 (** Convert a [unit_type] to its u8 encoding. *)
@@ -170,7 +170,7 @@ val children_determination : int -> children_determination
 (** Convert int to [children_determination].
 
     @raise Parse_error
-      if the value is not a recognized child determination code. *)
+      if the value is not a recognised child determination code. *)
 
 val int_of_children_determination : children_determination -> int
 (** Convert [children_determination] to int. *)
@@ -672,7 +672,7 @@ val location_list_entry : int -> location_list_entry
 (** Convert an int to a [location_list_entry].
 
     @raise Parse_error
-      if the value is not a recognized location list entry kind. *)
+      if the value is not a recognised location list entry kind. *)
 
 val int_of_location_list_entry : location_list_entry -> int
 (** Convert a [location_list_entry] to its integer encoding. *)
@@ -740,7 +740,7 @@ type decimal_sign =
 val decimal_sign : int -> decimal_sign
 (** Convert an int to a [decimal_sign].
 
-    @raise Parse_error if the value is not a recognized decimal sign code. *)
+    @raise Parse_error if the value is not a recognised decimal sign code. *)
 
 val int_of_decimal_sign : decimal_sign -> int
 (** Convert a [decimal_sign] to its integer encoding. *)
@@ -789,7 +789,7 @@ type accessibility =
 val accessibility : int -> accessibility
 (** Convert an int to an [accessibility].
 
-    @raise Parse_error if the value is not a recognized accessibility code. *)
+    @raise Parse_error if the value is not a recognised accessibility code. *)
 
 val int_of_accessibility : accessibility -> int
 (** Convert an [accessibility] to its integer encoding. *)
@@ -812,7 +812,7 @@ type visibility =
 val visibility : int -> visibility
 (** Convert an int to a [visibility].
 
-    @raise Parse_error if the value is not a recognized visibility code. *)
+    @raise Parse_error if the value is not a recognised visibility code. *)
 
 val int_of_visibility : visibility -> int
 (** Convert a [visibility] to its integer encoding. *)
@@ -835,7 +835,7 @@ type virtuality =
 val virtuality : int -> virtuality
 (** Convert an int to a [virtuality].
 
-    @raise Parse_error if the value is not a recognized virtuality code. *)
+    @raise Parse_error if the value is not a recognised virtuality code. *)
 
 val int_of_virtuality : virtuality -> int
 (** Convert a [virtuality] to its integer encoding. *)
@@ -919,7 +919,7 @@ type identifier =
 val identifier : int -> identifier
 (** Convert an int to an [identifier].
 
-    @raise Parse_error if the value is not a recognized identifier case code. *)
+    @raise Parse_error if the value is not a recognised identifier case code. *)
 
 val int_of_identifier : identifier -> int
 (** Convert an [identifier] to its integer encoding. *)
@@ -972,7 +972,7 @@ type inlined =
 val inlined : int -> inlined
 (** Convert an int to an [inlined].
 
-    @raise Parse_error if the value is not a recognized inline code. *)
+    @raise Parse_error if the value is not a recognised inline code. *)
 
 val int_of_inlined : inlined -> int
 (** Convert an [inlined] to its integer encoding. *)
@@ -994,7 +994,7 @@ type array_ordering =
 val array_ordering : int -> array_ordering
 (** Convert an int to an [array_ordering].
 
-    @raise Parse_error if the value is not a recognized array ordering. *)
+    @raise Parse_error if the value is not a recognised array ordering. *)
 
 val int_of_array_ordering : array_ordering -> int
 (** Convert an [array_ordering] to its integer encoding. *)
@@ -1017,7 +1017,7 @@ type discriminant =
 val discriminant : int -> discriminant
 (** Convert an int to a [discriminant].
 
-    @raise Parse_error if the value is not a recognized discriminant descriptor.
+    @raise Parse_error if the value is not a recognised discriminant descriptor.
 *)
 
 val int_of_discriminant : discriminant -> int
@@ -1068,7 +1068,7 @@ val defaulted_attribute : int -> defaulted_attribute
 (** Convert an int to a [defaulted_attribute].
 
     @raise Parse_error
-      if the value is not a recognized defaulted attribute code. *)
+      if the value is not a recognised defaulted attribute code. *)
 
 val int_of_defaulted_attribute : defaulted_attribute -> int
 (** Convert a [defaulted_attribute] to its integer encoding. *)
@@ -1256,6 +1256,9 @@ end
 
 (** Parser for the .debug_macinfo section (DWARF 4).
 
+    TODO Write this from the perspective of DWARF 4, then point to the DWARF 5
+    equivalent section.
+
     The debug_macinfo section is the DWARF 4 predecessor to .debug_macro. It
     contains macro definition and undefinition information in a simpler format
     without string table indirection.
@@ -1273,7 +1276,7 @@ module DebugMacinfo : sig
   val macinfo_type_of_int : int -> macinfo_type
   (** Convert an int to a [macinfo_type].
 
-      @raise Parse_error if the value is not a recognized macinfo type. *)
+      @raise Parse_error if the value is not a recognised macinfo type. *)
 
   val string_of_macinfo_type : macinfo_type -> string
   (** Convert a [macinfo_type] to its string representation. *)
@@ -1287,7 +1290,7 @@ module DebugMacinfo : sig
   }
   (** A single macinfo entry. *)
 
-  type section = { entries : entry list }
+  type section = { entries : entry list Lazy.t  (** The decoded entries. *) }
   (** Complete parsed .debug_macinfo section. *)
 
   val parse_entry : Object.Buffer.cursor -> entry option
@@ -1296,8 +1299,9 @@ module DebugMacinfo : sig
       @raise Parse_error if a macinfo entry type is unknown. *)
 
   val parse_section : Object.Buffer.cursor -> int -> section
-  (** Parse the entire .debug_macinfo section. The [int] parameter is the
-      section size in bytes.
+  (** Parse the .debug_macinfo section starting at the cursor. The [int]
+      parameter is the section size in bytes. The entries are decoded lazily on
+      first force, so this call does not consume the cursor.
 
       @raise Parse_error if the section is malformed. *)
 end
@@ -1410,7 +1414,7 @@ type range_list_entry =
 val range_list_entry : int -> range_list_entry
 (** Convert an int to a [range_list_entry].
 
-    @raise Parse_error if the value is not a recognized range list entry kind.
+    @raise Parse_error if the value is not a recognised range list entry kind.
 *)
 
 val int_of_range_list_entry : range_list_entry -> int
@@ -1472,14 +1476,33 @@ val resolve_string_index : Object.Buffer.t -> dwarf_format -> int -> string
 (** Resolve a string index to its actual string value using debug_str sections
 *)
 
-val lookup_address_in_debug_addr : Object.Buffer.t -> u64 -> int -> u64 option
-(** Look up an address by index in the debug_addr section at given offset.
-    Returns Some address if found, None if not found or section missing *)
+val lookup_address_in_debug_addr : t -> u64 -> int -> u64 option
+(** Look up an address by index in the [.debug_addr] section. The parsed
+    contribution is cached on the context, so repeated lookups do not re-parse.
+    Returns [Some address] if found, [None] if not found or section missing. *)
 
-val resolve_address_index : Object.Buffer.t -> int -> u64 -> u64
-(** Resolve an address index to its actual address value using debug_addr
-    section. Returns the resolved address if found, or the index value as
-    fallback *)
+val resolve_address_index : t -> int -> u64 -> u64
+(** Resolve an address index to its actual address value using [.debug_addr]
+    (cached on the context). Returns the resolved address if found, or the index
+    value as fallback. *)
+
+type str_resolver = {
+  string_at : int -> string;
+      (** [.debug_str] offset to string (DW_FORM_strp, DW_FORM_GNU_strp_alt). *)
+  line_string_at : int -> string;
+      (** [.debug_line_str] offset to string (DW_FORM_line_strp). *)
+  indexed_string : dwarf_format -> int -> string;
+      (** [.debug_str_offsets] index to string (DW_FORM_strx,
+          DW_FORM_GNU_str_index). *)
+}
+(** How the DIE parser resolves the string forms. The low-level parser is
+    injected with one of these; the high-level context supplies a caching
+    implementation built from its section caches, while {!buffer_str_resolver}
+    is the uncached version that re-reads the sections on each call. *)
+
+val buffer_str_resolver : Object.Buffer.t -> str_resolver
+(** The uncached {!str_resolver} that reads the string sections directly from a
+    buffer on every lookup. Used by the stateless low-level parsing path. *)
 
 (** Debugging Information Entry (DIE) represent low-level information about a
     source program.
@@ -1545,19 +1568,21 @@ module DIE : sig
     Object.Buffer.cursor ->
     (u64, abbrev) Hashtbl.t ->
     encoding ->
-    Object.Buffer.t ->
+    str_resolver ->
     t option
-  (** Parse a single DIE from a buffer using abbreviation table. *)
+  (** Parse a single DIE from a buffer using abbreviation table. The
+      {!str_resolver} resolves the string-form attribute values. *)
 
   val parse_attribute_value :
     Object.Buffer.cursor ->
     attribute_form_encoding ->
     encoding ->
-    Object.Buffer.t ->
+    str_resolver ->
     ?implicit_const:int64 ->
     unit ->
     attribute_value
-  (** Parse a single attribute value from a buffer. *)
+  (** Parse a single attribute value from a buffer. The {!str_resolver} resolves
+      the string forms (DW_FORM_strp, DW_FORM_line_strp, DW_FORM_strx, …). *)
 
   val find_attribute : t -> attribute_encoding -> attribute_value option
   (** Find an attribute by name in a DIE *)
@@ -1566,7 +1591,7 @@ end
 (** Compilation units represent individual source files and their debugging
     information in DWARF.
 
-    A compilation unit is a fundamental organizational structure in DWARF that
+    A compilation unit is a fundamental organisational structure in DWARF that
     contains all debugging information associated with the compilation of a
     single source file.
 
@@ -1587,7 +1612,7 @@ module CompileUnit : sig
     version : u16;  (** DWARF version (4 or 5) *)
     unit_type : unit_type;
         (** Unit type (compile, type, partial, skeleton, split_compile,
-            split_type). Synthesized as DW_UT_compile for DWARF 4. *)
+            split_type). Synthesised as DW_UT_compile for DWARF 4. *)
     debug_abbrev_offset : u64;  (** Offset into debug abbreviation table *)
     address_size : u8;  (** Size of addresses in bytes (4 or 8) *)
     span : span;  (** Span indicating the header's position and size *)
@@ -1626,44 +1651,33 @@ module CompileUnit : sig
   (** Extract encoding parameters (format, address_size, version) from the unit.
       This provides the context needed for parsing DIE attributes. *)
 
-  val root_die : t -> (u64, abbrev) Hashtbl.t -> Object.Buffer.t -> DIE.t option
-  (** Get the root DIE for this compilation unit. *)
+  val root_die : t -> (u64, abbrev) Hashtbl.t -> str_resolver -> DIE.t option
+  (** Get the root DIE for this compilation unit. The {!str_resolver} resolves
+      string-form attribute values. *)
 
   val die_cursor :
     t ->
     (u64, abbrev) Hashtbl.t ->
-    Object.Buffer.t ->
-    Object.Buffer.cursor * (u64, abbrev) Hashtbl.t * encoding * Object.Buffer.t
-  (** Get cursor, abbrev table, encoding, and buffer positioned at the first DIE
-      of this compilation unit. *)
+    str_resolver ->
+    Object.Buffer.cursor * (u64, abbrev) Hashtbl.t * encoding * str_resolver
+  (** Get cursor, abbrev table, encoding, and string resolver positioned at the
+      first DIE of this compilation unit. *)
 end
 
 val skip_attribute_value :
-  Object.Buffer.cursor ->
-  attribute_form_encoding ->
-  encoding ->
-  Object.Buffer.t ->
-  unit
+  Object.Buffer.cursor -> attribute_form_encoding -> encoding -> unit
 (** Skip past a single attribute value in the buffer without allocating.
 
     @raise Parse_error if the attribute form is unknown. *)
 
 val skip_die :
-  Object.Buffer.cursor ->
-  (u64, abbrev) Hashtbl.t ->
-  encoding ->
-  Object.Buffer.t ->
-  unit
+  Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> encoding -> unit
 (** Skip an entire DIE (attributes + children if any).
 
     @raise Parse_error if a DIE attribute form is unknown. *)
 
 val skip_children :
-  Object.Buffer.cursor ->
-  (u64, abbrev) Hashtbl.t ->
-  encoding ->
-  Object.Buffer.t ->
-  unit
+  Object.Buffer.cursor -> (u64, abbrev) Hashtbl.t -> encoding -> unit
 (** Skip all remaining children at the current nesting level.
 
     @raise Parse_error if a DIE attribute form is unknown. *)
@@ -1677,8 +1691,14 @@ module DieCursor : sig
   type t
 
   val create :
-    Object.Buffer.t -> (u64, abbrev) Hashtbl.t -> encoding -> int -> t
-  (** Create cursor starting at buffer offset. *)
+    Object.Buffer.t ->
+    str_resolver ->
+    (u64, abbrev) Hashtbl.t ->
+    encoding ->
+    int ->
+    t
+  (** Create cursor starting at buffer offset. The {!str_resolver} resolves
+      string-form attribute values as DIEs are parsed. *)
 
   val next : t -> (DIE.t * bool) option
   (** Parse next DIE. Returns (die, has_children). Returns None at
@@ -2203,9 +2223,54 @@ module CallFrame : sig
       DWARF 5 specification, section 6.4.1 "Structure of Call Frame
       Information". *)
 
-  val create_default_cie : unit -> common_information_entry
-  (** Create a CIE with default values for x86-64 architecture. *)
-  (* TODO Maybe default to x86-64 but take an optional architecture here? *)
+  type cfi_op =
+    | CFA_advance_loc of int
+    | CFA_offset of int * int
+    | CFA_restore of int
+    | CFA_nop
+    | CFA_set_loc of int
+    | CFA_advance_loc1 of int
+    | CFA_advance_loc2 of int
+    | CFA_advance_loc4 of int
+    | CFA_offset_extended of int * int
+    | CFA_restore_extended of int
+    | CFA_undefined of int
+    | CFA_same_value of int
+    | CFA_register of int * int
+    | CFA_remember_state
+    | CFA_restore_state
+    | CFA_def_cfa of int * int
+    | CFA_def_cfa_register of int
+    | CFA_def_cfa_offset of int
+    | CFA_def_cfa_expression of string
+    | CFA_expression of int * string
+    | CFA_offset_extended_sf of int * int
+    | CFA_def_cfa_sf of int * int
+    | CFA_def_cfa_offset_sf of int
+    | CFA_val_offset of int * int
+    | CFA_val_offset_sf of int * int
+    | CFA_val_expression of int * string
+        (** A call frame instruction with its operands, for encoding the
+            [initial_instructions] of a CIE and the instructions of an FDE.
+
+            DWARF 5 specification, Table 7.29 "Call frame instruction
+            encodings". *)
+
+  val encode_instructions : cfi_op list -> string
+  (** Encode a list of call frame instructions to their byte representation (as
+      carried in [initial_instructions] and FDE instruction streams). *)
+
+  type arch =
+    | X86_64
+    | ARM64
+        (** Target architecture, selecting architecture-specific call frame
+            defaults (return-address register and the initial CFA rule). *)
+
+  val create_default_cie : ?arch:arch -> unit -> common_information_entry
+  (** Create a CIE with default values for the given [arch] (default {!X86_64}).
+      The return-address register and [initial_instructions] (the initial CFA
+      rule) are architecture-specific; the alignment factors and address size
+      are shared by the supported 64-bit targets. *)
 
   type frame_description_entry = {
     format : dwarf_format;  (** Either DWARF32 or DWARF64. *)
@@ -2281,15 +2346,17 @@ module CallFrame : sig
   }
   (** CFI state for tracking register rules. *)
 
-  val initial_cfi_state : unit -> cfi_state
-  (** Create initial CFI state with architecture defaults *)
+  val initial_cfi_state : ?arch:arch -> unit -> cfi_state
+  (** Create the initial CFI state with the CFA defaults for [arch] (default
+      {!X86_64}): {!X86_64} starts at [rsp + 8], {!ARM64} at [sp + 0]. *)
 
-  val parse_initial_state : common_information_entry -> cfi_state
+  val parse_initial_state : ?arch:arch -> common_information_entry -> cfi_state
   (** Parse CIE initial instructions to establish proper initial CFI state.
 
       This function processes the initial_instructions field of a CIE to
       establish the baseline Call Frame Information state that FDEs can modify.
-  *)
+      [arch] (default {!X86_64}) supplies the default CFA when the CIE carries
+      no initial instructions. *)
 
   val parse_cfi_instructions : string -> int64 -> int64 -> (int * string) list
   (** Parse CFI instructions into human-readable descriptions.
@@ -2441,7 +2508,7 @@ module DebugNames : sig
         (** Offsets to local type unit headers *)
     foreign_type_unit_signatures : u64 array;
         (** Type signatures for foreign type units *)
-    buckets : u32 array;  (** Hash bucket organization *)
+    buckets : u32 array;  (** Hash bucket organisation *)
     hash_table : u32 array;
         (** Hash buckets containing indices into name_table *)
     name_table : debug_str_entry array;
@@ -2769,7 +2836,7 @@ module DebugNames : sig
     entry_parse_result list -> (u32 * entry_parse_result list) list
   (** Group entries by their compilation unit.
 
-      This function organizes entries into groups based on their compilation
+      This function organises entries into groups based on their compilation
       unit index, leveraging the DWARF 5 DW_IDX_compile_unit attribute.
 
       @param entries List of entries to group
@@ -2779,7 +2846,7 @@ module DebugNames : sig
     entry_parse_result list -> (u32 * entry_parse_result list) list
   (** Group entries by their type unit.
 
-      This function organizes entries into groups based on their type unit
+      This function organises entries into groups based on their type unit
       index, leveraging the DWARF 5 DW_IDX_type_unit attribute.
 
       @param entries List of entries to group
@@ -2868,20 +2935,16 @@ module DebugStr : sig
   }
   (** Individual string entry with location and content information. *)
 
-  (* TODO Can we load this on-demand? All the strings in the section will
-     be very large! *)
   type t = {
-    entries : string_entry array;  (** Array of all strings in the section *)
+    entries : string_entry array Lazy.t;  (** All strings in the section. *)
     total_size : int;  (** Total size of the debug_str section *)
   }
   (** Complete parsed debug_str section *)
 
   val parse : Object.Buffer.t -> t option
-  (** Parse the complete .debug_str section from buffer.
-
-      @param buffer Object buffer containing the DWARF data
-      @return Optional parsed string table, None if section not found
-      @raise Parse_error if section format is invalid *)
+  (** Locate the .debug_str section in [buffer]. Returns [None] if the section
+      is absent; otherwise [Some t] whose [entries] are decoded lazily on first
+      force (so this call itself does not scan the section). *)
 end
 
 (** Line string table parsing for .debug_line_str section.
@@ -2901,17 +2964,15 @@ module DebugLineStr : sig
   (** Individual string entry with location and content information. *)
 
   type t = {
-    entries : string_entry array;  (** Array of all strings in the section *)
+    entries : string_entry array Lazy.t;  (** All strings in the section. *)
     total_size : int;  (** Total size of the debug_line_str section *)
   }
   (** Complete parsed debug_line_str section *)
 
   val parse : Object.Buffer.t -> t option
-  (** Parse the complete .debug_line_str section from buffer.
-
-      @param buffer Object buffer containing the DWARF data
-      @return Optional parsed line string table, None if section not found
-      @raise Parse_error if section format is invalid *)
+  (** Locate the .debug_line_str section in [buffer]. Returns [None] if the
+      section is absent; otherwise [Some t] whose [entries] are decoded lazily
+      on first force (so this call itself does not scan the section). *)
 
   val iter : (string_entry -> unit) -> t -> unit
   (** Iterate over every string entry in the section. *)
@@ -2927,7 +2988,15 @@ val create : Object.Buffer.t -> t
     data initially; sections are parsed and cached on first access. *)
 
 val parse_compile_units : t -> CompileUnit.t Seq.t
-(** Parse all compile units from the [Debug_info] section lazily *)
+(** Parse all compile units from the [Debug_info] section lazily. Each traversal
+    re-parses the section; for repeated iteration prefer the cached
+    {!compile_units}. *)
+
+val compile_units : t -> CompileUnit.t Seq.t
+(** Compile units from the [Debug_info] section, materialised once and cached in
+    the context. The cached, high-level counterpart of {!parse_compile_units}:
+    the first call forces and stores the full list, later calls iterate the
+    cached list without re-parsing. *)
 
 val get_abbrev_table : t -> size_t -> (u64, abbrev) Hashtbl.t
 (** Return the abbreviation table at the given [.debug_abbrev] offset, parsing
@@ -3156,9 +3225,10 @@ module DebugAddr : sig
         let first_address = addr_table.entries.(0).address
       ]}
 
-      Performance note: This function parses the entire contribution eagerly.
-      For large address tables, consider lazy parsing if only specific indices
-      are needed. TODO Do we have a lazy parsing option in the library?
+      Performance note: this stateless parse decodes the entire contribution
+      eagerly. To resolve individual indices without re-parsing, use the
+      context-level {!resolve_address_index} / {!lookup_address_in_debug_addr},
+      which parse the contribution once and cache it on the context.
 
       Architecture note: The [address_size] field determines the width of
       addresses read from the section. This allows the same DWARF data to
@@ -3186,7 +3256,7 @@ end
 
     Each compilation unit can have its own address range table describing all
     the non-contiguous memory regions that contain code belonging to that unit.
-    This is essential for optimized code where functions may be split across
+    This is essential for optimised code where functions may be split across
     multiple memory regions.
 
     DWARF 5 specification, section 6.1.2 "Lookup by Address". *)
@@ -3257,12 +3327,12 @@ end
     describe where variables and parameters can be found during program
     execution. Location lists are essential for debuggers to track variable
     locations as they move between registers, memory locations, or become
-    temporarily unavailable during optimization.
+    temporarily unavailable during optimisation.
 
     The .debug_loclists section contains location descriptions that specify:
     - Address ranges where variables are valid
     - How to find variables (register, memory address, computed location)
-    - When variables are not available (optimized out, between scopes)
+    - When variables are not available (optimised out, between scopes)
 
     Each location list consists of a series of location list entries (LLE) that
     describe contiguous ranges of program counter values and the corresponding
@@ -3312,15 +3382,15 @@ module DebugLoclists : sig
   type location_list = { entries : location_entry list }
   (** A single decoded location list — the entries found at one offset. *)
 
-  (* TODO [parse] populates [lists] eagerly; consider lazy parsing for large
-     sections. *)
   type loclists_section = {
     header : header;
     offset_table : u64 array;  (** Section-relative offset of each list. *)
-    lists : location_list array;  (** The decoded lists, one per offset. *)
+    lists : location_list array Lazy.t;
+        (** All lists, decoded only when forced with [Lazy.force]. For one list
+            without forcing them all, see {!resolve_location_list}. *)
   }
   (** A parsed [.debug_loclists] contribution: its [header], the [offset_table]
-      indexing each list, and the decoded [lists] themselves. *)
+      indexing each list, and the [lists] themselves (forced on demand). *)
 
   val parse_header : Object.Buffer.cursor -> header
   (** Parse the header of a loclists contribution.
@@ -3394,15 +3464,15 @@ module DebugRnglists : sig
   type range_list = { entries : range_entry list }
   (** A single decoded range list — the entries found at one offset. *)
 
-  (* TODO [parse] populates [lists] eagerly; consider lazy parsing for large
-     sections. *)
   type rnglists_section = {
     header : header;
     offset_table : u64 array;  (** Section-relative offset of each list. *)
-    lists : range_list array;  (** The decoded lists, one per offset. *)
+    lists : range_list array Lazy.t;
+        (** All lists, decoded only when forced with [Lazy.force]. For one list
+            without forcing them all, see {!resolve_range_list}. *)
   }
   (** A parsed [.debug_rnglists] contribution: its [header], the [offset_table]
-      indexing each list, and the decoded [lists] themselves. *)
+      indexing each list, and the [lists] themselves (forced on demand). *)
 
   val parse_header : Object.Buffer.cursor -> header
   (** Parse the header of a rnglists contribution.
@@ -3431,6 +3501,54 @@ module DebugRnglists : sig
       @raise Parse_error if an unknown range list entry kind is encountered. *)
 end
 
+(** {2 Cached section accessors}
+
+    Context-level accessors that parse a section on first request and cache the
+    result for reuse. Each is the memoizing, high-level counterpart of the
+    matching stateless {!DebugStr.parse} / {!DebugStrOffsets.parse} / … — see
+    {!get_abbrev_table}. *)
+
+val get_str_offsets : t -> u32 -> DebugStrOffsets.t
+(** Return the [.debug_str_offsets] contribution at the given offset, parsed
+    once and cached. *)
+
+val get_addr_table : t -> u64 -> DebugAddr.t
+(** Return the [.debug_addr] contribution at the given offset, parsed once and
+    cached. *)
+
+val get_debug_str : t -> DebugStr.t option
+(** Return the parsed [.debug_str] section ([None] if absent), parsed once and
+    cached. *)
+
+val get_debug_line_str : t -> DebugLineStr.t option
+(** Return the parsed [.debug_line_str] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_aranges : t -> DebugAranges.aranges_set option
+(** Return the parsed [.debug_aranges] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_loclists : t -> DebugLoclists.loclists_section option
+(** Return the parsed [.debug_loclists] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_rnglists : t -> DebugRnglists.rnglists_section option
+(** Return the parsed [.debug_rnglists] section ([None] if absent), parsed once
+    and cached. *)
+
+val get_section : t -> dwarf_section -> (u64 * u64) option
+(** Locate a debug section, returning its [(offset, size)] within the object
+    file ([None] if absent). The result is cached, avoiding the repeated
+    object-file section-table scan that [find_debug_section_by_type] performs.
+*)
+
+val context_str_resolver : t -> str_resolver
+(** The cached counterpart of {!buffer_str_resolver}. Resolves DIE string-form
+    attribute values by reading directly from the string sections (so
+    suffix-shared offsets resolve correctly) while looking those sections up
+    through the context's section cache. Prefer this over {!buffer_str_resolver}
+    when reading through a context. *)
+
 (** Split DWARF support for .dwo files and .dwp packages.
 
     Split DWARF moves bulky debug information out of the main executable into
@@ -3451,6 +3569,8 @@ module SplitDwarf : sig
         (** Buffer containing the .dwo or .dwp file *)
     parent_buffer : Object.Buffer.t;
         (** Buffer containing the main executable *)
+    parent_ : t;
+        (** Context over [parent_buffer], used for cached address resolution. *)
     dwo_id : u64;  (** DWO identifier matching skeleton and split units *)
     contributions : (dwarf_section * int * int) list;
         (** Section contributions as (section, offset, size) from .dwp index *)

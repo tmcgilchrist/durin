@@ -63,7 +63,11 @@ let test_die_cursor_basic () =
   let buffer = buffer_of_bytes bytes in
   let abbrev_table = make_test_abbrev_table () in
   let encoding = make_test_encoding () in
-  let dc = Dwarf.DieCursor.create buffer abbrev_table encoding 0 in
+  let dc =
+    Dwarf.DieCursor.create buffer
+      (Dwarf.buffer_str_resolver buffer)
+      abbrev_table encoding 0
+  in
   match Dwarf.DieCursor.next dc with
   | None -> fail "expected a DIE"
   | Some (die, has_children) ->
@@ -76,7 +80,11 @@ let test_die_cursor_skip_children () =
   let buffer = buffer_of_bytes bytes in
   let abbrev_table = make_test_abbrev_table () in
   let encoding = make_test_encoding () in
-  let dc = Dwarf.DieCursor.create buffer abbrev_table encoding 0 in
+  let dc =
+    Dwarf.DieCursor.create buffer
+      (Dwarf.buffer_str_resolver buffer)
+      abbrev_table encoding 0
+  in
   (match Dwarf.DieCursor.next dc with
   | None -> fail "expected compile_unit DIE"
   | Some (_, has_children) ->
@@ -92,7 +100,11 @@ let test_die_zipper_down_up () =
   let buffer = buffer_of_bytes bytes in
   let abbrev_table = make_test_abbrev_table () in
   let encoding = make_test_encoding () in
-  let dc = Dwarf.DieCursor.create buffer abbrev_table encoding 0 in
+  let dc =
+    Dwarf.DieCursor.create buffer
+      (Dwarf.buffer_str_resolver buffer)
+      abbrev_table encoding 0
+  in
   match Dwarf.DieZipper.of_die_cursor dc with
   | None -> fail "expected zipper"
   | Some z -> (
@@ -117,7 +129,11 @@ let test_die_zipper_right () =
   let buffer = buffer_of_bytes bytes in
   let abbrev_table = make_test_abbrev_table () in
   let encoding = make_test_encoding () in
-  let dc = Dwarf.DieCursor.create buffer abbrev_table encoding 0 in
+  let dc =
+    Dwarf.DieCursor.create buffer
+      (Dwarf.buffer_str_resolver buffer)
+      abbrev_table encoding 0
+  in
   match Dwarf.DieZipper.of_die_cursor dc with
   | None -> fail "expected zipper"
   | Some z -> (
@@ -139,7 +155,11 @@ let test_die_zipper_children () =
   let buffer = buffer_of_bytes bytes in
   let abbrev_table = make_test_abbrev_table () in
   let encoding = make_test_encoding () in
-  let dc = Dwarf.DieCursor.create buffer abbrev_table encoding 0 in
+  let dc =
+    Dwarf.DieCursor.create buffer
+      (Dwarf.buffer_str_resolver buffer)
+      abbrev_table encoding 0
+  in
   match Dwarf.DieZipper.of_die_cursor dc with
   | None -> fail "expected zipper"
   | Some z ->
