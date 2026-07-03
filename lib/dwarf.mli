@@ -1821,9 +1821,6 @@ val parse_compile_unit_header :
 
     DWARF 5 specification, section 6.2 "Line Number Information". *)
 module DebugLine : sig
-  type t = { cu : CompileUnit.t }
-  (** A line program associated with a compilation unit. *)
-
   (** A DWARF 4 style file entry with path and metadata. *)
   module File : sig
     type t = { path : string; modification_time : u64; file_length : u64 }
@@ -1979,6 +1976,45 @@ module DebugLine : sig
       @raise Parse_error
         if the line program header is malformed or the version is unsupported.
   *)
+
+  type line_table
+  (** A parsed line-number table for one compilation unit: its header together
+      with the rows produced by the state machine, materialised and ordered by
+      address for lookup. Build one for a unit with {!val-line_table}. *)
+
+  val build : line_program_header -> line_table_entry Seq.t -> line_table
+  (** Assemble a queryable {!type-line_table} from a header and its rows (as
+      produced by {!parse}). The rows are grouped into sequences, ordered by
+      address and indexed for {!find_by_address} and {!find_by_line}. This is
+      the stateless counterpart of the context-level [Dwarf.line_table]. *)
+
+  val header : line_table -> line_program_header
+  (** The line program header (file and directory tables, encoding parameters).
+  *)
+
+  val entries : line_table -> line_table_entry Seq.t
+  (** The rows of the table in address order, including the end-of-sequence
+      terminal rows. *)
+
+  val find_by_address : line_table -> u64 -> line_table_entry option
+  (** [find_by_address lt addr] is the row active at [addr], i.e. the row whose
+      [\[address, next-address)] range contains it. [None] if [addr] precedes
+      the first row, falls in a gap between sequences, or lies past the end. *)
+
+  val find_by_line :
+    line_table -> file:int -> line:int -> line_table_entry option
+  (** [find_by_line lt ~file ~line] resolves a source line to a row, for
+      breakpoint-style lookup. An exact match on [line] wins (the lowest-address
+      one); otherwise the row on the nearest source line greater than [line] is
+      returned, so a query on a line that produced no code slides forward to the
+      next executable line — the behaviour a debugger wants when placing a
+      breakpoint. [None] if no row is at or after [line] in [file]. *)
+
+  val find_by_line_exact :
+    line_table -> file:int -> line:int -> line_table_entry option
+  (** Like {!find_by_line} but requires an exact match: the lowest-address row
+      exactly on [line] in [file], or [None] if that line produced no code. Does
+      not slide forward to the next executable line. *)
 end
 
 (** DWARF 4 location list parsing for .debug_loc section.
@@ -3535,6 +3571,12 @@ val get_loclists : t -> DebugLoclists.loclists_section option
 val get_rnglists : t -> DebugRnglists.rnglists_section option
 (** Return the parsed [.debug_rnglists] section ([None] if absent), parsed once
     and cached. *)
+
+val line_table : t -> CompileUnit.t -> DebugLine.line_table option
+(** Return the {!DebugLine.line_table} for a compilation unit, parsed once and
+    cached. Query it with {!DebugLine.entries}, {!DebugLine.find_by_address} and
+    {!DebugLine.find_by_line}. [None] if the unit has no line program or the
+    [.debug_line] section is absent. *)
 
 val get_section : t -> dwarf_section -> (u64 * u64) option
 (** Locate a debug section, returning its [(offset, size)] within the object
