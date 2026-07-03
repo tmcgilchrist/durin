@@ -16,7 +16,7 @@ Test help flag:
   
   ARGUMENTS
          FILE (required)
-             Binary file to analyze for DWARF debug information
+             Binary file to analyse for DWARF debug information
   
   OPTIONS
          -a, --all

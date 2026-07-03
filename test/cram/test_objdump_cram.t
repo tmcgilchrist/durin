@@ -16,7 +16,7 @@ Test help flag:
   
   ARGUMENTS
          FILE (required)
-             Binary file to analyze for object information
+             Binary file to analyse for object information
   
   OPTIONS
          -u, --unwind-info
