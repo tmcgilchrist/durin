@@ -3578,6 +3578,32 @@ val line_table : t -> CompileUnit.t -> DebugLine.line_table option
     {!DebugLine.find_by_line}. [None] if the unit has no line program or the
     [.debug_line] section is absent. *)
 
+(** {2 Address-oriented queries}
+
+    Map a program counter to the unit, source location, or subprogram covering
+    it. Containment is tested against contiguous
+    [\[DW_AT_low_pc, DW_AT_high_pc)] ranges; non-contiguous [DW_AT_ranges] code
+    is not resolved yet. *)
+
+type line_info = { file : string; line : int; column : int; address : u64 }
+(** Source location for an address: the directory-qualified source [file], its
+    [line] and [column], and the [address] of the line-table row it resolved to.
+    Roughly the counterpart of LLVM's [DILineInfo]. *)
+
+val unit_for_address : t -> u64 -> CompileUnit.t option
+(** The compilation unit whose root DIE's contiguous code range contains the
+    address, or [None] if no unit covers it. *)
+
+val line_info_for_address : t -> u64 -> line_info option
+(** Resolve an address to its source {!line_info} through the units' line tables
+    (see {!line_table} and {!DebugLine.find_by_address}), or [None] if no line
+    table covers it. *)
+
+val subprogram_for_address : t -> u64 -> DIE.t option
+(** The [DW_TAG_subprogram] DIE whose contiguous code range contains the
+    address, or [None]. Extract its name with {!DIE.find_attribute} on
+    [DW_AT_name]. *)
+
 val get_section : t -> dwarf_section -> (u64 * u64) option
 (** Locate a debug section, returning its [(offset, size)] within the object
     file ([None] if absent). The result is cached, avoiding the repeated

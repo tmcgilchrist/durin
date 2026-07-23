@@ -6760,6 +6760,140 @@ let resolve_address_index (dwarf : t) (index : int) (addr_base : u64) =
       (* Fall back to returning the index value if resolution fails *)
       Unsigned.UInt64.of_int index
 
+(* Address-oriented queries: map a program counter to the unit, source location,
+   or subprogram that covers it. Containment is tested against contiguous
+   [DW_AT_low_pc, DW_AT_high_pc) ranges; non-contiguous DW_AT_ranges code is not
+   resolved yet. *)
+
+type line_info = { file : string; line : int; column : int; address : u64 }
+
+(* The addr_base (DW_AT_addr_base) of a DIE, needed to resolve DW_FORM_addrx
+   addresses against [.debug_addr]. *)
+let addr_base_of_die die =
+  match DIE.find_attribute die DW_AT_addr_base with
+  | Some (DIE.UData base) -> Some base
+  | _ -> None
+
+(* Resolve a DIE address-form attribute value to an absolute address, applying
+   [addr_base] for the indexed (DW_FORM_addrx) forms. *)
+let resolve_address_attribute t addr_base = function
+  | DIE.Address a -> Some a
+  | DIE.IndexedAddress (_, index) -> (
+      match addr_base with
+      | Some base ->
+          Some (resolve_address_index t (Unsigned.UInt64.to_int index) base)
+      | None -> None)
+  | _ -> None
+
+(* The contiguous [low_pc, high_pc) code range of a DIE, if it has one.
+   DW_AT_high_pc is an absolute address or, in DWARF 4+, an offset past low_pc. *)
+let pc_range t addr_base die =
+  let low =
+    DIE.find_attribute die DW_AT_low_pc
+    |> Option.map (resolve_address_attribute t addr_base)
+    |> Option.join
+  in
+  let high =
+    match (low, DIE.find_attribute die DW_AT_high_pc) with
+    | Some low_pc, Some (DIE.UData offset) ->
+        Some (Unsigned.UInt64.add low_pc offset)
+    | _, Some value -> resolve_address_attribute t addr_base value
+    | _ -> None
+  in
+  match (low, high) with Some l, Some h -> Some (l, h) | _ -> None
+
+let range_contains (low, high) addr =
+  Unsigned.UInt64.compare addr low >= 0 && Unsigned.UInt64.compare addr high < 0
+
+(* The root DIE of a unit, resolved through the context's cached abbrev table and
+   string resolver. *)
+let unit_root_die t unit =
+  let header = CompileUnit.header unit in
+  let abbrev_table = get_abbrev_table t header.debug_abbrev_offset in
+  CompileUnit.root_die unit abbrev_table (context_str_resolver t)
+
+let unit_for_address t addr =
+  let rec search seq =
+    match seq () with
+    | Seq.Nil -> None
+    | Seq.Cons (unit, rest) -> (
+        match unit_root_die t unit with
+        | None -> search rest
+        | Some root -> (
+            match pc_range t (addr_base_of_die root) root with
+            | Some range when range_contains range addr -> Some unit
+            | _ -> search rest))
+  in
+  search (compile_units t)
+
+let line_info_for_address t addr =
+  let of_row lt (row : DebugLine.line_table_entry) =
+    let header = DebugLine.header lt in
+    let files = header.file_names in
+    let file_index = Unsigned.UInt32.to_int row.file_index in
+    let file =
+      if file_index < Array.length files then
+        let entry = files.(file_index) in
+        if entry.directory = "" then entry.name
+        else entry.directory ^ "/" ^ entry.name
+      else "??"
+    in
+    {
+      file;
+      line = Unsigned.UInt32.to_int row.line;
+      column = Unsigned.UInt32.to_int row.column;
+      address = row.address;
+    }
+  in
+  let rec search seq =
+    match seq () with
+    | Seq.Nil -> None
+    | Seq.Cons (unit, rest) -> (
+        match line_table t unit with
+        | None -> search rest
+        | Some lt -> (
+            match DebugLine.find_by_address lt addr with
+            | Some row -> Some (of_row lt row)
+            | None -> search rest))
+  in
+  search (compile_units t)
+
+let subprogram_for_address t addr =
+  let rec search_die addr_base die =
+    let hit =
+      match die.DIE.tag with
+      | DW_TAG_subprogram -> (
+          match pc_range t addr_base die with
+          | Some range when range_contains range addr -> Some die
+          | _ -> None)
+      | _ -> None
+    in
+    match hit with
+    | Some _ -> hit
+    | None ->
+        let rec search_children seq =
+          match seq () with
+          | Seq.Nil -> None
+          | Seq.Cons (child, rest) -> (
+              match search_die addr_base child with
+              | Some _ as found -> found
+              | None -> search_children rest)
+        in
+        search_children die.DIE.children
+  in
+  let rec search_units seq =
+    match seq () with
+    | Seq.Nil -> None
+    | Seq.Cons (unit, rest) -> (
+        match unit_root_die t unit with
+        | None -> search_units rest
+        | Some root -> (
+            match search_die (addr_base_of_die root) root with
+            | Some _ as found -> found
+            | None -> search_units rest))
+  in
+  search_units (compile_units t)
+
 module SplitDwarf = struct
   type dwo_context = {
     dwo_buffer : Object.Buffer.t;

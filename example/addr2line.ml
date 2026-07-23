@@ -24,133 +24,21 @@ let init_context filename =
     let buffer = Object.Buffer.parse actual_filename in
     (buffer, actual_filename)
 
-(* Resolve an address to its source (file, line). Walk the compilation units,
-   ask the context for each unit's line-number table with [Dwarf.line_table],
-   and find the row covering [addr] with [DebugLine.find_by_address]. The row's
-   file index selects the source file from the table header's file list. *)
+(* Resolve an address to its (file, line) using the context's address layer. *)
 let addr_to_location dwarf addr =
-  let file_of_entry header entry =
-    let file_index = Unsigned.UInt32.to_int entry.Dwarf.DebugLine.file_index in
-    let files = header.Dwarf.DebugLine.file_names in
-    if file_index < Array.length files then
-      let file_entry = files.(file_index) in
-      let filename =
-        if file_entry.directory = "" then file_entry.name
-        else file_entry.directory ^ "/" ^ file_entry.name
-      in
-      Some (filename, Unsigned.UInt32.to_int entry.Dwarf.DebugLine.line)
-    else None
-  in
-  let rec search cu_seq =
-    match cu_seq () with
-    | Seq.Nil -> ("??", 0)
-    | Seq.Cons (cu, rest) -> (
-        match Dwarf.line_table dwarf cu with
-        | None -> search rest
-        | Some lt -> (
-            match Dwarf.DebugLine.find_by_address lt addr with
-            | None -> search rest
-            | Some entry -> (
-                match file_of_entry (Dwarf.DebugLine.header lt) entry with
-                | Some result -> result
-                | None -> ("??", 0))))
-  in
-  search (Dwarf.compile_units dwarf)
+  match Dwarf.line_info_for_address dwarf addr with
+  | Some { Dwarf.file; line; _ } -> (file, line)
+  | None -> ("??", 0)
 
-(* Resolve DIE address attribute considering addr_base *)
-let resolve_die_address dwarf addr_base addr_value =
-  match addr_base with
-  | Some base ->
-      let index = Unsigned.UInt64.to_int addr_value in
-      Dwarf.resolve_address_index dwarf index base
-  | None -> addr_value
-
-(* Find function name for address by searching debug_info DIEs *)
+(* Find the name of the function covering an address via its subprogram DIE. *)
 let find_function_name dwarf addr =
-  try
-    let compile_units = Dwarf.parse_compile_units dwarf in
-    let rec search_cu cu_seq =
-      match cu_seq () with
-      | Seq.Nil -> None
-      | Seq.Cons (unit, rest) -> (
-          let header = Dwarf.CompileUnit.header unit in
-          let abbrev_offset = header.debug_abbrev_offset in
-          let abbrev_table = Dwarf.get_abbrev_table dwarf abbrev_offset in
-          match
-            Dwarf.CompileUnit.root_die unit abbrev_table
-              (Dwarf.context_str_resolver dwarf)
-          with
-          | None -> search_cu rest
-          | Some root_die -> (
-              (* Get addr_base from root DIE if present *)
-              let addr_base =
-                match
-                  Dwarf.DIE.find_attribute root_die Dwarf.DW_AT_addr_base
-                with
-                | Some (Dwarf.DIE.UData base) -> Some base
-                | _ -> None
-              in
-              let resolve_attr_address = function
-                | Dwarf.DIE.Address a -> Some a
-                | Dwarf.DIE.IndexedAddress (_, idx) ->
-                    Some (resolve_die_address dwarf addr_base idx)
-                | _ -> None
-              in
-              let get_die_name die =
-                match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
-                | Some (Dwarf.DIE.String name) -> Some name
-                | Some (Dwarf.DIE.IndexedString (_, name)) -> Some name
-                | _ -> None
-              in
-              let rec search_die die =
-                (* Check if this DIE is a subprogram containing the address *)
-                (match die.Dwarf.DIE.tag with
-                  | Dwarf.DW_TAG_subprogram | Dwarf.DW_TAG_inlined_subroutine
-                    -> (
-                      let low_pc_opt =
-                        Dwarf.DIE.find_attribute die Dwarf.DW_AT_low_pc
-                        |> Option.map (fun v -> resolve_attr_address v)
-                        |> Option.join
-                      in
-                      let high_pc_opt =
-                        match
-                          ( low_pc_opt,
-                            Dwarf.DIE.find_attribute die Dwarf.DW_AT_high_pc )
-                        with
-                        | Some lpc, Some (Dwarf.DIE.UData offset) ->
-                            Some (Unsigned.UInt64.add lpc offset)
-                        | _, Some v -> resolve_attr_address v
-                        | _ -> None
-                      in
-                      match (low_pc_opt, high_pc_opt) with
-                      | Some low_pc, Some high_pc ->
-                          if
-                            Unsigned.UInt64.compare addr low_pc >= 0
-                            && Unsigned.UInt64.compare addr high_pc < 0
-                          then get_die_name die
-                          else None
-                      | _ -> None)
-                  | _ -> None)
-                |> function
-                | Some name -> Some name
-                | None ->
-                    (* Search children *)
-                    let rec search_children children_seq =
-                      match children_seq () with
-                      | Seq.Nil -> None
-                      | Seq.Cons (child, rest) -> (
-                          match search_die child with
-                          | Some name -> Some name
-                          | None -> search_children rest)
-                    in
-                    search_children die.Dwarf.DIE.children
-              in
-              match search_die root_die with
-              | Some name -> Some name
-              | None -> search_cu rest))
-    in
-    search_cu compile_units
-  with _ -> None
+  match Dwarf.subprogram_for_address dwarf addr with
+  | None -> None
+  | Some die -> (
+      match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
+      | Some (Dwarf.DIE.String name) -> Some name
+      | Some (Dwarf.DIE.IndexedString (_, name)) -> Some name
+      | _ -> None)
 
 (* Main addr2line lookup function *)
 let lookup_address dwarf addr_str show_functions =
