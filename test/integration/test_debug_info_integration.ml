@@ -131,6 +131,61 @@ let test_unit_handle_name binary_path =
         (Dwarf.unit_name u);
       check bool "comp_dir is present" true (Option.is_some (Dwarf.comp_dir u))
 
+(* First DIE in a subtree satisfying [pred], depth-first. *)
+let rec find_die pred (die : Dwarf.DIE.t) =
+  if pred die then Some die
+  else
+    Seq.fold_left
+      (fun acc child ->
+        match acc with Some _ -> acc | None -> find_die pred child)
+      None die.children
+
+let has_attr attr (die : Dwarf.DIE.t) =
+  Option.is_some (Dwarf.DIE.find_attribute die attr)
+
+(* The handle and root DIE of the first compilation unit. *)
+let first_unit_root ctx =
+  match Seq.uncons (Dwarf.compile_units ctx) with
+  | None -> None
+  | Some (cu, _) ->
+      let u = Dwarf.unit ctx cu in
+      Option.map (fun root -> (u, root)) (Dwarf.root_die u)
+
+let test_attr_string binary_path =
+  let ctx = create_context binary_path in
+  match first_unit_root ctx with
+  | None -> fail "expected a root DIE"
+  | Some (u, root) ->
+      check (option string) "attr_string reads DW_AT_name"
+        (Some "hello_world.c")
+        (Dwarf.attr_string u root Dwarf.DW_AT_name)
+
+(* attr_die follows a within-unit reference (DW_AT_type) to its target DIE. *)
+let test_attr_die_follows_reference binary_path =
+  let ctx = create_context binary_path in
+  match first_unit_root ctx with
+  | None -> fail "expected a root DIE"
+  | Some (u, root) -> (
+      match find_die (has_attr Dwarf.DW_AT_type) root with
+      | None -> fail "expected a DIE with DW_AT_type"
+      | Some die -> (
+          match Dwarf.attr_die u die Dwarf.DW_AT_type with
+          | None -> fail "attr_die did not resolve DW_AT_type"
+          | Some target ->
+              check bool "resolved a distinct target DIE" true
+                (target.Dwarf.DIE.offset <> die.Dwarf.DIE.offset)))
+
+let test_attr_address binary_path =
+  let ctx = create_context binary_path in
+  match first_unit_root ctx with
+  | None -> fail "expected a root DIE"
+  | Some (u, root) -> (
+      match find_die (has_attr Dwarf.DW_AT_low_pc) root with
+      | None -> fail "expected a DIE with DW_AT_low_pc"
+      | Some die ->
+          check bool "attr_address resolves DW_AT_low_pc" true
+            (Option.is_some (Dwarf.attr_address u die Dwarf.DW_AT_low_pc)))
+
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in
   Cmdliner.Arg.(
@@ -156,5 +211,11 @@ let () =
         [
           ("root DIE via handle", `Quick, test_unit_handle_root_die);
           ("name and comp_dir", `Quick, test_unit_handle_name);
+        ] );
+      ( "typed_attrs",
+        [
+          ("attr_string", `Quick, test_attr_string);
+          ("attr_die follows reference", `Quick, test_attr_die_follows_reference);
+          ("attr_address", `Quick, test_attr_address);
         ] );
     ]

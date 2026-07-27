@@ -3075,6 +3075,38 @@ val comp_dir : unit_ref -> string option
 (** The unit's [DW_AT_comp_dir] (the compilation directory), or [None] if
     absent. *)
 
+(** {3 Typed attribute accessors}
+
+    Convenience accessors that read one attribute of a DIE as a value of its
+    natural type — the layer a debugger or linker reaches for when it wants a
+    string, integer, address, or referenced DIE. Each returns [None] when the
+    attribute is absent or belongs to a different value class. For the low-level
+    view, {!DIE.find_attribute} returns the raw {!DIE.attribute_value} with
+    every form and class distinction preserved. *)
+
+val attr_string : unit_ref -> DIE.t -> attribute_encoding -> string option
+(** The attribute's string value. The direct ([DW_FORM_string], [DW_FORM_strp])
+    and indexed ([DW_FORM_strx*]) string forms all resolve to a [string]. *)
+
+val attr_int : unit_ref -> DIE.t -> attribute_encoding -> i64 option
+(** The attribute's value as a signed 64-bit integer, taken from the constant
+    forms ([DW_FORM_data*], [DW_FORM_udata], [DW_FORM_sdata]). *)
+
+val attr_flag : unit_ref -> DIE.t -> attribute_encoding -> bool option
+(** The attribute's boolean value ([DW_FORM_flag], [DW_FORM_flag_present]). *)
+
+val attr_address : unit_ref -> DIE.t -> attribute_encoding -> u64 option
+(** The attribute's target address, given directly ([DW_FORM_addr]) or as an
+    index into [.debug_addr] ([DW_FORM_addrx*], resolved through the unit's
+    [DW_AT_addr_base]). *)
+
+val attr_die : unit_ref -> DIE.t -> attribute_encoding -> DIE.t option
+(** The DIE named by a reference attribute, for walking the type graph or
+    following [DW_AT_specification] and [DW_AT_abstract_origin] links.
+    Within-unit references ([DW_FORM_ref1..8], [DW_FORM_ref_udata]) resolve;
+    references beyond the unit ([DW_FORM_ref_addr], [DW_FORM_ref_sig8]) yield
+    [None]. *)
+
 (** Abbreviation table parsing for .debug_abbrev section.
 
     The .debug_abbrev section contains abbreviation declarations used by

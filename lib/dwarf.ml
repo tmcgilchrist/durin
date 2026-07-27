@@ -6663,6 +6663,7 @@ let context_str_resolver t : str_resolver =
    abbrev table + string resolver its DIEs need, captured once, so callers stop
    threading [get_abbrev_table] and [context_str_resolver] on every access. *)
 type unit_ref = {
+  ur_ctx : t;
   ur_cu : CompileUnit.t;
   ur_abbrev : (u64, abbrev) Hashtbl.t;
   ur_resolver : str_resolver;
@@ -6671,6 +6672,7 @@ type unit_ref = {
 let unit ctx cu =
   let header = CompileUnit.header cu in
   {
+    ur_ctx = ctx;
     ur_cu = cu;
     ur_abbrev = get_abbrev_table ctx header.debug_abbrev_offset;
     ur_resolver = context_str_resolver ctx;
@@ -6684,7 +6686,7 @@ let root_die u = CompileUnit.root_die u.ur_cu u.ur_abbrev u.ur_resolver
 let die_string_attribute die attr =
   match DIE.find_attribute die attr with
   | Some (DIE.String s) | Some (DIE.IndexedString (_, s)) -> Some s
-  | _ -> None
+  | None | Some _ -> None
 
 let unit_name u =
   Option.bind (root_die u) (fun d -> die_string_attribute d DW_AT_name)
@@ -6817,6 +6819,55 @@ let resolve_address_attribute t addr_base = function
           Some (resolve_address_index t (Unsigned.UInt64.to_int index) base)
       | None -> None)
   | _ -> None
+
+(* Typed attribute accessors over a [unit_ref]. Each reads one attribute of a DIE
+   and returns it as a plain OCaml value, hiding the [attribute_value] union. *)
+
+let attr_string _u die attr = die_string_attribute die attr
+
+let attr_int _u die attr =
+  match DIE.find_attribute die attr with
+  | Some (DIE.UData u) -> Some (Unsigned.UInt64.to_int64 u)
+  | Some (DIE.SData i) -> Some i
+  | None | Some _ -> None
+
+let attr_flag _u die attr =
+  match DIE.find_attribute die attr with
+  | Some (DIE.Flag b) -> Some b
+  | None | Some _ -> None
+
+let attr_address u die attr =
+  match DIE.find_attribute die attr with
+  | Some (DIE.Address a) -> Some a
+  | Some (DIE.IndexedAddress _ as value) ->
+      let addr_base = Option.bind (root_die u) addr_base_of_die in
+      resolve_address_attribute u.ur_ctx addr_base value
+  | None | Some _ -> None
+
+(* Depth-first search of a DIE subtree for the DIE at absolute buffer [offset]. *)
+let rec die_at_offset offset die =
+  if die.DIE.offset = offset then Some die
+  else
+    let rec search seq =
+      match seq () with
+      | Seq.Nil -> None
+      | Seq.Cons (child, rest) -> (
+          match die_at_offset offset child with
+          | Some _ as found -> found
+          | None -> search rest)
+    in
+    search die.DIE.children
+
+let attr_die u die attr =
+  match DIE.find_attribute die attr with
+  | Some (DIE.Reference offset) ->
+      (* DW_FORM_ref1..8 / ref_udata are relative to the unit header, so the
+         target DIE's absolute offset is the unit's offset plus that value.
+         Section- or type-unit references (ref_addr, ref_sig8) fall outside this
+         unit's DIEs and so resolve to [None] rather than to a wrong DIE. *)
+      let target = CompileUnit.offset (cu u) + Unsigned.UInt64.to_int offset in
+      Option.bind (root_die u) (die_at_offset target)
+  | None | Some _ -> None
 
 (* The contiguous [low_pc, high_pc) code range of a DIE, if it has one.
    DW_AT_high_pc is an absolute address or, in DWARF 4+, an offset past low_pc. *)

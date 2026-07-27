@@ -25,11 +25,9 @@ let process_file filename =
           match Dwarf.root_die unit with
           | None -> "<no root DIE>"
           | Some root_die -> (
-              match Dwarf.DIE.find_attribute root_die Dwarf.DW_AT_producer with
-              | Some (Dwarf.DIE.String s)
-              | Some (Dwarf.DIE.IndexedString (_, s)) ->
-                  s
-              | _ -> "<no DW_AT_producer>")
+              match Dwarf.attr_string unit root_die Dwarf.DW_AT_producer with
+              | Some s -> s
+              | None -> "<no DW_AT_producer>")
         in
         Printf.printf "Compilation Unit %d: %s\n" (i + 1) producer)
       units
