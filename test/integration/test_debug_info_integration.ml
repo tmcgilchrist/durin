@@ -106,6 +106,31 @@ let test_root_die_attribute_values binary_path =
           | Some (Language _) -> ()
           | _ -> fail "expected DW_AT_language to be a Language value"))
 
+(* The [unit_ref] handle reads the same root DIE without the caller threading the
+   abbrev table and string resolver that the tests above pass by hand. *)
+let test_unit_handle_root_die binary_path =
+  let ctx = create_context binary_path in
+  match Seq.uncons (Dwarf.compile_units ctx) with
+  | None -> fail "expected at least one compile unit"
+  | Some (cu, _) -> (
+      let u = Dwarf.unit ctx cu in
+      check bool "handle round-trips its unit" true (Dwarf.cu u == cu);
+      match Dwarf.root_die u with
+      | None -> fail "expected root DIE"
+      | Some die ->
+          check bool "root is DW_TAG_compile_unit" true
+            (die.tag = Dwarf.DW_TAG_compile_unit))
+
+let test_unit_handle_name binary_path =
+  let ctx = create_context binary_path in
+  match Seq.uncons (Dwarf.compile_units ctx) with
+  | None -> fail "expected at least one compile unit"
+  | Some (cu, _) ->
+      let u = Dwarf.unit ctx cu in
+      check (option string) "unit_name is hello_world.c" (Some "hello_world.c")
+        (Dwarf.unit_name u);
+      check bool "comp_dir is present" true (Option.is_some (Dwarf.comp_dir u))
+
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in
   Cmdliner.Arg.(
@@ -126,5 +151,10 @@ let () =
           ("root is DW_TAG_compile_unit", `Quick, test_root_die_is_compile_unit);
           ("root has attributes", `Quick, test_root_die_has_attributes);
           ("root attribute values", `Quick, test_root_die_attribute_values);
+        ] );
+      ( "unit_handle",
+        [
+          ("root DIE via handle", `Quick, test_unit_handle_root_die);
+          ("name and comp_dir", `Quick, test_unit_handle_name);
         ] );
     ]

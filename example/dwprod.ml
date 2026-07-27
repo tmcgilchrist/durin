@@ -15,20 +15,14 @@ let process_file filename =
     let dwarf = Dwarf.create buffer in
 
     (* Get compilation units *)
-    let units = Dwarf.parse_compile_units dwarf in
+    let units = Dwarf.compile_units dwarf in
 
     (* Print the DW_AT_producer of each compilation unit's root DIE. *)
     Seq.iteri
-      (fun i unit ->
-        let header = Dwarf.CompileUnit.header unit in
-        let abbrev_table =
-          Dwarf.get_abbrev_table dwarf header.debug_abbrev_offset
-        in
+      (fun i cu ->
+        let unit = Dwarf.unit dwarf cu in
         let producer =
-          match
-            Dwarf.CompileUnit.root_die unit abbrev_table
-              (Dwarf.context_str_resolver dwarf)
-          with
+          match Dwarf.root_die unit with
           | None -> "<no root DIE>"
           | Some root_die -> (
               match Dwarf.DIE.find_attribute root_die Dwarf.DW_AT_producer with

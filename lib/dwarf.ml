@@ -6659,6 +6659,39 @@ let context_str_resolver t : str_resolver =
           ~str_section:(get_section t Debug_str) t.object_ format index);
   }
 
+(* A resolved unit handle: a compilation unit bundled with the context and the
+   abbrev table + string resolver its DIEs need, captured once, so callers stop
+   threading [get_abbrev_table] and [context_str_resolver] on every access. *)
+type unit_ref = {
+  ur_cu : CompileUnit.t;
+  ur_abbrev : (u64, abbrev) Hashtbl.t;
+  ur_resolver : str_resolver;
+}
+
+let unit ctx cu =
+  let header = CompileUnit.header cu in
+  {
+    ur_cu = cu;
+    ur_abbrev = get_abbrev_table ctx header.debug_abbrev_offset;
+    ur_resolver = context_str_resolver ctx;
+  }
+
+let cu u = u.ur_cu
+let root_die u = CompileUnit.root_die u.ur_cu u.ur_abbrev u.ur_resolver
+
+(* Extract a string-form attribute from a DIE, collapsing the direct and indexed
+   string constructors into a plain string. *)
+let die_string_attribute die attr =
+  match DIE.find_attribute die attr with
+  | Some (DIE.String s) | Some (DIE.IndexedString (_, s)) -> Some s
+  | _ -> None
+
+let unit_name u =
+  Option.bind (root_die u) (fun d -> die_string_attribute d DW_AT_name)
+
+let comp_dir u =
+  Option.bind (root_die u) (fun d -> die_string_attribute d DW_AT_comp_dir)
+
 (* Line-number table for a compilation unit. Locates the unit's line program via
    its DW_AT_stmt_list offset into [.debug_line] (looked up through the cached
    section resolver, so callers never touch the object format), parses the
@@ -6807,10 +6840,7 @@ let range_contains (low, high) addr =
 
 (* The root DIE of a unit, resolved through the context's cached abbrev table and
    string resolver. *)
-let unit_root_die t unit =
-  let header = CompileUnit.header unit in
-  let abbrev_table = get_abbrev_table t header.debug_abbrev_offset in
-  CompileUnit.root_die unit abbrev_table (context_str_resolver t)
+let unit_root_die t cu = root_die (unit t cu)
 
 let unit_for_address t addr =
   let rec search seq =

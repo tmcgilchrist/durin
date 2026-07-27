@@ -3042,6 +3042,39 @@ val get_abbrev_table : t -> size_t -> (u64, abbrev) Hashtbl.t
 
     @raise Parse_error if the abbreviation table is malformed. *)
 
+(** {2 Unit handles}
+
+    A {!unit_ref} bundles a compilation unit with the context and the abbrev
+    table + string resolver its DIEs need. Building one with {!val-unit}
+    captures that machinery once, so reading the unit's DIEs no longer threads
+    {!get_abbrev_table} and {!context_str_resolver} through every call. *)
+
+type unit_ref
+(** A compilation unit resolved against its context: enough to parse and read
+    the unit's DIEs without supplying the abbrev table or string resolver again.
+*)
+
+val unit : t -> CompileUnit.t -> unit_ref
+(** Resolve a compilation unit into a {!unit_ref}, fetching its (cached) abbrev
+    table and the context's string resolver once. *)
+
+val cu : unit_ref -> CompileUnit.t
+(** The underlying compilation unit, for functions that still take a
+    {!CompileUnit.t} (such as {!line_table}). *)
+
+val root_die : unit_ref -> DIE.t option
+(** The root DIE of the unit (its [DW_TAG_compile_unit]), or [None] if the unit
+    has no DIEs. Unlike {!CompileUnit.root_die} this needs no abbrev table or
+    resolver arguments. *)
+
+val unit_name : unit_ref -> string option
+(** The unit's [DW_AT_name] (typically the primary source file), or [None] if
+    absent. *)
+
+val comp_dir : unit_ref -> string option
+(** The unit's [DW_AT_comp_dir] (the compilation directory), or [None] if
+    absent. *)
+
 (** Abbreviation table parsing for .debug_abbrev section.
 
     The .debug_abbrev section contains abbreviation declarations used by
