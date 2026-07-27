@@ -11,14 +11,14 @@ let test_create_succeeds binary_path =
 
 let test_has_compile_units binary_path =
   let ctx = create_context binary_path in
-  let cus = Dwarf.parse_compile_units ctx in
+  let cus = Dwarf.compile_units ctx in
   match Seq.uncons cus with
   | None -> fail "expected at least one compile unit"
   | Some _ -> ()
 
 let test_cu_header_valid binary_path =
   let ctx = create_context binary_path in
-  let cus = Dwarf.parse_compile_units ctx in
+  let cus = Dwarf.compile_units ctx in
   match Seq.uncons cus with
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) ->
@@ -32,7 +32,7 @@ let test_cu_header_valid binary_path =
 let test_root_die_exists binary_path =
   let buffer = Object.Buffer.parse binary_path in
   let ctx = Dwarf.create buffer in
-  let cus = Dwarf.parse_compile_units ctx in
+  let cus = Dwarf.compile_units ctx in
   match Seq.uncons cus with
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) ->
@@ -47,7 +47,7 @@ let test_root_die_exists binary_path =
 let test_root_die_is_compile_unit binary_path =
   let buffer = Object.Buffer.parse binary_path in
   let ctx = Dwarf.create buffer in
-  let cus = Dwarf.parse_compile_units ctx in
+  let cus = Dwarf.compile_units ctx in
   match Seq.uncons cus with
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) -> (
@@ -65,7 +65,7 @@ let test_root_die_is_compile_unit binary_path =
 let test_root_die_has_attributes binary_path =
   let buffer = Object.Buffer.parse binary_path in
   let ctx = Dwarf.create buffer in
-  let cus = Dwarf.parse_compile_units ctx in
+  let cus = Dwarf.compile_units ctx in
   match Seq.uncons cus with
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) -> (
@@ -82,7 +82,7 @@ let test_root_die_has_attributes binary_path =
 let test_root_die_attribute_values binary_path =
   let buffer = Object.Buffer.parse binary_path in
   let ctx = Dwarf.create buffer in
-  let cus = Dwarf.parse_compile_units ctx in
+  let cus = Dwarf.compile_units ctx in
   match Seq.uncons cus with
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) -> (

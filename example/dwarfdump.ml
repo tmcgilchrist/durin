@@ -482,7 +482,7 @@ let dump_debug_info filename =
       | Some (debug_info_offset, _size) ->
           (* Create DWARF context and parse compile units *)
           let dwarf = Dwarf.create buffer in
-          let compile_units = Dwarf.parse_compile_units dwarf in
+          let compile_units = Dwarf.compile_units dwarf in
 
           (* Process each compile unit *)
           Seq.iter

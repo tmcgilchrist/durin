@@ -481,7 +481,7 @@ let dump_debug_info filename =
     | Some (debug_info_offset, _section_size) ->
         (* Create DWARF context and parse compile units *)
         let dwarf = Dwarf.create buffer in
-        let compile_units = Dwarf.parse_compile_units dwarf in
+        let compile_units = Dwarf.compile_units dwarf in
 
         (* Process each compile unit *)
         Seq.iter
@@ -741,7 +741,7 @@ let dump_debug_aranges filename =
 
         (* Create DWARF object and get compilation units for additional info *)
         let dwarf = Dwarf.create buffer in
-        let compile_units = Dwarf.parse_compile_units dwarf in
+        let compile_units = Dwarf.compile_units dwarf in
 
         (* Find the compilation unit that matches the debug_info_offset from aranges *)
         let cu_die_offset =
