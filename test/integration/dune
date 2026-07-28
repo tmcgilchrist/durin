@@ -22,7 +22,8 @@
   test_debug_info_integration
   test_debug_abbrev_integration
   test_debug_pubnames_integration
-  test_debug_names_integration)
+  test_debug_names_integration
+  test_line_table_integration)
  (libraries durin object alcotest cmdliner test_helpers))
 
 (rule
@@ -242,3 +243,32 @@
    %{exe:test_debug_names_integration.exe}
    --binary
    %{dep:../fixtures/hello_world_debug_names_linux})))
+
+; line_table context accessor: enabled on both macOS arm64 (DWARF in the .dSYM)
+; and Linux amd64 (DWARF embedded in the ELF).
+
+(rule
+ (alias integration)
+ (deps ../fixtures/hello_world)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (run
+   %{exe:test_line_table_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world})))
+
+(rule
+ (alias integration)
+ (deps ../fixtures/hello_world_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_line_table_integration.exe}
+   --binary
+   %{dep:../fixtures/hello_world_linux})))

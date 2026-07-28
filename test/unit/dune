@@ -113,6 +113,12 @@
   (run %{exe:test_dwarf_write.exe})))
 
 (test
+ (name test_debug_line)
+ (libraries durin object alcotest)
+ (action
+  (run %{exe:test_debug_line.exe})))
+
+(test
  (name test_dwarf_asm)
  (libraries durin object alcotest str)
  (enabled_if

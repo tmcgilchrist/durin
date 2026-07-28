@@ -24,102 +24,38 @@ let init_context filename =
     let buffer = Object.Buffer.parse actual_filename in
     (buffer, actual_filename)
 
-(* Find line table entry for a given address using binary search *)
-let find_line_entry entries target_addr =
-  let len = Array.length entries in
-  let rec binary_search low high =
-    if low > high then None
-    else
-      let mid = (low + high) / 2 in
-      let entry = entries.(mid) in
-      let addr = entry.Dwarf.DebugLine.address in
-      if Unsigned.UInt64.equal addr target_addr then Some entry
-      else if Unsigned.UInt64.compare target_addr addr < 0 then
-        binary_search low (mid - 1)
-      else if mid < len - 1 then
-        let next_addr = entries.(mid + 1).Dwarf.DebugLine.address in
-        if Unsigned.UInt64.compare target_addr next_addr < 0 then Some entry
-        else binary_search (mid + 1) high
-      else Some entry
+(* Resolve an address to its source (file, line). Walk the compilation units,
+   ask the context for each unit's line-number table with [Dwarf.line_table],
+   and find the row covering [addr] with [DebugLine.find_by_address]. The row's
+   file index selects the source file from the table header's file list. *)
+let addr_to_location dwarf addr =
+  let file_of_entry header entry =
+    let file_index = Unsigned.UInt32.to_int entry.Dwarf.DebugLine.file_index in
+    let files = header.Dwarf.DebugLine.file_names in
+    if file_index < Array.length files then
+      let file_entry = files.(file_index) in
+      let filename =
+        if file_entry.directory = "" then file_entry.name
+        else file_entry.directory ^ "/" ^ file_entry.name
+      in
+      Some (filename, Unsigned.UInt32.to_int entry.Dwarf.DebugLine.line)
+    else None
   in
-  if len = 0 then None else binary_search 0 (len - 1)
-
-(* Get section offset helper *)
-let get_section_offset buffer section_type =
-  let object_format = Object_format.detect_format buffer in
-  let section_name =
-    Dwarf.object_format_to_section_name object_format section_type
+  let rec search cu_seq =
+    match cu_seq () with
+    | Seq.Nil -> ("??", 0)
+    | Seq.Cons (cu, rest) -> (
+        match Dwarf.line_table dwarf cu with
+        | None -> search rest
+        | Some lt -> (
+            match Dwarf.DebugLine.find_by_address lt addr with
+            | None -> search rest
+            | Some entry -> (
+                match file_of_entry (Dwarf.DebugLine.header lt) entry with
+                | Some result -> result
+                | None -> ("??", 0))))
   in
-  try
-    let open Macho in
-    let _header, commands = read buffer in
-    let sections = ref [] in
-    List.iter
-      (fun cmd ->
-        match cmd with
-        | LC_SEGMENT_64 (lazy segment) ->
-            Array.iter
-              (fun section ->
-                if
-                  String.equal section.sec_segname "__DWARF"
-                  && String.equal section.sec_sectname section_name
-                then
-                  sections :=
-                    ( Unsigned.UInt32.to_int section.sec_offset,
-                      Unsigned.UInt64.to_int section.sec_size )
-                    :: !sections)
-              segment.seg_sections
-        | LC_SEGMENT_32 (lazy segment) ->
-            Array.iter
-              (fun section ->
-                if
-                  String.equal section.sec_segname "__DWARF"
-                  && String.equal section.sec_sectname section_name
-                then
-                  sections :=
-                    ( Unsigned.UInt32.to_int section.sec_offset,
-                      Unsigned.UInt64.to_int section.sec_size )
-                    :: !sections)
-              segment.seg_sections
-        | _ -> ())
-      commands;
-    match !sections with
-    | (offset, size) :: _ ->
-        Some (Unsigned.UInt64.of_int offset, Unsigned.UInt64.of_int size)
-    | [] -> None
-  with _ -> None
-
-(* Parse line table from debug_line section *)
-let parse_line_table buffer =
-  match get_section_offset buffer Dwarf.Debug_line with
-  | None -> None
-  | Some (offset, _size) ->
-      let cursor =
-        Object.Buffer.cursor buffer ~at:(Unsigned.UInt64.to_int offset)
-      in
-      let header = Dwarf.DebugLine.parse_line_program_header cursor buffer in
-      let entries =
-        Dwarf.DebugLine.parse_line_program cursor header |> Array.of_seq
-      in
-      Some (header, entries)
-
-(* Resolve address to source location *)
-let addr_to_location _buffer header entries addr =
-  match find_line_entry entries addr with
-  | None -> ("??", 0)
-  | Some entry ->
-      let file_index =
-        Unsigned.UInt32.to_int entry.Dwarf.DebugLine.file_index
-      in
-      if file_index < Array.length header.Dwarf.DebugLine.file_names then
-        let file_entry = header.Dwarf.DebugLine.file_names.(file_index) in
-        let filename =
-          if file_entry.directory = "" then file_entry.name
-          else file_entry.directory ^ "/" ^ file_entry.name
-        in
-        let line = Unsigned.UInt32.to_int entry.Dwarf.DebugLine.line in
-        (filename, line)
-      else ("??", 0)
+  search (Dwarf.compile_units dwarf)
 
 (* Resolve DIE address attribute considering addr_base *)
 let resolve_die_address dwarf addr_base addr_value =
@@ -130,9 +66,8 @@ let resolve_die_address dwarf addr_base addr_value =
   | None -> addr_value
 
 (* Find function name for address by searching debug_info DIEs *)
-let find_function_name buffer addr =
+let find_function_name dwarf addr =
   try
-    let dwarf = Dwarf.create buffer in
     let compile_units = Dwarf.parse_compile_units dwarf in
     let rec search_cu cu_seq =
       match cu_seq () with
@@ -218,23 +153,18 @@ let find_function_name buffer addr =
   with _ -> None
 
 (* Main addr2line lookup function *)
-let lookup_address buffer addr_str show_functions =
+let lookup_address dwarf addr_str show_functions =
   try
     let addr = Unsigned.UInt64.of_string addr_str in
-    match parse_line_table buffer with
-    | None ->
-        if show_functions then Printf.printf "??\n??:0\n"
-        else Printf.printf "??:0\n"
-    | Some (header, entries) ->
-        let filename, line = addr_to_location buffer header entries addr in
-        if show_functions then
-          let func_name =
-            match find_function_name buffer addr with
-            | Some name -> name
-            | None -> "??"
-          in
-          Printf.printf "%s\n%s:%d\n" func_name filename line
-        else Printf.printf "%s:%d\n" filename line
+    let filename, line = addr_to_location dwarf addr in
+    if show_functions then
+      let func_name =
+        match find_function_name dwarf addr with
+        | Some name -> name
+        | None -> "??"
+      in
+      Printf.printf "%s\n%s:%d\n" func_name filename line
+    else Printf.printf "%s:%d\n" filename line
   with _ ->
     if show_functions then Printf.printf "??\n??:0\n"
     else Printf.printf "??:0\n"
@@ -278,18 +208,19 @@ let addr2line_cmd exec_file show_funcs _inlines _pretty _base _addrs _dem addrs
   let filename = match exec_file with Some f -> f | None -> "a.out" in
   try
     let buffer, _ = init_context filename in
+    let dwarf = Dwarf.create buffer in
     if List.length addrs = 0 then
       (* Read from stdin *)
       try
         while true do
           let line = input_line stdin in
           let addr = String.trim line in
-          if addr <> "" then lookup_address buffer addr show_funcs
+          if addr <> "" then lookup_address dwarf addr show_funcs
         done
       with End_of_file -> ()
     else
       (* Process command-line addresses *)
-      List.iter (fun addr -> lookup_address buffer addr show_funcs) addrs
+      List.iter (fun addr -> lookup_address dwarf addr show_funcs) addrs
   with
   | Sys_error msg ->
       Printf.eprintf "Error: %s\n" msg;

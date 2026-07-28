@@ -181,6 +181,11 @@
     --debug-info
     "../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
 
+; Apple's dwarfdump reverse-maps AArch64 DWARF register N (0-30) to LLVM's
+; 32-bit sub-register name (e.g. "W29"), whereas we use the correct 64-bit name
+; ("x29", as the AArch64 DWARF ABI and lldb do). Canonicalise that cosmetic
+; quirk in the reference output so the comparison does not force us to regress.
+
 (rule
  (alias integration)
  (target system_debug_info.out)
@@ -193,7 +198,7 @@
   (with-stdout-to
    %{target}
    (system
-    "dwarfdump --debug-info ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world"))))
+    "dwarfdump --debug-info ../fixtures/hello_world.dSYM/Contents/Resources/DWARF/hello_world | sed -E 's/(DW_OP_b?reg[0-9]+ )W([0-9]+)/\\1x\\2/g'"))))
 
 (rule
  (alias integration)

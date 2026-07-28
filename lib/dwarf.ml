@@ -3508,26 +3508,9 @@ module DebugRnglists = struct
         Some (parse_range_list cursor address_size)
 end
 
-(* The DWARF context: an object buffer together with the sections parsed from
-   it, cached lazily on first access and held for the lifetime of the value
-   (the high-level reading API; the per-section [DebugX.parse] functions are the
-   stateless low-level API). See doc/context-memoization.md. *)
-type t = {
-  object_ : Object.Buffer.t;
-  sections_ : (dwarf_section, (u64 * u64) option) Hashtbl.t;
-  abbrev_tables_ : (size_t, (u64, abbrev) Hashtbl.t) Hashtbl.t;
-  str_offsets_ : (u32, DebugStrOffsets.t) Hashtbl.t;
-  addr_tables_ : (u64, DebugAddr.t) Hashtbl.t;
-  debug_str_ : DebugStr.t option memo ref;
-  debug_line_str_ : DebugLineStr.t option memo ref;
-  aranges_ : DebugAranges.aranges_set option memo ref;
-  loclists_ : DebugLoclists.loclists_section option memo ref;
-  rnglists_ : DebugRnglists.rnglists_section option memo ref;
-  compile_units_ : CompileUnit.t list memo ref;
-}
-
-let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
-  match find_debug_section_by_type dwarf.object_ Debug_info with
+let parse_compile_units_ (dwarf_object : Object.Buffer.t) : CompileUnit.t Seq.t
+    =
+  match find_debug_section_by_type dwarf_object Debug_info with
   | None -> Seq.empty
   | Some (section_offset, section_size) ->
       let section_end = Unsigned.UInt64.to_int section_size in
@@ -3540,11 +3523,11 @@ let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
             let absolute_pos =
               Unsigned.UInt64.to_int section_offset + cursor_pos
             in
-            let cur = Object.Buffer.cursor dwarf.object_ ~at:absolute_pos in
+            let cur = Object.Buffer.cursor dwarf_object ~at:absolute_pos in
             let _unit_span, parsed_header = parse_compile_unit_header cur in
             let unit =
               CompileUnit.make ~position:cursor_pos ~offset:absolute_pos
-                dwarf.object_ parsed_header
+                dwarf_object parsed_header
             in
 
             (* Calculate next position: current + unit_length + length_field_size *)
@@ -3565,8 +3548,6 @@ let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
       parse_units 0
 
 module DebugLine = struct
-  type t = { cu : CompileUnit.t }
-
   module File = struct
     type t = { path : string; modification_time : u64; file_length : u64 }
   end
@@ -4255,6 +4236,115 @@ module DebugLine = struct
     let header = parse_line_program_header cur buffer in
     let entries = parse_line_program cur header in
     (header, entries)
+
+  type line_table = {
+    lt_header : line_program_header;
+    lt_rows : line_table_entry array;
+  }
+
+  (* Build a queryable table from the raw state-machine rows. The rows arrive
+     grouped into sequences, each terminated by an end_sequence row. Sequences
+     are sorted by their first address then concatenated, so the whole array is
+     address-ordered while intra-sequence order is preserved. Terminal rows are
+     kept: they mark sequence ends and bound the last real row's range, but the
+     lookups below never return them. *)
+  let build header entries =
+    let rec split_sequences acc current = function
+      | [] -> List.rev (if current = [] then acc else List.rev current :: acc)
+      | row :: rest ->
+          let current = row :: current in
+          if row.end_sequence then
+            split_sequences (List.rev current :: acc) [] rest
+          else split_sequences acc current rest
+    in
+    let sequences = split_sequences [] [] (List.of_seq entries) in
+    let first_address = function
+      | row :: _ -> row.address
+      | [] -> Unsigned.UInt64.zero
+    in
+    let sorted =
+      List.stable_sort
+        (fun a b -> Unsigned.UInt64.compare (first_address a) (first_address b))
+        sequences
+    in
+    { lt_header = header; lt_rows = Array.of_list (List.concat sorted) }
+
+  let header lt = lt.lt_header
+  let entries lt = Array.to_seq lt.lt_rows
+
+  (* The row active at [addr]: the row whose [address, next-address) range
+     contains it. Binary-searches for the last row with address <= [addr]; a
+     terminal row there means [addr] falls in a gap or past the end. *)
+  let find_by_address lt addr =
+    let rows = lt.lt_rows in
+    let n = Array.length rows in
+    let rec search lo hi best =
+      if lo > hi then best
+      else
+        let mid = (lo + hi) / 2 in
+        if Unsigned.UInt64.compare rows.(mid).address addr <= 0 then
+          search (mid + 1) hi (Some mid)
+        else search lo (mid - 1) best
+    in
+    if n = 0 then None
+    else
+      match search 0 (n - 1) None with
+      | Some i when not rows.(i).end_sequence -> Some rows.(i)
+      | _ -> None
+
+  (* Resolve a source line to a row, for breakpoint-style lookup. An exact match
+     on [line] wins (lowest address, since rows are address-ordered); otherwise
+     the row on the nearest source line greater than [line] is returned, so a
+     query on a line that produced no code slides forward to the next executable
+     line. Terminal rows and other files are skipped. Mirrors LLDB's
+     FindLineEntryIndexByFileIndex. *)
+  let find_by_line lt ~file ~line =
+    let target_file = Unsigned.UInt32.of_int file in
+    let rows = lt.lt_rows in
+    let n = Array.length rows in
+    let rec scan i best =
+      if i >= n then best
+      else
+        let row = rows.(i) in
+        if
+          row.end_sequence
+          || not (Unsigned.UInt32.equal row.file_index target_file)
+        then scan (i + 1) best
+        else
+          let row_line = Unsigned.UInt32.to_int row.line in
+          if row_line = line then Some row
+          else if row_line < line then scan (i + 1) best
+          else
+            (* row_line > line: keep the smallest such line, lowest address *)
+            let best =
+              match best with
+              | Some b when Unsigned.UInt32.to_int b.line <= row_line -> best
+              | _ -> Some row
+            in
+            scan (i + 1) best
+    in
+    scan 0 None
+
+  (* The lowest-address row exactly on [line] in [file], skipping terminal rows;
+     [None] if that line produced no code. Unlike find_by_line this never slides
+     forward to the next executable line. *)
+  let find_by_line_exact lt ~file ~line =
+    let target_file = Unsigned.UInt32.of_int file in
+    let target_line = Unsigned.UInt32.of_int line in
+    let rows = lt.lt_rows in
+    let n = Array.length rows in
+    let rec scan i =
+      if i >= n then None
+      else
+        let row = rows.(i) in
+        if
+          (not row.end_sequence)
+          && Unsigned.UInt32.equal row.file_index target_file
+          && Unsigned.UInt32.equal row.line target_line
+        then Some row
+        else scan (i + 1)
+    in
+    scan 0
 end
 
 module DebugLoc = struct
@@ -6464,6 +6554,28 @@ module DebugNames = struct
     debug_names.comp_unit_offsets
 end
 
+(* The DWARF context: an object buffer together with the sections parsed from
+   it, cached lazily on first access and held for the lifetime of the value
+   (the high-level reading API; the per-section [DebugX.parse] functions are the
+   stateless low-level API). See doc/context-memoization.md. *)
+type t = {
+  object_ : Object.Buffer.t;
+  sections_ : (dwarf_section, (u64 * u64) option) Hashtbl.t;
+  abbrev_tables_ : (size_t, (u64, abbrev) Hashtbl.t) Hashtbl.t;
+  str_offsets_ : (u32, DebugStrOffsets.t) Hashtbl.t;
+  addr_tables_ : (u64, DebugAddr.t) Hashtbl.t;
+  debug_str_ : DebugStr.t option memo ref;
+  debug_line_str_ : DebugLineStr.t option memo ref;
+  aranges_ : DebugAranges.aranges_set option memo ref;
+  loclists_ : DebugLoclists.loclists_section option memo ref;
+  rnglists_ : DebugRnglists.rnglists_section option memo ref;
+  compile_units_ : CompileUnit.t list memo ref;
+  line_tables_ : (u64, DebugLine.line_table) Hashtbl.t;
+}
+
+let parse_compile_units (dwarf : t) : CompileUnit.t Seq.t =
+  parse_compile_units_ dwarf.object_
+
 let get_abbrev_table t (offset : size_t) =
   memo_at t.abbrev_tables_ offset (fun () ->
       parse_abbrev_table t.object_
@@ -6498,6 +6610,7 @@ let create buffer =
     loclists_ = ref Unparsed;
     rnglists_ = ref Unparsed;
     compile_units_ = ref Unparsed;
+    line_tables_ = Hashtbl.create 4;
   }
 
 (* Memoized counterpart of [parse_compile_units]: materialises the unit list
@@ -6545,6 +6658,37 @@ let context_str_resolver t : str_resolver =
           ~str_offs_section:(get_section t Debug_str_offs)
           ~str_section:(get_section t Debug_str) t.object_ format index);
   }
+
+(* Line-number table for a compilation unit. Locates the unit's line program via
+   its DW_AT_stmt_list offset into [.debug_line] (looked up through the cached
+   section resolver, so callers never touch the object format), parses the
+   header, runs the state machine, and caches the built table keyed by that
+   offset. Returns [None] when the unit has no line program or the section is
+   absent. *)
+let line_table t (unit : CompileUnit.t) : DebugLine.line_table option =
+  let cu_header = CompileUnit.header unit in
+  let abbrev_table = get_abbrev_table t cu_header.debug_abbrev_offset in
+  match CompileUnit.root_die unit abbrev_table (context_str_resolver t) with
+  | None -> None
+  | Some root_die -> (
+      match DIE.find_attribute root_die DW_AT_stmt_list with
+      | Some (DIE.UData stmt_list_offset) -> (
+          match get_section t Debug_line with
+          | None -> None
+          | Some (section_offset, _) ->
+              Some
+                (memo_at t.line_tables_ stmt_list_offset (fun () ->
+                     let position =
+                       Unsigned.UInt64.to_int section_offset
+                       + Unsigned.UInt64.to_int stmt_list_offset
+                     in
+                     let cursor = Object.Buffer.cursor t.object_ ~at:position in
+                     let header =
+                       DebugLine.parse_line_program_header cursor t.object_
+                     in
+                     let entries = DebugLine.parse_line_program cursor header in
+                     DebugLine.build header entries)))
+      | _ -> None)
 
 module DebugAbbrev = struct
   let parse buffer offset =
