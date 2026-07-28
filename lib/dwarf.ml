@@ -3019,9 +3019,8 @@ module DebugAddr = struct
     { header; entries }
 end
 
-(* A lazily-populated, idempotent cache cell: [Unparsed] until first access,
-   then [Parsed] and held for the lifetime of the context.
-   See doc/context-memoization.md. *)
+(* A lazily-populated, idempotent cache cell. [Unparsed] until first access,
+   then [Parsed] and held for the lifetime of the context. *)
 type 'a memo = Unparsed | Parsed of 'a
 
 let memo cell f =
@@ -6555,9 +6554,7 @@ module DebugNames = struct
 end
 
 (* The DWARF context: an object buffer together with the sections parsed from
-   it, cached lazily on first access and held for the lifetime of the value
-   (the high-level reading API; the per-section [DebugX.parse] functions are the
-   stateless low-level API). See doc/context-memoization.md. *)
+   it, cached lazily on first access and held for the lifetime of the value. *)
 type t = {
   object_ : Object.Buffer.t;
   sections_ : (dwarf_section, (u64 * u64) option) Hashtbl.t;
@@ -6571,6 +6568,7 @@ type t = {
   rnglists_ : DebugRnglists.rnglists_section option memo ref;
   compile_units_ : CompileUnit.t Seq.t memo ref;
   line_tables_ : (u64, DebugLine.line_table) Hashtbl.t;
+  str_resolver_ : str_resolver memo ref;
 }
 
 let get_abbrev_table t (offset : size_t) =
@@ -6608,6 +6606,7 @@ let create buffer =
     rnglists_ = ref Unparsed;
     compile_units_ = ref Unparsed;
     line_tables_ = Hashtbl.create 4;
+    str_resolver_ = ref Unparsed;
   }
 
 (* Compile units from [.debug_info], parsed lazily and cached. [Seq.memoize]
@@ -6629,30 +6628,32 @@ let get_section t section_type =
    resolve correctly), but looks the sections up through the context's section
    cache rather than re-scanning the object file on every attribute. *)
 let context_str_resolver t : str_resolver =
-  let read_at section offset fallback =
-    match get_section t section with
-    | Some (sec_off, _) -> (
-        match
-          read_string_from_section t.object_ offset
-            (Unsigned.UInt64.to_int sec_off)
-        with
-        | Some s -> s
-        | None -> fallback offset)
-    | None -> fallback offset
-  in
-  {
-    string_at =
-      (fun offset ->
-        read_at Debug_str offset (Printf.sprintf "<strp_offset:%d>"));
-    line_string_at =
-      (fun offset ->
-        read_at Debug_line_str offset (Printf.sprintf "<line_strp_offset:%d>"));
-    indexed_string =
-      (fun format index ->
-        resolve_string_index_in
-          ~str_offs_section:(get_section t Debug_str_offs)
-          ~str_section:(get_section t Debug_str) t.object_ format index);
-  }
+  memo t.str_resolver_ (fun () ->
+      let read_at section offset fallback =
+        match get_section t section with
+        | Some (sec_off, _) -> (
+            match
+              read_string_from_section t.object_ offset
+                (Unsigned.UInt64.to_int sec_off)
+            with
+            | Some s -> s
+            | None -> fallback offset)
+        | None -> fallback offset
+      in
+      {
+        string_at =
+          (fun offset ->
+            read_at Debug_str offset (Printf.sprintf "<strp_offset:%d>"));
+        line_string_at =
+          (fun offset ->
+            read_at Debug_line_str offset
+              (Printf.sprintf "<line_strp_offset:%d>"));
+        indexed_string =
+          (fun format index ->
+            resolve_string_index_in
+              ~str_offs_section:(get_section t Debug_str_offs)
+              ~str_section:(get_section t Debug_str) t.object_ format index);
+      })
 
 (* A resolved unit handle: a compilation unit bundled with the context and the
    abbrev table + string resolver its DIEs need, captured once, so callers stop

@@ -186,6 +186,12 @@ let test_attr_address binary_path =
           check bool "attr_address resolves DW_AT_low_pc" true
             (Option.is_some (Dwarf.attr_address u die Dwarf.DW_AT_low_pc)))
 
+(* The context builds its string resolver once and shares it. *)
+let test_str_resolver_shared binary_path =
+  let ctx = create_context binary_path in
+  check bool "str resolver is shared" true
+    (Dwarf.context_str_resolver ctx == Dwarf.context_str_resolver ctx)
+
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in
   Cmdliner.Arg.(
@@ -218,4 +224,5 @@ let () =
           ("attr_die follows reference", `Quick, test_attr_die_follows_reference);
           ("attr_address", `Quick, test_attr_address);
         ] );
+      ("caching", [ ("str resolver shared", `Quick, test_str_resolver_shared) ]);
     ]

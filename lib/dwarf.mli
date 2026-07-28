@@ -3601,7 +3601,7 @@ end
 
     Context-level accessors that parse a section on first request and cache the
     result for reuse. Each is the memoizing, high-level counterpart of the
-    matching stateless {!DebugStr.parse} / {!DebugStrOffsets.parse} / … — see
+    matching stateless {!DebugStr.parse} / {!DebugStrOffsets.parse}. See
     {!get_abbrev_table}. *)
 
 val get_str_offsets : t -> u32 -> DebugStrOffsets.t
