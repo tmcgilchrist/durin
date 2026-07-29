@@ -6754,6 +6754,17 @@ let unit_entries u : DIE.t Seq.t =
   | None -> Seq.empty
   | Some root -> Seq.cons root (DIE.descendants root)
 
+(* A DieCursor / DieZipper over the unit, positioned at its root DIE. *)
+let die_cursor u =
+  let header : CompileUnit.header = CompileUnit.header u.ur_cu in
+  let header_size = Unsigned.UInt64.to_int header.span.size in
+  let offset = CompileUnit.offset u.ur_cu + header_size in
+  DieCursor.create u.ur_ctx.object_ u.ur_resolver u.ur_abbrev
+    (CompileUnit.encoding u.ur_cu)
+    offset
+
+let die_zipper u = DieZipper.of_die_cursor (die_cursor u)
+
 (* Line-number table for a compilation unit. Locates the unit's line program via
    its DW_AT_stmt_list offset into [.debug_line] (looked up through the cached
    section resolver, so callers never touch the object format), parses the

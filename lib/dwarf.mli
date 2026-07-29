@@ -1734,8 +1734,7 @@ end
 
     Typical usage:
     {@ocaml skip[
-      let dc = DieCursor.create buffer abbrev_table encoding offset in
-      match DieZipper.of_die_cursor dc with
+      match die_zipper unit with
       | None -> ()
       | Some z ->
           DieZipper.children z
@@ -3081,6 +3080,15 @@ val comp_dir : unit_ref -> string option
 val unit_entries : unit_ref -> DIE.t Seq.t
 (** All DIEs of the unit in depth-first preorder, the root DIE first. Empty if
     the unit has no DIEs. The sequence is re-traversable. *)
+
+val die_cursor : unit_ref -> DieCursor.t
+(** A {!DieCursor} over the unit, positioned at its root DIE. The handle-based
+    counterpart of {!DieCursor.create}, so callers need not supply the buffer,
+    abbrev table, encoding and resolver by hand. *)
+
+val die_zipper : unit_ref -> DieZipper.t option
+(** A {!DieZipper} focused on the unit's root DIE, or [None] if the unit has no
+    DIEs. The handle-based counterpart of {!DieZipper.of_die_cursor}. *)
 
 (** {3 Typed attribute accessors}
 

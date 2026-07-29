@@ -250,6 +250,24 @@ let test_find_descendant binary_path =
         (Option.is_some
            (Dwarf.DIE.find_descendant (has_attr Dwarf.DW_AT_type) root))
 
+(* die_cursor / die_zipper built from a handle start at the root DIE. *)
+let test_die_cursor_from_unit binary_path =
+  let ctx = create_context binary_path in
+  match Seq.uncons (Dwarf.compile_units ctx) with
+  | None -> fail "expected at least one compile unit"
+  | Some (cu, _) -> (
+      let u = Dwarf.unit ctx cu in
+      (match Dwarf.DieCursor.next (Dwarf.die_cursor u) with
+      | Some (die, _) ->
+          check bool "cursor starts at the compile-unit DIE" true
+            (die.Dwarf.DIE.tag = Dwarf.DW_TAG_compile_unit)
+      | None -> fail "expected the root DIE from the cursor");
+      match Dwarf.die_zipper u with
+      | None -> fail "expected a zipper"
+      | Some z ->
+          check bool "zipper focuses the compile-unit DIE" true
+            (Dwarf.DieZipper.tag z = Dwarf.DW_TAG_compile_unit))
+
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in
   Cmdliner.Arg.(
@@ -293,5 +311,6 @@ let () =
           ("unit_entries", `Quick, test_unit_entries);
           ("descendants", `Quick, test_descendants);
           ("find_descendant", `Quick, test_find_descendant);
+          ("die_cursor from unit", `Quick, test_die_cursor_from_unit);
         ] );
     ]
