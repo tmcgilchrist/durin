@@ -2513,7 +2513,8 @@ module DIE = struct
             Some
               ( { tag = abbrev.tag; attributes; children; offset = die_offset },
                 abbrev.has_children )
-    with _ -> None
+    (* A truncated DIE reads past the section end, so stop parsing. *)
+    with Object.Buffer.Invalid_format _ | Invalid_argument _ -> None
 end
 
 (* Represents a section of the binary that corresponds to an
