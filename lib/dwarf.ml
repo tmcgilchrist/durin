@@ -2030,6 +2030,129 @@ let buffer_str_resolver (buffer : Object.Buffer.t) : str_resolver =
     indexed_string = resolve_string_index buffer;
   }
 
+let rec skip_attribute_value (cur : Object.Buffer.cursor)
+    (form : attribute_form_encoding) (encoding : encoding) : unit =
+  match form with
+  | DW_FORM_addr ->
+      let sz = Unsigned.UInt8.to_int encoding.address_size in
+      cur.position <- cur.position + sz
+  | DW_FORM_block2 ->
+      let len = Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int in
+      cur.position <- cur.position + len
+  | DW_FORM_block4 ->
+      let len = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
+      cur.position <- cur.position + len
+  | DW_FORM_data2 -> cur.position <- cur.position + 2
+  | DW_FORM_data4 -> cur.position <- cur.position + 4
+  | DW_FORM_data8 -> cur.position <- cur.position + 8
+  | DW_FORM_string ->
+      let _ = Object.Buffer.Read.zero_string cur () in
+      ()
+  | DW_FORM_block ->
+      let len = Object.Buffer.Read.uleb128 cur in
+      cur.position <- cur.position + len
+  | DW_FORM_block1 ->
+      let len = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
+      cur.position <- cur.position + len
+  | DW_FORM_data1 -> cur.position <- cur.position + 1
+  | DW_FORM_flag -> cur.position <- cur.position + 1
+  | DW_FORM_sdata ->
+      let _ = Object.Buffer.Read.sleb128 cur in
+      ()
+  | DW_FORM_strp ->
+      cur.position <- cur.position + offset_size_for_format encoding.format
+  | DW_FORM_udata ->
+      let _ = Object.Buffer.Read.uleb128 cur in
+      ()
+  | DW_FORM_ref_addr ->
+      cur.position <- cur.position + offset_size_for_format encoding.format
+  | DW_FORM_ref1 -> cur.position <- cur.position + 1
+  | DW_FORM_ref2 -> cur.position <- cur.position + 2
+  | DW_FORM_ref4 -> cur.position <- cur.position + 4
+  | DW_FORM_ref8 -> cur.position <- cur.position + 8
+  | DW_FORM_ref_udata ->
+      let _ = Object.Buffer.Read.uleb128 cur in
+      ()
+  | DW_FORM_indirect ->
+      let actual_form_raw = Object.Buffer.Read.uleb128 cur in
+      let actual_form =
+        attribute_form_encoding (Unsigned.UInt64.of_int actual_form_raw)
+      in
+      skip_attribute_value cur actual_form encoding
+  | DW_FORM_sec_offset ->
+      cur.position <- cur.position + offset_size_for_format encoding.format
+  | DW_FORM_exprloc ->
+      let len = Object.Buffer.Read.uleb128 cur in
+      cur.position <- cur.position + len
+  | DW_FORM_flag_present -> ()
+  | DW_FORM_strx ->
+      let _ = Object.Buffer.Read.uleb128 cur in
+      ()
+  | DW_FORM_addrx ->
+      let _ = Object.Buffer.Read.uleb128 cur in
+      ()
+  | DW_FORM_ref_sup4 -> cur.position <- cur.position + 4
+  | DW_FORM_strp_sup ->
+      cur.position <- cur.position + offset_size_for_format encoding.format
+  | DW_FORM_data16 -> cur.position <- cur.position + 16
+  | DW_FORM_line_strp ->
+      cur.position <- cur.position + offset_size_for_format encoding.format
+  | DW_FORM_ref_sig8 -> cur.position <- cur.position + 8
+  | DW_FORM_implicit_const -> ()
+  | DW_FORM_loclistx ->
+      let _ = Object.Buffer.Read.uleb128 cur in
+      ()
+  | DW_FORM_rnglistx ->
+      let _ = Object.Buffer.Read.uleb128 cur in
+      ()
+  | DW_FORM_ref_sup8 -> cur.position <- cur.position + 8
+  | DW_FORM_strx1 -> cur.position <- cur.position + 1
+  | DW_FORM_strx2 -> cur.position <- cur.position + 2
+  | DW_FORM_strx3 -> cur.position <- cur.position + 3
+  | DW_FORM_strx4 -> cur.position <- cur.position + 4
+  | DW_FORM_addrx1 -> cur.position <- cur.position + 1
+  | DW_FORM_addrx2 -> cur.position <- cur.position + 2
+  | DW_FORM_addrx3 -> cur.position <- cur.position + 3
+  | DW_FORM_addrx4 -> cur.position <- cur.position + 4
+  | DW_FORM_unknown n ->
+      fail (Printf.sprintf "skip_attribute_value: unknown form 0x%02x" n)
+  | DW_FORM_GNU_addr_index ->
+      let _ = Object.Buffer.Read.uleb128 cur in
+      ()
+  | DW_FORM_GNU_str_index ->
+      let _ = Object.Buffer.Read.uleb128 cur in
+      ()
+  | DW_FORM_GNU_ref_alt ->
+      cur.position <- cur.position + offset_size_for_format encoding.format
+  | DW_FORM_GNU_strp_alt ->
+      cur.position <- cur.position + offset_size_for_format encoding.format
+
+let rec skip_die (cur : Object.Buffer.cursor)
+    (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding) : unit =
+  let abbrev_code = Object.Buffer.Read.uleb128 cur in
+  if abbrev_code <> 0 then (
+    let abbrev =
+      Hashtbl.find abbrev_table (Unsigned.UInt64.of_int abbrev_code)
+    in
+    List.iter
+      (fun (spec : attr_spec) -> skip_attribute_value cur spec.form encoding)
+      abbrev.attr_specs;
+    if abbrev.has_children then skip_children cur abbrev_table encoding)
+
+and skip_children (cur : Object.Buffer.cursor)
+    (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding) : unit =
+  let rec loop () =
+    let code = Object.Buffer.Read.uleb128 cur in
+    if code <> 0 then (
+      let abbrev = Hashtbl.find abbrev_table (Unsigned.UInt64.of_int code) in
+      List.iter
+        (fun (spec : attr_spec) -> skip_attribute_value cur spec.form encoding)
+        abbrev.attr_specs;
+      if abbrev.has_children then skip_children cur abbrev_table encoding;
+      loop ())
+  in
+  loop ()
+
 module DIE = struct
   type attribute_value =
     | String of string
@@ -2313,15 +2436,35 @@ module DIE = struct
   let rec parse_children_seq (cur : Object.Buffer.cursor)
       (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
       (strings : str_resolver) : t Seq.t =
-   fun () ->
-    match parse_die cur abbrev_table encoding strings with
-    | None -> Seq.Nil (* End of children marker or error *)
-    | Some die ->
-        Seq.Cons (die, parse_children_seq cur abbrev_table encoding strings)
+    (* Re-runnable child sequence: capture the child-list start position and
+       re-derive a fresh cursor on each traversal, advancing to the next sibling
+       by skipping the current child's subtree. Memoised so each child is parsed
+       at most once. This makes a DIE safe to traverse more than once (e.g. a
+       cached root DIE). *)
+    children_from cur.buffer cur.position abbrev_table encoding strings
+
+  and children_from (buffer : Object.Buffer.t) (pos : int)
+      (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
+      (strings : str_resolver) : t Seq.t =
+    Seq.memoize (fun () ->
+        let cur = Object.Buffer.cursor buffer ~at:pos in
+        match parse_die_ cur abbrev_table encoding strings with
+        | None -> Seq.Nil
+        | Some (die, has_children) ->
+            if has_children then skip_children cur abbrev_table encoding;
+            Seq.Cons
+              ( die,
+                children_from buffer cur.position abbrev_table encoding strings
+              ))
 
   and parse_die (cur : Object.Buffer.cursor)
       (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
       (strings : str_resolver) : t option =
+    Option.map fst (parse_die_ cur abbrev_table encoding strings)
+
+  and parse_die_ (cur : Object.Buffer.cursor)
+      (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
+      (strings : str_resolver) : (t * bool) option =
     try
       (* Capture the position at the start of this DIE *)
       let die_offset = cur.position in
@@ -2367,7 +2510,9 @@ module DIE = struct
                 parse_children_seq cur abbrev_table encoding strings
               else Seq.empty
             in
-            Some { tag = abbrev.tag; attributes; children; offset = die_offset }
+            Some
+              ( { tag = abbrev.tag; attributes; children; offset = die_offset },
+                abbrev.has_children )
     with _ -> None
 end
 
@@ -2425,129 +2570,6 @@ module CompileUnit = struct
     let enc = encoding t in
     (Object.Buffer.cursor t.raw_buffer_ ~at:pos, abbrev_table, enc, strings)
 end
-
-let rec skip_attribute_value (cur : Object.Buffer.cursor)
-    (form : attribute_form_encoding) (encoding : encoding) : unit =
-  match form with
-  | DW_FORM_addr ->
-      let sz = Unsigned.UInt8.to_int encoding.address_size in
-      cur.position <- cur.position + sz
-  | DW_FORM_block2 ->
-      let len = Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int in
-      cur.position <- cur.position + len
-  | DW_FORM_block4 ->
-      let len = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
-      cur.position <- cur.position + len
-  | DW_FORM_data2 -> cur.position <- cur.position + 2
-  | DW_FORM_data4 -> cur.position <- cur.position + 4
-  | DW_FORM_data8 -> cur.position <- cur.position + 8
-  | DW_FORM_string ->
-      let _ = Object.Buffer.Read.zero_string cur () in
-      ()
-  | DW_FORM_block ->
-      let len = Object.Buffer.Read.uleb128 cur in
-      cur.position <- cur.position + len
-  | DW_FORM_block1 ->
-      let len = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
-      cur.position <- cur.position + len
-  | DW_FORM_data1 -> cur.position <- cur.position + 1
-  | DW_FORM_flag -> cur.position <- cur.position + 1
-  | DW_FORM_sdata ->
-      let _ = Object.Buffer.Read.sleb128 cur in
-      ()
-  | DW_FORM_strp ->
-      cur.position <- cur.position + offset_size_for_format encoding.format
-  | DW_FORM_udata ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_ref_addr ->
-      cur.position <- cur.position + offset_size_for_format encoding.format
-  | DW_FORM_ref1 -> cur.position <- cur.position + 1
-  | DW_FORM_ref2 -> cur.position <- cur.position + 2
-  | DW_FORM_ref4 -> cur.position <- cur.position + 4
-  | DW_FORM_ref8 -> cur.position <- cur.position + 8
-  | DW_FORM_ref_udata ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_indirect ->
-      let actual_form_raw = Object.Buffer.Read.uleb128 cur in
-      let actual_form =
-        attribute_form_encoding (Unsigned.UInt64.of_int actual_form_raw)
-      in
-      skip_attribute_value cur actual_form encoding
-  | DW_FORM_sec_offset ->
-      cur.position <- cur.position + offset_size_for_format encoding.format
-  | DW_FORM_exprloc ->
-      let len = Object.Buffer.Read.uleb128 cur in
-      cur.position <- cur.position + len
-  | DW_FORM_flag_present -> ()
-  | DW_FORM_strx ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_addrx ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_ref_sup4 -> cur.position <- cur.position + 4
-  | DW_FORM_strp_sup ->
-      cur.position <- cur.position + offset_size_for_format encoding.format
-  | DW_FORM_data16 -> cur.position <- cur.position + 16
-  | DW_FORM_line_strp ->
-      cur.position <- cur.position + offset_size_for_format encoding.format
-  | DW_FORM_ref_sig8 -> cur.position <- cur.position + 8
-  | DW_FORM_implicit_const -> ()
-  | DW_FORM_loclistx ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_rnglistx ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_ref_sup8 -> cur.position <- cur.position + 8
-  | DW_FORM_strx1 -> cur.position <- cur.position + 1
-  | DW_FORM_strx2 -> cur.position <- cur.position + 2
-  | DW_FORM_strx3 -> cur.position <- cur.position + 3
-  | DW_FORM_strx4 -> cur.position <- cur.position + 4
-  | DW_FORM_addrx1 -> cur.position <- cur.position + 1
-  | DW_FORM_addrx2 -> cur.position <- cur.position + 2
-  | DW_FORM_addrx3 -> cur.position <- cur.position + 3
-  | DW_FORM_addrx4 -> cur.position <- cur.position + 4
-  | DW_FORM_unknown n ->
-      fail (Printf.sprintf "skip_attribute_value: unknown form 0x%02x" n)
-  | DW_FORM_GNU_addr_index ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_GNU_str_index ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_GNU_ref_alt ->
-      cur.position <- cur.position + offset_size_for_format encoding.format
-  | DW_FORM_GNU_strp_alt ->
-      cur.position <- cur.position + offset_size_for_format encoding.format
-
-let rec skip_die (cur : Object.Buffer.cursor)
-    (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding) : unit =
-  let abbrev_code = Object.Buffer.Read.uleb128 cur in
-  if abbrev_code <> 0 then (
-    let abbrev =
-      Hashtbl.find abbrev_table (Unsigned.UInt64.of_int abbrev_code)
-    in
-    List.iter
-      (fun (spec : attr_spec) -> skip_attribute_value cur spec.form encoding)
-      abbrev.attr_specs;
-    if abbrev.has_children then skip_children cur abbrev_table encoding)
-
-and skip_children (cur : Object.Buffer.cursor)
-    (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding) : unit =
-  let rec loop () =
-    let code = Object.Buffer.Read.uleb128 cur in
-    if code <> 0 then (
-      let abbrev = Hashtbl.find abbrev_table (Unsigned.UInt64.of_int code) in
-      List.iter
-        (fun (spec : attr_spec) -> skip_attribute_value cur spec.form encoding)
-        abbrev.attr_specs;
-      if abbrev.has_children then skip_children cur abbrev_table encoding;
-      loop ())
-  in
-  loop ()
 
 module DieCursor = struct
   type t = {
@@ -6569,6 +6591,9 @@ type t = {
   compile_units_ : CompileUnit.t Seq.t memo ref;
   line_tables_ : (u64, DebugLine.line_table) Hashtbl.t;
   str_resolver_ : str_resolver memo ref;
+  root_dies_ : (int, DIE.t option) Hashtbl.t;
+      (* Parsed root DIE per unit, keyed by the unit's buffer offset. Safe to
+         cache now that DIE children are re-traversable. *)
 }
 
 let get_abbrev_table t (offset : size_t) =
@@ -6607,6 +6632,7 @@ let create buffer =
     compile_units_ = ref Unparsed;
     line_tables_ = Hashtbl.create 4;
     str_resolver_ = ref Unparsed;
+    root_dies_ = Hashtbl.create 16;
   }
 
 (* Compile units from [.debug_info], parsed lazily and cached. [Seq.memoize]
@@ -6692,7 +6718,13 @@ let unit ctx cu =
   }
 
 let cu u = u.ur_cu
-let root_die u = CompileUnit.root_die u.ur_cu u.ur_abbrev u.ur_resolver
+
+(* Parse the unit's root DIE once and cache it on the context, keyed by the
+   unit's buffer offset. Safe because DIE children are re-traversable, so the
+   shared cached DIE can be walked repeatedly. *)
+let root_die u =
+  memo_at u.ur_ctx.root_dies_ (CompileUnit.offset u.ur_cu) (fun () ->
+      CompileUnit.root_die u.ur_cu u.ur_abbrev u.ur_resolver)
 
 (* Extract a string-form attribute from a DIE, collapsing the direct and indexed
    string constructors into a plain string. *)
@@ -6713,10 +6745,8 @@ let comp_dir u =
    header, runs the state machine, and caches the built table keyed by that
    offset. Returns [None] when the unit has no line program or the section is
    absent. *)
-let line_table t (unit : CompileUnit.t) : DebugLine.line_table option =
-  let cu_header = CompileUnit.header unit in
-  let abbrev_table = get_abbrev_table t cu_header.debug_abbrev_offset in
-  match CompileUnit.root_die unit abbrev_table (context_str_resolver t) with
+let line_table t (cu : CompileUnit.t) : DebugLine.line_table option =
+  match root_die (unit t cu) with
   | None -> None
   | Some root_die -> (
       match DIE.find_attribute root_die DW_AT_stmt_list with

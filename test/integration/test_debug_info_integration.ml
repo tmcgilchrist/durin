@@ -192,6 +192,32 @@ let test_str_resolver_shared binary_path =
   check bool "str resolver is shared" true
     (Dwarf.context_str_resolver ctx == Dwarf.context_str_resolver ctx)
 
+(* The root DIE is parsed once and cached, so two handles over the same unit
+   return the physically same DIE. *)
+let test_root_die_cached binary_path =
+  let ctx = create_context binary_path in
+  match Seq.uncons (Dwarf.compile_units ctx) with
+  | None -> fail "expected at least one compile unit"
+  | Some (cu, _) ->
+      let d1 = Dwarf.root_die (Dwarf.unit ctx cu) in
+      let d2 = Dwarf.root_die (Dwarf.unit ctx cu) in
+      check bool "root DIE is cached across handles" true (d1 == d2)
+
+let rec count_dies (die : Dwarf.DIE.t) =
+  Seq.fold_left (fun n child -> n + count_dies child) 1 die.children
+
+(* Children are re-traversable: walking the same DIE twice yields the same tree,
+   which is what makes a cached root DIE safe to reuse. *)
+let test_children_retraversable binary_path =
+  let ctx = create_context binary_path in
+  match first_unit_root ctx with
+  | None -> fail "expected a root DIE"
+  | Some (_u, root) ->
+      let n1 = count_dies root in
+      let n2 = count_dies root in
+      check int "second full traversal matches the first" n1 n2;
+      check bool "traversed beyond the root" true (n1 > 1)
+
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in
   Cmdliner.Arg.(
@@ -224,5 +250,10 @@ let () =
           ("attr_die follows reference", `Quick, test_attr_die_follows_reference);
           ("attr_address", `Quick, test_attr_address);
         ] );
-      ("caching", [ ("str resolver shared", `Quick, test_str_resolver_shared) ]);
+      ( "caching",
+        [
+          ("str resolver shared", `Quick, test_str_resolver_shared);
+          ("root DIE cached", `Quick, test_root_die_cached);
+          ("children re-traversable", `Quick, test_children_retraversable);
+        ] );
     ]
