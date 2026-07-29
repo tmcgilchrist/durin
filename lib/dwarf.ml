@@ -2513,8 +2513,16 @@ module DIE = struct
             Some
               ( { tag = abbrev.tag; attributes; children; offset = die_offset },
                 abbrev.has_children )
-    (* A truncated DIE reads past the section end, so stop parsing. *)
+      (* A truncated DIE reads past the section end, so stop parsing. *)
     with Object.Buffer.Invalid_format _ | Invalid_argument _ -> None
+
+  let rec preorder (die : t) : t Seq.t =
+    Seq.cons die (Seq.concat_map preorder die.children)
+
+  let descendants (die : t) : t Seq.t = Seq.concat_map preorder die.children
+
+  let find_descendant (pred : t -> bool) (die : t) : t option =
+    Seq.find pred (descendants die)
 end
 
 (* Represents a section of the binary that corresponds to an
@@ -6740,6 +6748,12 @@ let unit_name u =
 let comp_dir u =
   Option.bind (root_die u) (fun d -> die_string_attribute d DW_AT_comp_dir)
 
+(* All DIEs of the unit in depth-first preorder, root first. *)
+let unit_entries u : DIE.t Seq.t =
+  match root_die u with
+  | None -> Seq.empty
+  | Some root -> Seq.cons root (DIE.descendants root)
+
 (* Line-number table for a compilation unit. Locates the unit's line program via
    its DW_AT_stmt_list offset into [.debug_line] (looked up through the cached
    section resolver, so callers never touch the object format), parses the
@@ -6984,27 +6998,12 @@ let line_info_for_address t addr =
   search (compile_units t)
 
 let subprogram_for_address t addr =
-  let rec search_die addr_base die =
-    let hit =
-      match die.DIE.tag with
-      | DW_TAG_subprogram -> (
-          match pc_range t addr_base die with
-          | Some range when range_contains range addr -> Some die
-          | _ -> None)
-      | _ -> None
-    in
-    match hit with
-    | Some _ -> hit
-    | None ->
-        let rec search_children seq =
-          match seq () with
-          | Seq.Nil -> None
-          | Seq.Cons (child, rest) -> (
-              match search_die addr_base child with
-              | Some _ as found -> found
-              | None -> search_children rest)
-        in
-        search_children die.DIE.children
+  let covers addr_base (die : DIE.t) =
+    die.tag = DW_TAG_subprogram
+    &&
+    match pc_range t addr_base die with
+    | Some range -> range_contains range addr
+    | None -> false
   in
   let rec search_units seq =
     match seq () with
@@ -7013,7 +7012,7 @@ let subprogram_for_address t addr =
         match unit_root_die t unit with
         | None -> search_units rest
         | Some root -> (
-            match search_die (addr_base_of_die root) root with
+            match DIE.find_descendant (covers (addr_base_of_die root)) root with
             | Some _ as found -> found
             | None -> search_units rest))
   in

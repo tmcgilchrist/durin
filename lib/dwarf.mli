@@ -1586,6 +1586,14 @@ module DIE : sig
 
   val find_attribute : t -> attribute_encoding -> attribute_value option
   (** Find an attribute by name in a DIE *)
+
+  val descendants : t -> t Seq.t
+  (** The DIEs of a DIE's subtree in depth-first preorder, excluding the DIE
+      itself. The sequence is re-traversable. *)
+
+  val find_descendant : (t -> bool) -> t -> t option
+  (** The first descendant (see {!descendants}) satisfying the predicate, or
+      [None]. *)
 end
 
 (** Compilation units represent individual source files and their debugging
@@ -3069,6 +3077,10 @@ val unit_name : unit_ref -> string option
 val comp_dir : unit_ref -> string option
 (** The unit's [DW_AT_comp_dir] (the compilation directory), or [None] if
     absent. *)
+
+val unit_entries : unit_ref -> DIE.t Seq.t
+(** All DIEs of the unit in depth-first preorder, the root DIE first. Empty if
+    the unit has no DIEs. The sequence is re-traversable. *)
 
 (** {3 Typed attribute accessors}
 

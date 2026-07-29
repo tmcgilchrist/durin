@@ -218,6 +218,38 @@ let test_children_retraversable binary_path =
       check int "second full traversal matches the first" n1 n2;
       check bool "traversed beyond the root" true (n1 > 1)
 
+let test_unit_entries binary_path =
+  let ctx = create_context binary_path in
+  match first_unit_root ctx with
+  | None -> fail "expected a root DIE"
+  | Some (u, root) ->
+      let n = count_dies root in
+      let entries = List.of_seq (Dwarf.unit_entries u) in
+      check int "unit_entries covers the whole unit" n (List.length entries);
+      (match entries with
+      | first :: _ -> check bool "root DIE is first" true (first == root)
+      | [] -> fail "expected entries");
+      check int "unit_entries is re-traversable" n
+        (List.length (List.of_seq (Dwarf.unit_entries u)))
+
+let test_descendants binary_path =
+  let ctx = create_context binary_path in
+  match first_unit_root ctx with
+  | None -> fail "expected a root DIE"
+  | Some (_u, root) ->
+      check int "descendants excludes the root"
+        (count_dies root - 1)
+        (List.length (List.of_seq (Dwarf.DIE.descendants root)))
+
+let test_find_descendant binary_path =
+  let ctx = create_context binary_path in
+  match first_unit_root ctx with
+  | None -> fail "expected a root DIE"
+  | Some (_u, root) ->
+      check bool "find_descendant locates a typed DIE" true
+        (Option.is_some
+           (Dwarf.DIE.find_descendant (has_attr Dwarf.DW_AT_type) root))
+
 let binary_path =
   let doc = "Path to DWARF 5 test binary" in
   Cmdliner.Arg.(
@@ -255,5 +287,11 @@ let () =
           ("str resolver shared", `Quick, test_str_resolver_shared);
           ("root DIE cached", `Quick, test_root_die_cached);
           ("children re-traversable", `Quick, test_children_retraversable);
+        ] );
+      ( "traversal",
+        [
+          ("unit_entries", `Quick, test_unit_entries);
+          ("descendants", `Quick, test_descendants);
+          ("find_descendant", `Quick, test_find_descendant);
         ] );
     ]
