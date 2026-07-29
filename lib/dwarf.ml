@@ -6623,6 +6623,26 @@ let get_section t section_type =
   memo_at t.sections_ section_type (fun () ->
       find_debug_section_by_type t.object_ section_type)
 
+(* Resolve a DW_FORM_strx index through the cached, pre-resolved string-offsets
+   table (see {!get_str_offsets}) instead of re-reading the offset entry and
+   string from raw bytes on every attribute. Indexes the primary contribution at
+   the section start; per-unit DW_AT_str_offsets_base is not yet applied. *)
+let resolve_indexed_string_cached t index =
+  match get_section t Debug_str_offs with
+  | None -> Printf.sprintf "<strx_no_offs:%d>" index
+  | Some (section_offset, _) -> (
+      let key =
+        Unsigned.UInt32.of_int (Unsigned.UInt64.to_int section_offset)
+      in
+      match get_str_offsets t key with
+      | exception Parse_error _ -> Printf.sprintf "<strx_error:%d>" index
+      | table ->
+          if index >= 0 && index < Array.length table.offsets then
+            match table.offsets.(index).resolved_string with
+            | Some s -> s
+            | None -> Printf.sprintf "<strx_error:%d>" index
+          else Printf.sprintf "<strx_error:%d>" index)
+
 (* The cached counterpart of [buffer_str_resolver]: resolves the DIE string
    forms by reading directly from the string sections (so suffix-shared offsets
    resolve correctly), but looks the sections up through the context's section
@@ -6649,10 +6669,7 @@ let context_str_resolver t : str_resolver =
             read_at Debug_line_str offset
               (Printf.sprintf "<line_strp_offset:%d>"));
         indexed_string =
-          (fun format index ->
-            resolve_string_index_in
-              ~str_offs_section:(get_section t Debug_str_offs)
-              ~str_section:(get_section t Debug_str) t.object_ format index);
+          (fun _format index -> resolve_indexed_string_cached t index);
       })
 
 (* A resolved unit handle: a compilation unit bundled with the context and the
