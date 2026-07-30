@@ -1491,14 +1491,13 @@ type str_resolver = {
       (** [.debug_str] offset to string (DW_FORM_strp, DW_FORM_GNU_strp_alt). *)
   line_string_at : int -> string;
       (** [.debug_line_str] offset to string (DW_FORM_line_strp). *)
-  indexed_string : dwarf_format -> int -> string;
-      (** [.debug_str_offsets] index to string (DW_FORM_strx,
-          DW_FORM_GNU_str_index). *)
 }
-(** How the DIE parser resolves the string forms. The low-level parser is
-    injected with one of these; the high-level context supplies a caching
-    implementation built from its section caches, while {!buffer_str_resolver}
-    is the uncached version that re-reads the sections on each call. *)
+(** How the DIE parser resolves the direct string-offset forms ([DW_FORM_strp],
+    [DW_FORM_line_strp]) during parsing. The indexed form [DW_FORM_strx] is not
+    resolved here — it is deferred and resolved through a {!unit_ref} (see
+    {!resolve_string}). The high-level context supplies a caching
+    implementation; {!buffer_str_resolver} is the uncached version that re-reads
+    the sections on each call. *)
 
 val buffer_str_resolver : Object.Buffer.t -> str_resolver
 (** The uncached {!str_resolver} that reads the string sections directly from a
@@ -1518,14 +1517,15 @@ module DIE : sig
       DWARF 5 specification, section 7.5.5 "Classes and Forms". *)
   type attribute_value =
     | String of string  (** String value from DW_FORM_string or DW_FORM_strp *)
-    | IndexedString of int * string
-        (** Indexed string from DW_FORM_strx* with index and resolved value *)
+    | IndexedString of int
+        (** Unresolved [.debug_str_offsets] index from DW_FORM_strx*. Resolve
+            with {!resolve_string} or read via {!attr_string}. *)
     | UData of u64  (** Unsigned integer from DW_FORM_udata, DW_FORM_data* *)
     | SData of i64  (** Signed integer from DW_FORM_sdata *)
     | Address of u64  (** Address from DW_FORM_addr *)
-    | IndexedAddress of int * u64
-        (** Indexed address from DW_FORM_addrx* with index and resolved address
-        *)
+    | IndexedAddress of int
+        (** Unresolved [.debug_addr] index from DW_FORM_addrx*. Resolve with
+            {!resolve_address} or read via {!attr_address}. *)
     | Flag of bool  (** Boolean from DW_FORM_flag or DW_FORM_flag_present *)
     | Reference of u64  (** Reference from DW_FORM_ref* *)
     | Block of string  (** Block of data from DW_FORM_block* *)
@@ -3121,6 +3121,19 @@ val attr_die : unit_ref -> DIE.t -> attribute_encoding -> DIE.t option
     Within-unit references ([DW_FORM_ref1..8], [DW_FORM_ref_udata]) resolve;
     references beyond the unit ([DW_FORM_ref_addr], [DW_FORM_ref_sig8]) yield
     [None]. *)
+
+val resolve_string : unit_ref -> DIE.attribute_value -> string option
+(** Resolve a string-class {!DIE.attribute_value} against the unit: a direct
+    {!DIE.String}, or a {!DIE.IndexedString} looked up through the unit's
+    [DW_AT_str_offsets_base] and [.debug_str_offsets]. [None] for other classes.
+    This is the resolution behind {!attr_string} for callers that already hold a
+    raw value (e.g. from {!DIE.find_attribute}). *)
+
+val resolve_address : unit_ref -> DIE.attribute_value -> u64 option
+(** Resolve an address-class {!DIE.attribute_value} against the unit: a direct
+    {!DIE.Address}, or a {!DIE.IndexedAddress} looked up through the unit's
+    [DW_AT_addr_base] and [.debug_addr]. [None] for other classes. The
+    counterpart of {!resolve_string} for addresses. *)
 
 (** Abbreviation table parsing for .debug_abbrev section.
 

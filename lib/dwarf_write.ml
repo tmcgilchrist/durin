@@ -251,7 +251,7 @@ let write_attribute_value buf (value : Dwarf.DIE.attribute_value)
     (form : Dwarf.attribute_form_encoding) (enc : Dwarf.encoding) =
   match (form, value) with
   | DW_FORM_string, String s -> write_null_terminated_string buf s
-  | DW_FORM_strx, IndexedString (idx, _) ->
+  | DW_FORM_strx, IndexedString idx ->
       write_uleb128 buf (Unsigned.UInt64.of_int idx)
   | DW_FORM_udata, UData v -> write_uleb128 buf v
   | DW_FORM_udata, Language l ->
@@ -283,7 +283,7 @@ let write_attribute_value buf (value : Dwarf.DIE.attribute_value)
   | DW_FORM_sdata, SData v -> write_sleb128 buf v
   | DW_FORM_addr, Address a ->
       write_address buf (Unsigned.UInt8.to_int enc.address_size) a
-  | DW_FORM_addrx, IndexedAddress (idx, _) ->
+  | DW_FORM_addrx, IndexedAddress idx ->
       write_uleb128 buf (Unsigned.UInt64.of_int idx)
   | DW_FORM_flag_present, Flag _ -> ()
   | DW_FORM_flag, Flag b ->
@@ -299,8 +299,7 @@ let attribute_value_size (value : Dwarf.DIE.attribute_value)
     (form : Dwarf.attribute_form_encoding) (enc : Dwarf.encoding) =
   match (form, value) with
   | DW_FORM_string, String s -> String.length s + 1
-  | DW_FORM_strx, IndexedString (idx, _) ->
-      uleb128_size (Unsigned.UInt64.of_int idx)
+  | DW_FORM_strx, IndexedString idx -> uleb128_size (Unsigned.UInt64.of_int idx)
   | DW_FORM_udata, UData v -> uleb128_size v
   | DW_FORM_udata, Language l ->
       uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_dwarf_language l))
@@ -328,7 +327,7 @@ let attribute_value_size (value : Dwarf.DIE.attribute_value)
       uleb128_size (Unsigned.UInt64.of_int (Dwarf.int_of_defaulted_attribute v))
   | DW_FORM_sdata, SData v -> sleb128_size v
   | DW_FORM_addr, Address _ -> Unsigned.UInt8.to_int enc.address_size
-  | DW_FORM_addrx, IndexedAddress (idx, _) ->
+  | DW_FORM_addrx, IndexedAddress idx ->
       uleb128_size (Unsigned.UInt64.of_int idx)
   | DW_FORM_flag_present, Flag _ -> 0
   | DW_FORM_flag, Flag _ -> 1

@@ -94,14 +94,9 @@ let test_root_die_attribute_values binary_path =
       with
       | None -> fail "expected root DIE"
       | Some die -> (
-          (match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
-          | Some (String s) ->
-              check bool "DW_AT_name contains hello_world" true
-                (String.equal s "hello_world.c")
-          | Some (IndexedString (_, s)) ->
-              check bool "DW_AT_name contains hello_world" true
-                (String.equal s "hello_world.c")
-          | _ -> fail "expected DW_AT_name to be a string");
+          check (option string) "DW_AT_name is hello_world.c"
+            (Some "hello_world.c")
+            (Dwarf.attr_string (Dwarf.unit ctx cu) die Dwarf.DW_AT_name);
           match Dwarf.DIE.find_attribute die Dwarf.DW_AT_language with
           | Some (Language _) -> ()
           | _ -> fail "expected DW_AT_language to be a Language value"))
@@ -159,6 +154,20 @@ let test_attr_string binary_path =
       check (option string) "attr_string reads DW_AT_name"
         (Some "hello_world.c")
         (Dwarf.attr_string u root Dwarf.DW_AT_name)
+
+(* find_attribute returns the raw (indexed) value; resolve_string resolves it
+   against the unit's DW_AT_str_offsets_base. *)
+let test_resolve_string binary_path =
+  let ctx = create_context binary_path in
+  match first_unit_root ctx with
+  | None -> fail "expected a root DIE"
+  | Some (u, root) -> (
+      match Dwarf.DIE.find_attribute root Dwarf.DW_AT_name with
+      | None -> fail "expected DW_AT_name"
+      | Some value ->
+          check (option string) "resolve_string resolves the raw value"
+            (Some "hello_world.c")
+            (Dwarf.resolve_string u value))
 
 (* attr_die follows a within-unit reference (DW_AT_type) to its target DIE. *)
 let test_attr_die_follows_reference binary_path =
@@ -297,6 +306,7 @@ let () =
       ( "typed_attrs",
         [
           ("attr_string", `Quick, test_attr_string);
+          ("resolve_string", `Quick, test_resolve_string);
           ("attr_die follows reference", `Quick, test_attr_die_follows_reference);
           ("attr_address", `Quick, test_attr_address);
         ] );

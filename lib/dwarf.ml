@@ -2004,8 +2004,6 @@ type str_resolver = {
       (* .debug_str offset -> string (DW_FORM_strp, DW_FORM_GNU_strp_alt) *)
   line_string_at : int -> string;
       (* .debug_line_str offset -> string (DW_FORM_line_strp) *)
-  indexed_string : dwarf_format -> int -> string;
-      (* .debug_str_offsets index -> string (DW_FORM_strx, DW_FORM_GNU_str_index) *)
 }
 
 let buffer_str_resolver (buffer : Object.Buffer.t) : str_resolver =
@@ -2027,7 +2025,6 @@ let buffer_str_resolver (buffer : Object.Buffer.t) : str_resolver =
     line_string_at =
       (fun offset ->
         read_at Debug_line_str offset (Printf.sprintf "<line_strp_offset:%d>"));
-    indexed_string = resolve_string_index buffer;
   }
 
 let rec skip_attribute_value (cur : Object.Buffer.cursor)
@@ -2156,11 +2153,11 @@ and skip_children (cur : Object.Buffer.cursor)
 module DIE = struct
   type attribute_value =
     | String of string
-    | IndexedString of int * string (* index, resolved_string *)
+    | IndexedString of int (* unresolved .debug_str_offsets index *)
     | UData of u64
     | SData of i64
     | Address of u64
-    | IndexedAddress of int * u64 (* index, resolved_address *)
+    | IndexedAddress of int (* unresolved .debug_addr index *)
     | Flag of bool
     | Reference of u64
     | Block of string
@@ -2243,8 +2240,7 @@ module DIE = struct
     | DW_FORM_strx ->
         (* String index form - reads ULEB128 index into string offsets table *)
         let index = Object.Buffer.Read.uleb128 cur in
-        let resolved_string = strings.indexed_string encoding.format index in
-        IndexedString (index, resolved_string)
+        IndexedString index
     | DW_FORM_sec_offset ->
         (* Section offset - 4 or 8 bytes depending on DWARF format *)
         let offset = read_offset_for_format encoding.format cur in
@@ -2252,7 +2248,7 @@ module DIE = struct
     | DW_FORM_addrx ->
         (* Address index - ULEB128 index into address table *)
         let index = Object.Buffer.Read.uleb128 cur in
-        IndexedAddress (index, Unsigned.UInt64.of_int index)
+        IndexedAddress index
     | DW_FORM_ref4 ->
         (* 4-byte offset reference within same compilation unit *)
         let offset = Object.Buffer.Read.u32 cur in
@@ -2297,36 +2293,32 @@ module DIE = struct
     | DW_FORM_strx1 ->
         (* String index form - reads 1-byte index into string offsets table *)
         let index = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
-        let resolved_string = strings.indexed_string encoding.format index in
-        IndexedString (index, resolved_string)
+        IndexedString index
     | DW_FORM_strx2 ->
         (* String index form - reads 2-byte index into string offsets table *)
         let index = Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int in
-        let resolved_string = strings.indexed_string encoding.format index in
-        IndexedString (index, resolved_string)
+        IndexedString index
     | DW_FORM_strx3 ->
         (* String index form - reads 3-byte index into string offsets table *)
         let byte1 = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
         let byte2 = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
         let byte3 = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
         let index = byte1 lor (byte2 lsl 8) lor (byte3 lsl 16) in
-        let resolved_string = strings.indexed_string encoding.format index in
-        IndexedString (index, resolved_string)
+        IndexedString index
     | DW_FORM_strx4 ->
         (* String index form - reads 4-byte index into string offsets table *)
         let index = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
-        let resolved_string = strings.indexed_string encoding.format index in
-        IndexedString (index, resolved_string)
+        IndexedString index
     | DW_FORM_addrx1 ->
         (* Address index form - reads 1-byte index into address table *)
         let index = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
         (* Return IndexedAddress - resolution requires addr_base from CU context *)
-        IndexedAddress (index, Unsigned.UInt64.of_int index)
+        IndexedAddress index
     | DW_FORM_addrx2 ->
         (* Address index form - reads 2-byte index into address table *)
         let index = Object.Buffer.Read.u16 cur |> Unsigned.UInt16.to_int in
         (* Return IndexedAddress - resolution requires addr_base from CU context *)
-        IndexedAddress (index, Unsigned.UInt64.of_int index)
+        IndexedAddress index
     | DW_FORM_addrx3 ->
         (* Address index form - reads 3-byte index into address table *)
         let byte1 = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
@@ -2334,12 +2326,12 @@ module DIE = struct
         let byte3 = Object.Buffer.Read.u8 cur |> Unsigned.UInt8.to_int in
         let index = byte1 lor (byte2 lsl 8) lor (byte3 lsl 16) in
         (* Return IndexedAddress - resolution requires addr_base from CU context *)
-        IndexedAddress (index, Unsigned.UInt64.of_int index)
+        IndexedAddress index
     | DW_FORM_addrx4 ->
         (* Address index form - reads 4-byte index into address table *)
         let index = Object.Buffer.Read.u32 cur |> Unsigned.UInt32.to_int in
         (* Return IndexedAddress - resolution requires addr_base from CU context *)
-        IndexedAddress (index, Unsigned.UInt64.of_int index)
+        IndexedAddress index
     | DW_FORM_line_strp ->
         let offset = read_offset_for_format encoding.format cur in
         String (strings.line_string_at (Unsigned.UInt64.to_int offset))
@@ -2372,13 +2364,12 @@ module DIE = struct
         (* GNU Fission form: ULEB128 index into .debug_addr,
            semantically identical to DW_FORM_addrx *)
         let index = Object.Buffer.Read.uleb128 cur in
-        IndexedAddress (index, Unsigned.UInt64.of_int index)
+        IndexedAddress index
     | DW_FORM_GNU_str_index ->
         (* GNU Fission form: ULEB128 index into .debug_str_offsets,
            semantically identical to DW_FORM_strx *)
         let index = Object.Buffer.Read.uleb128 cur in
-        let resolved_string = strings.indexed_string encoding.format index in
-        IndexedString (index, resolved_string)
+        IndexedString index
     | DW_FORM_GNU_ref_alt ->
         (* GNU form: offset into alternate/supplementary .debug_info *)
         let offset = read_offset_for_format encoding.format cur in
@@ -6658,25 +6649,26 @@ let get_section t section_type =
   memo_at t.sections_ section_type (fun () ->
       find_debug_section_by_type t.object_ section_type)
 
-(* Resolve a DW_FORM_strx index through the cached, pre-resolved string-offsets
-   table (see {!get_str_offsets}) instead of re-reading the offset entry and
-   string from raw bytes on every attribute. Indexes the primary contribution at
-   the section start; per-unit DW_AT_str_offsets_base is not yet applied. *)
+(* Resolve a DW_FORM_strx index against the string-offsets contribution whose
+   header starts at [contribution_off], through the cached, pre-resolved table
+   (see {!get_str_offsets}). *)
+let resolve_indexed_string_at t contribution_off index =
+  match get_str_offsets t (Unsigned.UInt32.of_int contribution_off) with
+  | exception Parse_error _ -> Printf.sprintf "<strx_error:%d>" index
+  | table ->
+      if index >= 0 && index < Array.length table.offsets then
+        match table.offsets.(index).resolved_string with
+        | Some s -> s
+        | None -> Printf.sprintf "<strx_error:%d>" index
+      else Printf.sprintf "<strx_error:%d>" index
+
+(* Resolve against the section's first contribution (no DW_AT_str_offsets_base
+   applied): the fallback when a unit has no base. *)
 let resolve_indexed_string_cached t index =
   match get_section t Debug_str_offs with
   | None -> Printf.sprintf "<strx_no_offs:%d>" index
-  | Some (section_offset, _) -> (
-      let key =
-        Unsigned.UInt32.of_int (Unsigned.UInt64.to_int section_offset)
-      in
-      match get_str_offsets t key with
-      | exception Parse_error _ -> Printf.sprintf "<strx_error:%d>" index
-      | table ->
-          if index >= 0 && index < Array.length table.offsets then
-            match table.offsets.(index).resolved_string with
-            | Some s -> s
-            | None -> Printf.sprintf "<strx_error:%d>" index
-          else Printf.sprintf "<strx_error:%d>" index)
+  | Some (section_offset, _) ->
+      resolve_indexed_string_at t (Unsigned.UInt64.to_int section_offset) index
 
 (* The cached counterpart of [buffer_str_resolver]: resolves the DIE string
    forms by reading directly from the string sections (so suffix-shared offsets
@@ -6703,8 +6695,6 @@ let context_str_resolver t : str_resolver =
           (fun offset ->
             read_at Debug_line_str offset
               (Printf.sprintf "<line_strp_offset:%d>"));
-        indexed_string =
-          (fun _format index -> resolve_indexed_string_cached t index);
       })
 
 (* A resolved unit handle: a compilation unit bundled with the context and the
@@ -6734,19 +6724,6 @@ let cu u = u.ur_cu
 let root_die u =
   memo_at u.ur_ctx.root_dies_ (CompileUnit.offset u.ur_cu) (fun () ->
       CompileUnit.root_die u.ur_cu u.ur_abbrev u.ur_resolver)
-
-(* Extract a string-form attribute from a DIE, collapsing the direct and indexed
-   string constructors into a plain string. *)
-let die_string_attribute die attr =
-  match DIE.find_attribute die attr with
-  | Some (DIE.String s) | Some (DIE.IndexedString (_, s)) -> Some s
-  | None | Some _ -> None
-
-let unit_name u =
-  Option.bind (root_die u) (fun d -> die_string_attribute d DW_AT_name)
-
-let comp_dir u =
-  Option.bind (root_die u) (fun d -> die_string_attribute d DW_AT_comp_dir)
 
 (* All DIEs of the unit in depth-first preorder, root first. *)
 let unit_entries u : DIE.t Seq.t =
@@ -6882,17 +6859,61 @@ let addr_base_of_die die =
    [addr_base] for the indexed (DW_FORM_addrx) forms. *)
 let resolve_address_attribute t addr_base = function
   | DIE.Address a -> Some a
-  | DIE.IndexedAddress (_, index) -> (
+  | DIE.IndexedAddress index -> (
       match addr_base with
-      | Some base ->
-          Some (resolve_address_index t (Unsigned.UInt64.to_int index) base)
+      | Some base -> Some (resolve_address_index t index base)
       | None -> None)
   | _ -> None
 
-(* Typed attribute accessors over a [unit_ref]. Each reads one attribute of a DIE
-   and returns it as a plain OCaml value, hiding the [attribute_value] union. *)
+(* The unit's DW_AT_str_offsets_base / DW_AT_addr_base, read from its root DIE.
+   These locate the unit's contribution when resolving indexed strings and
+   addresses. *)
+let unit_str_offsets_base u =
+  match
+    Option.bind (root_die u) (fun d ->
+        DIE.find_attribute d DW_AT_str_offsets_base)
+  with
+  | Some (DIE.UData base) -> Some (Unsigned.UInt64.to_int base)
+  | None | Some _ -> None
 
-let attr_string _u die attr = die_string_attribute die attr
+let unit_addr_base u = Option.bind (root_die u) addr_base_of_die
+
+(* Resolve a string- or address-class attribute value against the unit, applying
+   the unit's base to the indexed forms; direct forms resolve trivially. *)
+let resolve_string u = function
+  | DIE.String s -> Some s
+  | DIE.IndexedString index ->
+      let s =
+        (* [base] is the unit's DW_AT_str_offsets_base: the section-relative
+           offset of its first entry. The contribution header sits [header_size]
+           bytes before it, at absolute offset [section_start + base -
+           header_size]. *)
+        match
+          (unit_str_offsets_base u, get_section u.ur_ctx Debug_str_offs)
+        with
+        | Some base, Some (section_off, _) ->
+            let header_size =
+              match (CompileUnit.header u.ur_cu).format with
+              | DWARF32 -> 8
+              | DWARF64 -> 16
+            in
+            let contribution =
+              Unsigned.UInt64.to_int section_off + base - header_size
+            in
+            resolve_indexed_string_at u.ur_ctx contribution index
+        | _ -> resolve_indexed_string_cached u.ur_ctx index
+      in
+      Some s
+  | _ -> None
+
+let resolve_address u value =
+  resolve_address_attribute u.ur_ctx (unit_addr_base u) value
+
+(* Typed attribute accessors over a [unit_ref]: read one attribute of a DIE and
+   return it as the type it denotes, resolving indexed forms via the unit. *)
+
+let attr_string u die attr =
+  Option.bind (DIE.find_attribute die attr) (resolve_string u)
 
 let attr_int _u die attr =
   match DIE.find_attribute die attr with
@@ -6906,12 +6927,12 @@ let attr_flag _u die attr =
   | None | Some _ -> None
 
 let attr_address u die attr =
-  match DIE.find_attribute die attr with
-  | Some (DIE.Address a) -> Some a
-  | Some (DIE.IndexedAddress _ as value) ->
-      let addr_base = Option.bind (root_die u) addr_base_of_die in
-      resolve_address_attribute u.ur_ctx addr_base value
-  | None | Some _ -> None
+  Option.bind (DIE.find_attribute die attr) (resolve_address u)
+
+let unit_name u = Option.bind (root_die u) (fun d -> attr_string u d DW_AT_name)
+
+let comp_dir u =
+  Option.bind (root_die u) (fun d -> attr_string u d DW_AT_comp_dir)
 
 (* Depth-first search of a DIE subtree for the DIE at absolute buffer [offset]. *)
 let rec die_at_offset offset die =
@@ -7184,14 +7205,16 @@ module SplitDwarf = struct
     with Unix.Unix_error _ | Parse_error _ | Object.Buffer.Invalid_format _ ->
       None
 
+  (* Resolve a DWO DIE's indexed strings and addresses against the DWO context,
+     replacing the index forms with their resolved direct forms. *)
   let fixup_dwo_attribute ctx format addr_base (attr : DIE.attribute) =
     match attr.value with
-    | DIE.IndexedString (index, _) ->
+    | DIE.IndexedString index ->
         let s = resolve_string_index_dwo ctx.dwo_buffer format index in
-        { attr with value = DIE.IndexedString (index, s) }
-    | DIE.IndexedAddress (index, _) ->
+        { attr with value = DIE.String s }
+    | DIE.IndexedAddress index ->
         let addr = resolve_address_index ctx.parent_ index addr_base in
-        { attr with value = DIE.IndexedAddress (index, addr) }
+        { attr with value = DIE.Address addr }
     | _ -> attr
 
   let rec fixup_dwo_die ctx format addr_base die =

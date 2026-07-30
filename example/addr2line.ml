@@ -32,13 +32,12 @@ let addr_to_location dwarf addr =
 
 (* Find the name of the function covering an address via its subprogram DIE. *)
 let find_function_name dwarf addr =
-  match Dwarf.subprogram_for_address dwarf addr with
-  | None -> None
-  | Some die -> (
-      match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
-      | Some (Dwarf.DIE.String name) -> Some name
-      | Some (Dwarf.DIE.IndexedString (_, name)) -> Some name
-      | _ -> None)
+  match
+    (Dwarf.unit_for_address dwarf addr, Dwarf.subprogram_for_address dwarf addr)
+  with
+  | Some cu, Some die ->
+      Dwarf.attr_string (Dwarf.unit dwarf cu) die Dwarf.DW_AT_name
+  | _ -> None
 
 (* Main addr2line lookup function *)
 let lookup_address dwarf addr_str show_functions =

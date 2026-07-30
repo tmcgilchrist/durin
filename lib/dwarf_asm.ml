@@ -36,7 +36,7 @@ let emit_attribute_value fmt (value : Dwarf.DIE.attribute_value)
     (form : Dwarf.attribute_form_encoding) (enc : Dwarf.encoding) =
   match (form, value) with
   | DW_FORM_string, String s -> emit_asciz fmt s
-  | DW_FORM_strx, IndexedString (idx, _) ->
+  | DW_FORM_strx, IndexedString idx ->
       emit_uleb128 fmt (Unsigned.UInt64.of_int idx)
   | DW_FORM_udata, UData v -> emit_uleb128 fmt v
   | DW_FORM_udata, Language l ->
@@ -71,7 +71,7 @@ let emit_attribute_value fmt (value : Dwarf.DIE.attribute_value)
       | 4 -> emit_4byte fmt (Int64.to_int (Unsigned.UInt64.to_int64 a))
       | 8 -> emit_8byte fmt (Unsigned.UInt64.to_int64 a)
       | n -> fail (Printf.sprintf "Unsupported address size: %d" n))
-  | DW_FORM_addrx, IndexedAddress (idx, _) ->
+  | DW_FORM_addrx, IndexedAddress idx ->
       emit_uleb128 fmt (Unsigned.UInt64.of_int idx)
   | DW_FORM_flag_present, Flag _ -> ()
   | DW_FORM_flag, Flag b -> emit_byte fmt (if b then 1 else 0)
