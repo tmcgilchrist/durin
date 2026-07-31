@@ -2028,8 +2028,8 @@ let buffer_str_resolver (buffer : Object.Buffer.t) : str_resolver =
         read_at Debug_line_str offset (Printf.sprintf "<line_strp_offset:%d>"));
   }
 
-let rec skip_attribute_value (cur : Object.Buffer.cursor)
-    (form : attribute_form_encoding) (encoding : encoding) : unit =
+let rec skip_attribute_value (cur : Object.Buffer.cursor) form
+    (encoding : encoding) =
   match form with
   | DW_FORM_addr ->
       let sz = Unsigned.UInt8.to_int encoding.address_size in
@@ -2043,9 +2043,7 @@ let rec skip_attribute_value (cur : Object.Buffer.cursor)
   | DW_FORM_data2 -> cur.position <- cur.position + 2
   | DW_FORM_data4 -> cur.position <- cur.position + 4
   | DW_FORM_data8 -> cur.position <- cur.position + 8
-  | DW_FORM_string ->
-      let _ = Object.Buffer.Read.zero_string cur () in
-      ()
+  | DW_FORM_string -> ignore (Object.Buffer.Read.zero_string cur ())
   | DW_FORM_block ->
       let len = Object.Buffer.Read.uleb128 cur in
       cur.position <- cur.position + len
@@ -2054,23 +2052,17 @@ let rec skip_attribute_value (cur : Object.Buffer.cursor)
       cur.position <- cur.position + len
   | DW_FORM_data1 -> cur.position <- cur.position + 1
   | DW_FORM_flag -> cur.position <- cur.position + 1
-  | DW_FORM_sdata ->
-      let _ = Object.Buffer.Read.sleb128 cur in
-      ()
+  | DW_FORM_sdata -> ignore (Object.Buffer.Read.sleb128 cur)
   | DW_FORM_strp ->
       cur.position <- cur.position + offset_size_for_format encoding.format
-  | DW_FORM_udata ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
+  | DW_FORM_udata -> ignore (Object.Buffer.Read.uleb128 cur)
   | DW_FORM_ref_addr ->
       cur.position <- cur.position + offset_size_for_format encoding.format
   | DW_FORM_ref1 -> cur.position <- cur.position + 1
   | DW_FORM_ref2 -> cur.position <- cur.position + 2
   | DW_FORM_ref4 -> cur.position <- cur.position + 4
   | DW_FORM_ref8 -> cur.position <- cur.position + 8
-  | DW_FORM_ref_udata ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
+  | DW_FORM_ref_udata -> ignore (Object.Buffer.Read.uleb128 cur)
   | DW_FORM_indirect ->
       let actual_form_raw = Object.Buffer.Read.uleb128 cur in
       let actual_form =
@@ -2083,12 +2075,8 @@ let rec skip_attribute_value (cur : Object.Buffer.cursor)
       let len = Object.Buffer.Read.uleb128 cur in
       cur.position <- cur.position + len
   | DW_FORM_flag_present -> ()
-  | DW_FORM_strx ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_addrx ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
+  | DW_FORM_strx -> ignore (Object.Buffer.Read.uleb128 cur)
+  | DW_FORM_addrx -> ignore (Object.Buffer.Read.uleb128 cur)
   | DW_FORM_ref_sup4 -> cur.position <- cur.position + 4
   | DW_FORM_strp_sup ->
       cur.position <- cur.position + offset_size_for_format encoding.format
@@ -2097,12 +2085,8 @@ let rec skip_attribute_value (cur : Object.Buffer.cursor)
       cur.position <- cur.position + offset_size_for_format encoding.format
   | DW_FORM_ref_sig8 -> cur.position <- cur.position + 8
   | DW_FORM_implicit_const -> ()
-  | DW_FORM_loclistx ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_rnglistx ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
+  | DW_FORM_loclistx -> ignore (Object.Buffer.Read.uleb128 cur)
+  | DW_FORM_rnglistx -> ignore (Object.Buffer.Read.uleb128 cur)
   | DW_FORM_ref_sup8 -> cur.position <- cur.position + 8
   | DW_FORM_strx1 -> cur.position <- cur.position + 1
   | DW_FORM_strx2 -> cur.position <- cur.position + 2
@@ -2114,12 +2098,8 @@ let rec skip_attribute_value (cur : Object.Buffer.cursor)
   | DW_FORM_addrx4 -> cur.position <- cur.position + 4
   | DW_FORM_unknown n ->
       fail (Printf.sprintf "skip_attribute_value: unknown form 0x%02x" n)
-  | DW_FORM_GNU_addr_index ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
-  | DW_FORM_GNU_str_index ->
-      let _ = Object.Buffer.Read.uleb128 cur in
-      ()
+  | DW_FORM_GNU_addr_index -> ignore (Object.Buffer.Read.uleb128 cur)
+  | DW_FORM_GNU_str_index -> ignore (Object.Buffer.Read.uleb128 cur)
   | DW_FORM_GNU_ref_alt ->
       cur.position <- cur.position + offset_size_for_format encoding.format
   | DW_FORM_GNU_strp_alt ->
@@ -2432,11 +2412,10 @@ module DIE = struct
   let rec parse_children_seq (cur : Object.Buffer.cursor)
       (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
       (strings : str_resolver) : t Seq.t =
-    (* Re-runnable child sequence: capture the child-list start position and
+    (* Re-runnable child sequence. Capture the child-list start position and
        re-derive a fresh cursor on each traversal, advancing to the next sibling
        by skipping the current child's subtree. Memoised so each child is parsed
-       at most once. This makes a DIE safe to traverse more than once (e.g. a
-       cached root DIE). *)
+       at most once. *)
     children_from cur.buffer cur.position abbrev_table encoding strings
 
   and children_from (buffer : Object.Buffer.t) (pos : int)
@@ -6598,8 +6577,6 @@ type t = {
   line_tables_ : (u64, DebugLine.line_table) Hashtbl.t;
   str_resolver_ : str_resolver memo ref;
   root_dies_ : (int, DIE.t option) Hashtbl.t;
-      (* Parsed root DIE per unit, keyed by the unit's buffer offset. Safe to
-         cache now that DIE children are re-traversable. *)
 }
 
 let get_abbrev_table t (offset : size_t) =
@@ -6713,11 +6690,11 @@ type unit_ref = {
   ur_resolver : str_resolver;
 }
 
-let unit ctx cu =
-  let header = CompileUnit.header cu in
+let unit ctx ur_cu =
+  let header = CompileUnit.header ur_cu in
   {
     ur_ctx = ctx;
-    ur_cu = cu;
+    ur_cu;
     ur_abbrev = get_abbrev_table ctx header.debug_abbrev_offset;
     ur_resolver = context_str_resolver ctx;
   }
@@ -6943,24 +6920,15 @@ let comp_dir u =
 (* Depth-first search of a DIE subtree for the DIE at absolute buffer [offset]. *)
 let rec die_at_offset offset die =
   if die.DIE.offset = offset then Some die
-  else
-    let rec search seq =
-      match seq () with
-      | Seq.Nil -> None
-      | Seq.Cons (child, rest) -> (
-          match die_at_offset offset child with
-          | Some _ as found -> found
-          | None -> search rest)
-    in
-    search die.DIE.children
+  else Seq.find_map (die_at_offset offset) die.DIE.children
 
 let attr_die u die attr =
   match DIE.find_attribute die attr with
   | Some (DIE.Reference offset) ->
-      (* DW_FORM_ref1..8 / ref_udata are relative to the unit header, so the
-         target DIE's absolute offset is the unit's offset plus that value.
-         Section- or type-unit references (ref_addr, ref_sig8) fall outside this
-         unit's DIEs and so resolve to [None] rather than to a wrong DIE. *)
+      (* A Reference from a within-unit form (ref1..8, ref_udata) is relative to
+         the unit header, so the target's absolute offset is the unit's offset
+         plus it. A cross-unit Reference (ref_addr, ref_sig8) falls outside this
+         unit's DIEs and resolves to [None] rather than to a wrong DIE. *)
       let target = CompileUnit.offset (cu u) + Unsigned.UInt64.to_int offset in
       Option.bind (root_die u) (die_at_offset target)
   | None | Some _ -> None
@@ -7105,18 +7073,15 @@ let die_ranges u die =
 let unit_root_die t cu = root_die (unit t cu)
 
 let unit_for_address t addr =
-  let rec search seq =
-    match seq () with
-    | Seq.Nil -> None
-    | Seq.Cons (unit, rest) -> (
-        match unit_root_die t unit with
-        | None -> search rest
-        | Some root -> (
-            match pc_range t (addr_base_of_die root) root with
-            | Some range when range_contains range addr -> Some unit
-            | _ -> search rest))
-  in
-  search (compile_units t)
+  Seq.find_map
+    (fun unit ->
+      match unit_root_die t unit with
+      | None -> None
+      | Some root -> (
+          match pc_range t (addr_base_of_die root) root with
+          | Some range when range_contains range addr -> Some unit
+          | _ -> None))
+    (compile_units t)
 
 let line_info_for_address t addr =
   let of_row lt (row : DebugLine.line_table_entry) =
@@ -7137,19 +7102,15 @@ let line_info_for_address t addr =
       address = row.address;
     }
   in
-  let rec search seq =
-    match seq () with
-    | Seq.Nil -> None
-    | Seq.Cons (unit, rest) -> (
-        match line_table t unit with
-        | None -> search rest
-        | Some lt -> (
-            match DebugLine.find_by_address lt addr with
-            | Some row -> Some (of_row lt row)
-            | None -> search rest))
-  in
-  search (compile_units t)
+  Seq.find_map
+    (fun unit ->
+      match line_table t unit with
+      | None -> None
+      | Some lt -> Option.map (of_row lt) (DebugLine.find_by_address lt addr))
+    (compile_units t)
 
+(* Search each unit's DIE tree for a DW_TAG_subprogram whose contiguous code
+   range contains [addr]. *)
 let subprogram_for_address t addr =
   let covers addr_base (die : DIE.t) =
     die.tag = DW_TAG_subprogram
@@ -7158,18 +7119,11 @@ let subprogram_for_address t addr =
     | Some range -> range_contains range addr
     | None -> false
   in
-  let rec search_units seq =
-    match seq () with
-    | Seq.Nil -> None
-    | Seq.Cons (unit, rest) -> (
-        match unit_root_die t unit with
-        | None -> search_units rest
-        | Some root -> (
-            match DIE.find_descendant (covers (addr_base_of_die root)) root with
-            | Some _ as found -> found
-            | None -> search_units rest))
-  in
-  search_units (compile_units t)
+  Seq.find_map
+    (fun unit ->
+      Option.bind (unit_root_die t unit) (fun root ->
+          DIE.find_descendant (covers (addr_base_of_die root)) root))
+    (compile_units t)
 
 module SplitDwarf = struct
   type dwo_context = {

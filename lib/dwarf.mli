@@ -3052,15 +3052,12 @@ val get_abbrev_table : t -> size_t -> (u64, abbrev) Hashtbl.t
 
 (** {2 Unit handles}
 
-    A {!unit_ref} bundles a compilation unit with the context and the abbrev
-    table + string resolver its DIEs need. Building one with {!val-unit}
-    captures that machinery once, so reading the unit's DIEs no longer threads
-    {!get_abbrev_table} and {!context_str_resolver} through every call. *)
+    A {!unit_ref} bundles a compilation unit with its context, abbrev table and
+    string resolver, captured once so its DIEs can be read without re-fetching
+    them on each access. *)
 
 type unit_ref
-(** A compilation unit resolved against its context: enough to parse and read
-    the unit's DIEs without supplying the abbrev table or string resolver again.
-*)
+(** A compilation unit resolved against its context. *)
 
 val unit : t -> CompileUnit.t -> unit_ref
 (** Resolve a compilation unit into a {!unit_ref}, fetching its (cached) abbrev
@@ -3088,22 +3085,20 @@ val unit_entries : unit_ref -> DIE.t Seq.t
     the unit has no DIEs. The sequence is re-traversable. *)
 
 val die_cursor : unit_ref -> DieCursor.t
-(** A {!DieCursor} over the unit, positioned at its root DIE. The handle-based
-    counterpart of {!DieCursor.create}, so callers need not supply the buffer,
-    abbrev table, encoding and resolver by hand. *)
+(** A {!DieCursor} over the unit, positioned at its root DIE. Built from the
+    {!unit_ref} rather than the buffer, abbrev table, encoding and resolver that
+    {!DieCursor.create} takes. *)
 
 val die_zipper : unit_ref -> DieZipper.t option
 (** A {!DieZipper} focused on the unit's root DIE, or [None] if the unit has no
-    DIEs. The handle-based counterpart of {!DieZipper.of_die_cursor}. *)
+    DIEs. Built from the {!unit_ref}, unlike {!DieZipper.of_die_cursor}. *)
 
 (** {3 Typed attribute accessors}
 
-    Convenience accessors that read one attribute of a DIE as a value of its
-    natural type — the layer a debugger or linker reaches for when it wants a
-    string, integer, address, or referenced DIE. Each returns [None] when the
-    attribute is absent or belongs to a different value class. For the low-level
-    view, {!DIE.find_attribute} returns the raw {!DIE.attribute_value} with
-    every form and class distinction preserved. *)
+    Read one attribute of a DIE as a value of its natural type. Each returns
+    [None] when the attribute is absent or belongs to a different value class.
+    For the low-level view, {!DIE.find_attribute} returns the raw
+    {!DIE.attribute_value} with every form and class distinction preserved. *)
 
 val attr_string : unit_ref -> DIE.t -> attribute_encoding -> string option
 (** The attribute's string value. The direct ([DW_FORM_string], [DW_FORM_strp])
@@ -3701,7 +3696,7 @@ val line_table : t -> CompileUnit.t -> DebugLine.line_table option
 type line_info = { file : string; line : int; column : int; address : u64 }
 (** Source location for an address: the directory-qualified source [file], its
     [line] and [column], and the [address] of the line-table row it resolved to.
-    Roughly the counterpart of LLVM's [DILineInfo]. *)
+*)
 
 val unit_for_address : t -> u64 -> CompileUnit.t option
 (** The compilation unit whose root DIE's contiguous code range contains the
