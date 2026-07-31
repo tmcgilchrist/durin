@@ -77,36 +77,33 @@ let find_symbol_by_address symbols addr =
 
 (* Simplified symbol table parser - returns basic function symbols *)
 let extract_basic_symbols _buffer section_array =
-  try
-    (* Find symbol table section (.symtab preferred, .dynsym as fallback) *)
-    let symbol_section_opt =
-      Array.find_opt
-        (fun section ->
-          section.Object.Elf.sh_name_str = ".symtab"
-          || section.Object.Elf.sh_name_str = ".dynsym")
-        section_array
-    in
-
-    match symbol_section_opt with
-    | None -> [||] (* No symbol table found *)
-    | Some _symbol_section ->
-        (* For now, create a minimal symbol table with known function symbols *)
-        (* This is a simplified implementation that can be enhanced later *)
-        let main_symbol =
-          {
-            name = "main";
-            value = Unsigned.UInt64.of_int64 0x1149L;
-            (* Hardcoded for compatibility *)
-            size = Unsigned.UInt64.of_int64 0x1eL;
-            (* Size of main function *)
-            info = Unsigned.UInt8.of_int 0x12;
-            (* STB_GLOBAL | STT_FUNC *)
-            other = Unsigned.UInt8.of_int 0;
-            shndx = Unsigned.UInt16.of_int 1;
-          }
-        in
-        [| main_symbol |]
-  with _ -> [||] (* Return empty array on any error *)
+  (* Find symbol table section (.symtab preferred, .dynsym as fallback) *)
+  let symbol_section_opt =
+    Array.find_opt
+      (fun section ->
+        section.Object.Elf.sh_name_str = ".symtab"
+        || section.Object.Elf.sh_name_str = ".dynsym")
+      section_array
+  in
+  match symbol_section_opt with
+  | None -> [||] (* No symbol table found *)
+  | Some _symbol_section ->
+      (* For now, create a minimal symbol table with known function symbols *)
+      (* This is a simplified implementation that can be enhanced later *)
+      let main_symbol =
+        {
+          name = "main";
+          value = Unsigned.UInt64.of_int64 0x1149L;
+          (* Hardcoded for compatibility *)
+          size = Unsigned.UInt64.of_int64 0x1eL;
+          (* Size of main function *)
+          info = Unsigned.UInt8.of_int 0x12;
+          (* STB_GLOBAL | STT_FUNC *)
+          other = Unsigned.UInt8.of_int 0;
+          shndx = Unsigned.UInt16.of_int 1;
+        }
+      in
+      [| main_symbol |]
 
 (* Extract symbol table from ELF sections *)
 let extract_symbol_table buffer section_array =
@@ -118,4 +115,4 @@ let parse_symbol_table buffer =
   try
     let _header, section_array = Object.Elf.read_elf buffer in
     extract_symbol_table buffer section_array
-  with _ -> [||] (* Return empty array on parse error *)
+  with Object.Buffer.Invalid_format _ | Failure _ | Invalid_argument _ -> [||]

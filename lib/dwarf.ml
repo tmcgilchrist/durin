@@ -88,7 +88,8 @@ let detect_format_and_arch (buf : Object.Buffer.t) =
           | `ELFCLASSNONE -> "elf"
         in
         Printf.sprintf "%s-%s" class_str arch_str
-      with _ -> "ELF")
+      with Object.Buffer.Invalid_format _ | Failure _ | Invalid_argument _ ->
+        "ELF")
   | MACHO ->
       let header, _commands = Object.Macho.read buf in
       let arch_str = string_of_cpu_type header.cpu_type in
@@ -1865,7 +1866,7 @@ let find_debug_section_by_type buffer section_type =
                 else None)
               dwarf_segment.seg_sections)
     | _ -> None
-  with _ -> None
+  with Object.Buffer.Invalid_format _ | Failure _ | Invalid_argument _ -> None
 
 let parse_abbrev_table_from_cursor cur =
   let open Object.Buffer in
@@ -1933,7 +1934,7 @@ let read_string_from_section buffer offset section_offset : string option =
     let actual_offset = section_offset + offset in
     let cursor = Object.Buffer.cursor buffer ~at:actual_offset in
     Object.Buffer.Read.zero_string cursor ()
-  with _ -> None
+  with Invalid_argument _ -> None
 
 let resolve_string_index_in ~(str_offs_section : (u64 * u64) option)
     ~(str_section : (u64 * u64) option) (buffer : Object.Buffer.t)
@@ -1982,7 +1983,7 @@ let resolve_string_index_in ~(str_offs_section : (u64 * u64) option)
         with
         | Some s -> s
         | None -> Printf.sprintf "<strx_error:%d>" index
-      with _ -> Printf.sprintf "<strx_error:%d>" index)
+      with Invalid_argument _ -> Printf.sprintf "<strx_error:%d>" index)
   | Some (_, _), None -> Printf.sprintf "<strx_no_str:%d>" index
   | None, Some (_, _) -> Printf.sprintf "<strx_no_offs:%d>" index
   | None, None -> Printf.sprintf "<strx_no_sections:%d>" index
@@ -2385,7 +2386,7 @@ module DIE = struct
     match raw_value with
     | UData code -> (
         let code_int = Unsigned.UInt64.to_int code in
-        try wrap (decode code_int) with _ -> raw_value)
+        try wrap (decode code_int) with Parse_error _ -> raw_value)
     | _ -> raw_value
 
   let process_language_attribute =
@@ -2613,7 +2614,7 @@ module DieCursor = struct
                     offset = die_offset;
                   },
                 abbrev.has_children )
-    with _ -> None
+    with Invalid_argument _ -> None
 
   let skip_children t = skip_children t.cursor t.abbrev_table t.encoding
   let position t = t.cursor.position
@@ -2810,7 +2811,7 @@ module DebugStrOffsets = struct
                       + Unsigned.UInt64.to_int offset)
                 in
                 Object.Buffer.Read.zero_string str_cursor ()
-              with _ -> None)
+              with Invalid_argument _ -> None)
           | None -> None
         in
         { offset; resolved_string })
@@ -2878,7 +2879,7 @@ module DebugStr = struct
                    | None -> List.rev acc (* Break on read error *)
                in
                Array.of_list (collect_strings [] section_start 0)
-             with _ -> [||])
+             with Invalid_argument _ -> [||])
         in
         Some { entries; total_size = Unsigned.UInt64.to_int section_size }
 end
@@ -3254,7 +3255,8 @@ module DebugAranges = struct
                       Unsigned.UInt64.to_int cu_header.span.size
                     in
                     Unsigned.UInt64.of_int die_offset_from_section_start
-                  with _ -> header.debug_info_offset)
+                  with Parse_error _ | Invalid_argument _ ->
+                    header.debug_info_offset)
             else
               (* For non-zero offsets, assume it already points to the DIE *)
               header.debug_info_offset
@@ -3395,7 +3397,7 @@ module DebugLoclists = struct
                  offset_table)
           in
           Some { header; offset_table; lists }
-        with _ -> None)
+        with Parse_error _ | Invalid_argument _ -> None)
 
   let resolve_location_list buffer (offset : u64) (address_size : u8) =
     match find_debug_section_by_type buffer Debug_loclists with
@@ -3517,7 +3519,7 @@ module DebugRnglists = struct
                  offset_table)
           in
           Some { header; offset_table; lists }
-        with _ -> None)
+        with Parse_error _ | Invalid_argument _ -> None)
 
   let resolve_range_list buffer (offset : u64) (address_size : u8) =
     match find_debug_section_by_type buffer Debug_rnglists with
@@ -3652,7 +3654,7 @@ module DebugLine = struct
           | None ->
               Printf.sprintf "<line_strp:0x%Lx>"
                 (Unsigned.UInt64.to_int64 offset)
-        with _ ->
+        with Invalid_argument _ ->
           Printf.sprintf "<line_strp:0x%Lx>" (Unsigned.UInt64.to_int64 offset))
 
   (** Parse a DWARF 5 line program header from a buffer cursor.
@@ -5870,7 +5872,7 @@ module DebugNames = struct
             | None ->
                 Printf.sprintf "<string@0x%08lx>"
                   (Unsigned.UInt32.to_int32 offset)
-          with _ ->
+          with Invalid_argument _ ->
             Printf.sprintf "<string@0x%08lx>" (Unsigned.UInt32.to_int32 offset))
       | None ->
           Printf.sprintf "<string@0x%08lx>" (Unsigned.UInt32.to_int32 offset)
@@ -5930,7 +5932,7 @@ module DebugNames = struct
               let next_offset = cur_offset + 6 in
               (* Estimate entry size *)
               parse_series_rec next_offset (entry :: acc)
-          with _ ->
+          with Invalid_argument _ | Parse_error _ ->
             (* Failed to parse, return what we have *)
             List.rev acc
         in
@@ -6128,7 +6130,7 @@ module DebugNames = struct
     in
 
     try parse_series_rec []
-    with _ ->
+    with Invalid_argument _ ->
       [
         {
           name_offset = Unsigned.UInt32.of_int 0;
@@ -6196,7 +6198,7 @@ module DebugNames = struct
             type_hash = None;
           };
         ]
-    with _ ->
+    with Invalid_argument _ ->
       [
         {
           name_offset = Unsigned.UInt32.of_int 0;
@@ -6832,7 +6834,7 @@ let lookup_address_in_debug_addr (dwarf : t) (_addr_base : u64) (index : int) =
         if index >= 0 && index < Array.length parsed_addr.entries then
           Some parsed_addr.entries.(index).address
         else None
-      with _ -> None)
+      with Parse_error _ | Invalid_argument _ | Division_by_zero -> None)
 
 let resolve_address_index (dwarf : t) (index : int) (addr_base : u64) =
   match lookup_address_in_debug_addr dwarf addr_base index with
@@ -7122,7 +7124,7 @@ module SplitDwarf = struct
           with
           | Some s -> s
           | None -> Printf.sprintf "<dwo_strx_error:%d>" index
-        with _ -> Printf.sprintf "<dwo_strx_error:%d>" index)
+        with Invalid_argument _ -> Printf.sprintf "<dwo_strx_error:%d>" index)
     | _ -> Printf.sprintf "<dwo_strx_no_sections:%d>" index
 
   let parse_abbrev_table_from_section (buffer : Object.Buffer.t)
@@ -7348,7 +7350,7 @@ module SplitDwarf = struct
                 { dwo_id = !id_ref; contributions = contribs })
           in
           Some { version; unit_count; entries }
-        with _ -> None)
+        with Invalid_argument _ -> None)
 
   let find_cu_by_dwo_id dwp_ctx id =
     let idx = dwp_ctx.cu_index in
@@ -7378,5 +7380,5 @@ module SplitDwarf = struct
       | Some cu_index ->
           let tu_index = parse_unit_index dwp_buffer Debug_tu_index in
           Some { dwp_buffer; parent_buffer; cu_index; tu_index }
-    with _ -> None
+    with Unix.Unix_error _ -> None
 end

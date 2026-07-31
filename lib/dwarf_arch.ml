@@ -121,7 +121,7 @@ module ARM64 : ARCH = struct
             | "ra_sign_state" -> Some (Register 34)
             | _ -> None)
       else None
-    with _ -> None
+    with Failure _ -> None
 
   (* AAPCS64: CFA = sp + 0 at entry; return address in x30 (LR). *)
   let default_cfa = (Register 31, 0)
@@ -209,12 +209,12 @@ module RISCV : ARCH = struct
         try
           let n = int_of_string (String.sub s 1 (String.length s - 1)) in
           if n >= 0 && n <= 31 then Some (Register (n + 32)) else None
-        with _ -> None)
+        with Failure _ -> None)
     | s when String.length s >= 2 && s.[0] = 'v' -> (
         try
           let n = int_of_string (String.sub s 1 (String.length s - 1)) in
           if n >= 0 && n <= 31 then Some (Register (n + 96)) else None
-        with _ -> None)
+        with Failure _ -> None)
     | _ -> None
 
   (* RISC-V: CFA = sp (x2) + 0 at entry; return address in ra (x1). *)
@@ -261,7 +261,7 @@ module PowerPC64 : ARCH = struct
             | "xer" -> Some (Register 76)
             | _ -> None)
       else None
-    with _ -> None
+    with Failure _ -> None
 
   (* ELF V2 ABI: CFA = r1 (stack pointer) + 0 at entry; return address in the
      link register (LR), DWARF register 65. *)
@@ -335,7 +335,7 @@ module S390X : ARCH = struct
             | "pswa" -> Some (Register 65)
             | _ -> None)
       else None
-    with _ -> None
+    with Failure _ -> None
 
   (* s390x: CFA = r15 + 160 (the register save area) at entry; return address in
      r14. *)

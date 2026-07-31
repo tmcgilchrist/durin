@@ -322,7 +322,7 @@ let parse_unwind_info (buffer : Object.Buffer.t) section_offset =
                   { function_offset = func_offset; lsda_offset = lsda_off }
                 in
                 read_lsda_entries (descriptor :: acc_entries) (count + 1)
-            with _ -> List.rev acc_entries
+            with Invalid_argument _ -> List.rev acc_entries
         in
         Array.of_list (read_lsda_entries [] 0)
   in
@@ -413,7 +413,7 @@ let find_unwind_info_section buffer =
                   Unsigned.UInt64.to_int section.sec_size )
             else None)
           text_segment.seg_sections
-  with _ -> None
+  with Object.Buffer.Invalid_format _ | Invalid_argument _ -> None
 
 let parse_from_buffer buffer =
   match find_unwind_info_section buffer with

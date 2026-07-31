@@ -195,7 +195,7 @@ let parse_eh_fde cursor fde_encoding fde_offset =
           (* Not valid augmentation data, reset position *)
           cursor.position <- saved_pos;
           (None, None, saved_pos))
-      with _ ->
+      with Invalid_argument _ ->
         (* Error reading, reset position *)
         cursor.position <- saved_pos;
         (None, None, saved_pos))
