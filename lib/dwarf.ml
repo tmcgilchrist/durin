@@ -2161,6 +2161,10 @@ module DIE = struct
     | IndexedAddress of int (* unresolved .debug_addr index *)
     | Flag of bool
     | Reference of u64
+    | RnglistIndex of
+        int (* DW_FORM_rnglistx: .debug_rnglists offset-table index *)
+    | LoclistIndex of
+        int (* DW_FORM_loclistx: .debug_loclists offset-table index *)
     | Block of string
     | Language of dwarf_language
     | Encoding of base_type
@@ -2341,10 +2345,10 @@ module DIE = struct
         Reference offset
     | DW_FORM_loclistx ->
         let index = Object.Buffer.Read.uleb128 cur in
-        UData (Unsigned.UInt64.of_int index)
+        LoclistIndex index
     | DW_FORM_rnglistx ->
         let index = Object.Buffer.Read.uleb128 cur in
-        UData (Unsigned.UInt64.of_int index)
+        RnglistIndex index
     | DW_FORM_ref_udata ->
         let value = Object.Buffer.Read.uleb128 cur in
         Reference (Unsigned.UInt64.of_int value)

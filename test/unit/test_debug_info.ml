@@ -393,9 +393,8 @@ let test_dw_form_loclistx () =
       ()
   in
   match value with
-  | Dwarf.DIE.UData v ->
-      check int64 "loclistx index 3" 3L (Unsigned.UInt64.to_int64 v)
-  | _ -> fail "expected UData"
+  | Dwarf.DIE.LoclistIndex index -> check int "loclistx index 3" 3 index
+  | _ -> fail "expected LoclistIndex"
 
 let test_dw_form_rnglistx () =
   let bytes = [ 0x07 ] in
@@ -410,9 +409,8 @@ let test_dw_form_rnglistx () =
       ()
   in
   match value with
-  | Dwarf.DIE.UData v ->
-      check int64 "rnglistx index 7" 7L (Unsigned.UInt64.to_int64 v)
-  | _ -> fail "expected UData"
+  | Dwarf.DIE.RnglistIndex index -> check int "rnglistx index 7" 7 index
+  | _ -> fail "expected RnglistIndex"
 
 let test_dw_form_ref_udata () =
   let bytes = [ 0x80; 0x01 ] in

@@ -1528,6 +1528,12 @@ module DIE : sig
             {!resolve_address} or read via {!attr_address}. *)
     | Flag of bool  (** Boolean from DW_FORM_flag or DW_FORM_flag_present *)
     | Reference of u64  (** Reference from DW_FORM_ref* *)
+    | RnglistIndex of int
+        (** Unresolved [.debug_rnglists] offset-table index from
+            [DW_FORM_rnglistx]. Resolve with {!attr_ranges}. *)
+    | LoclistIndex of int
+        (** Unresolved [.debug_loclists] offset-table index from
+            [DW_FORM_loclistx]. Resolve with {!attr_locations}. *)
     | Block of string  (** Block of data from DW_FORM_block* *)
     | Language of dwarf_language  (** Language from DW_AT_language attribute *)
     | Encoding of base_type

@@ -97,6 +97,8 @@ let form_for_attribute_value :
   | IndexedAddress _ -> DW_FORM_addrx
   | Flag _ -> DW_FORM_flag_present
   | Reference _ -> DW_FORM_ref4
+  | RnglistIndex _ -> DW_FORM_rnglistx
+  | LoclistIndex _ -> DW_FORM_loclistx
   | Block _ -> DW_FORM_block
   | Language _ -> DW_FORM_udata
   | Encoding _ -> DW_FORM_udata

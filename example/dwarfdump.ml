@@ -415,6 +415,10 @@ let rec print_die die depth dwarf buffer stmt_list_offset cu_addr_base
               | Some decoded -> Printf.sprintf "(%s)" decoded
               | None -> Printf.sprintf "(<%d bytes>)" (String.length block_data)
             else Printf.sprintf "(<%d bytes>)" (String.length block_data)
+        | Dwarf.DIE.RnglistIndex index ->
+            Printf.sprintf "(indexed rnglist 0x%x)" index
+        | Dwarf.DIE.LoclistIndex index ->
+            Printf.sprintf "(indexed loclist 0x%x)" index
         | Dwarf.DIE.Language lang ->
             Printf.sprintf "(%s)" (Dwarf.string_of_dwarf_language lang)
         | Dwarf.DIE.Encoding enc ->
