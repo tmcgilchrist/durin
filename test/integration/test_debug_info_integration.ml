@@ -195,6 +195,28 @@ let test_attr_address binary_path =
           check bool "attr_address resolves DW_AT_low_pc" true
             (Option.is_some (Dwarf.attr_address u die Dwarf.DW_AT_low_pc)))
 
+(* die_ranges falls back to the contiguous [low_pc, high_pc) pair when a DIE has
+   no DW_AT_ranges. *)
+let test_die_ranges_contiguous binary_path =
+  let ctx = create_context binary_path in
+  match first_unit_root ctx with
+  | None -> fail "expected a root DIE"
+  | Some (u, root) -> (
+      match find_die (has_attr Dwarf.DW_AT_low_pc) root with
+      | None -> fail "expected a DIE with DW_AT_low_pc"
+      | Some die -> (
+          check bool "no DW_AT_ranges on this DIE" true
+            (Option.is_none (Dwarf.attr_ranges u die));
+          match Dwarf.die_ranges u die with
+          | Some [ r ] ->
+              check bool "range is non-empty" true
+                (Unsigned.UInt64.compare r.Dwarf.start r.Dwarf.stop < 0);
+              check bool "range start is DW_AT_low_pc" true
+                (match Dwarf.attr_address u die Dwarf.DW_AT_low_pc with
+                | Some low -> Unsigned.UInt64.equal low r.Dwarf.start
+                | None -> false)
+          | _ -> fail "expected a single contiguous range"))
+
 (* The context builds its string resolver once and shares it. *)
 let test_str_resolver_shared binary_path =
   let ctx = create_context binary_path in
@@ -309,6 +331,7 @@ let () =
           ("resolve_string", `Quick, test_resolve_string);
           ("attr_die follows reference", `Quick, test_attr_die_follows_reference);
           ("attr_address", `Quick, test_attr_address);
+          ("die_ranges contiguous", `Quick, test_die_ranges_contiguous);
         ] );
       ( "caching",
         [

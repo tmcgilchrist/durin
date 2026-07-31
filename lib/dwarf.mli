@@ -3141,6 +3141,20 @@ val resolve_address : unit_ref -> DIE.attribute_value -> u64 option
     [DW_AT_addr_base] and [.debug_addr]. [None] for other classes. The
     counterpart of {!resolve_string} for addresses. *)
 
+type range = { start : u64; stop : u64 }
+(** A resolved, absolute code range [\[start, stop)]. *)
+
+val attr_ranges : unit_ref -> DIE.t -> range list option
+(** The address ranges named by a DIE's [DW_AT_ranges], resolved to absolute
+    {!range}s. Handles DWARF 4 ([.debug_ranges]) and DWARF 5 ([.debug_rnglists],
+    including [DW_FORM_rnglistx] via the unit's [DW_AT_rnglists_base]), folding
+    base addresses and [.debug_addr] indices. [None] if the DIE has no
+    [DW_AT_ranges]. *)
+
+val die_ranges : unit_ref -> DIE.t -> range list option
+(** A DIE's code ranges: its {!attr_ranges} if present, otherwise the contiguous
+    [\[DW_AT_low_pc, DW_AT_high_pc)] pair. [None] if the DIE has neither. *)
+
 (** Abbreviation table parsing for .debug_abbrev section.
 
     The .debug_abbrev section contains abbreviation declarations used by

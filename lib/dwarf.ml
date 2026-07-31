@@ -6985,6 +6985,121 @@ let pc_range t addr_base die =
 let range_contains (low, high) addr =
   Unsigned.UInt64.compare addr low >= 0 && Unsigned.UInt64.compare addr high < 0
 
+type range = { start : u64; stop : u64 }
+
+(* The unit's DW_AT_rnglists_base: the section-relative offset of its rnglists
+   offset table. *)
+let unit_rnglists_base u =
+  match
+    Option.bind (root_die u) (fun d -> DIE.find_attribute d DW_AT_rnglists_base)
+  with
+  | Some (DIE.UData base) -> Some (Unsigned.UInt64.to_int base)
+  | None | Some _ -> None
+
+(* The unit's default base address for range lists: its DW_AT_low_pc, or zero. *)
+let unit_default_base u =
+  match root_die u with
+  | Some root ->
+      Option.value ~default:Unsigned.UInt64.zero
+        (attr_address u root DW_AT_low_pc)
+  | None -> Unsigned.UInt64.zero
+
+(* Resolve a DW_FORM_rnglistx index to a section-relative [.debug_rnglists] list
+   offset, through the unit's DW_AT_rnglists_base and the offset table. *)
+let rnglistx_offset u index =
+  match (unit_rnglists_base u, get_section u.ur_ctx Debug_rnglists) with
+  | Some base, Some (section_off, _) -> (
+      let format = (CompileUnit.header u.ur_cu).format in
+      let offset_size = match format with DWARF32 -> 4 | DWARF64 -> 8 in
+      let entry_pos =
+        Unsigned.UInt64.to_int section_off + base + (index * offset_size)
+      in
+      try
+        let cur = Object.Buffer.cursor u.ur_ctx.object_ ~at:entry_pos in
+        let rel =
+          match format with
+          | DWARF32 -> Unsigned.UInt64.of_uint32 (Object.Buffer.Read.u32 cur)
+          | DWARF64 -> Object.Buffer.Read.u64 cur
+        in
+        Some (Unsigned.UInt64.add (Unsigned.UInt64.of_int base) rel)
+      with Invalid_argument _ -> None)
+  | _ -> None
+
+(* Fold DWARF 4 [.debug_ranges] entries into absolute ranges, tracking the base
+   address (offsets are relative to it). *)
+let ranges_of_v4 base entries =
+  let add = Unsigned.UInt64.add in
+  let rec go base acc = function
+    | [] | DebugRanges.EndOfList :: _ -> List.rev acc
+    | DebugRanges.BaseAddress a :: rest -> go a acc rest
+    | DebugRanges.Range { begin_addr; end_addr } :: rest ->
+        go base
+          ({ start = add base begin_addr; stop = add base end_addr } :: acc)
+          rest
+  in
+  go base [] entries
+
+(* Fold DWARF 5 [.debug_rnglists] entries into absolute ranges, resolving base
+   addresses and .debug_addr indices. *)
+let ranges_of_v5 u base entries =
+  let add = Unsigned.UInt64.add in
+  let addr_base =
+    Option.value ~default:Unsigned.UInt64.zero (unit_addr_base u)
+  in
+  let resolve_idx i = resolve_address_index u.ur_ctx i addr_base in
+  let rec go base acc = function
+    | [] | DebugRnglists.RLE_end_of_list :: _ -> List.rev acc
+    | DebugRnglists.RLE_base_address { address } :: rest -> go address acc rest
+    | DebugRnglists.RLE_base_addressx { index } :: rest ->
+        go (resolve_idx index) acc rest
+    | DebugRnglists.RLE_offset_pair { start_offset; end_offset } :: rest ->
+        go base
+          ({ start = add base start_offset; stop = add base end_offset } :: acc)
+          rest
+    | DebugRnglists.RLE_start_end { start_addr; end_addr } :: rest ->
+        go base ({ start = start_addr; stop = end_addr } :: acc) rest
+    | DebugRnglists.RLE_start_length { start_addr; length } :: rest ->
+        go base
+          ({ start = start_addr; stop = add start_addr length } :: acc)
+          rest
+    | DebugRnglists.RLE_startx_endx { start_index; end_index } :: rest ->
+        go base
+          ({ start = resolve_idx start_index; stop = resolve_idx end_index }
+          :: acc)
+          rest
+    | DebugRnglists.RLE_startx_length { start_index; length } :: rest ->
+        let s = resolve_idx start_index in
+        go base ({ start = s; stop = add s length } :: acc) rest
+  in
+  go base [] entries
+
+let attr_ranges u die =
+  let header = CompileUnit.header u.ur_cu in
+  let version = Unsigned.UInt16.to_int header.version in
+  let addr_size = header.address_size in
+  let base0 = unit_default_base u in
+  let of_v5 off =
+    Option.map
+      (fun rl -> ranges_of_v5 u base0 rl.DebugRnglists.entries)
+      (DebugRnglists.resolve_range_list u.ur_ctx.object_ off addr_size)
+  in
+  match DIE.find_attribute die DW_AT_ranges with
+  | Some (DIE.UData off) when version <= 4 ->
+      Option.map (ranges_of_v4 base0)
+        (resolve_range_list u.ur_ctx.object_ off
+           (Unsigned.UInt8.to_int addr_size))
+  | Some (DIE.UData off) -> of_v5 off
+  | Some (DIE.RnglistIndex index) -> Option.bind (rnglistx_offset u index) of_v5
+  | None | Some _ -> None
+
+let die_ranges u die =
+  match attr_ranges u die with
+  | Some rs -> Some rs
+  | None -> (
+      match pc_range u.ur_ctx (unit_addr_base u) die with
+      | Some (low, high) -> Some [ { start = low; stop = high } ]
+      | None -> None)
+
 (* The root DIE of a unit, resolved through the context's cached abbrev table and
    string resolver. *)
 let unit_root_die t cu = root_die (unit t cu)
