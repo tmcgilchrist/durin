@@ -27,7 +27,7 @@ let init_context filename =
 (* Resolve an address to its (file, line) using the context's address layer. *)
 let addr_to_location dwarf addr =
   match Dwarf.line_info_for_address dwarf addr with
-  | Some { Dwarf.file; line; _ } -> (file, line)
+  | Some { Dwarf.file; line; _ } -> (Option.value ~default:"??" file, line)
   | None -> ("??", 0)
 
 (* Find the name of the function covering an address via its subprogram DIE. *)

@@ -88,7 +88,9 @@ let test_line_info_for_address binary_path =
       | None -> fail "expected line info for a real code address"
       | Some info ->
           check bool "source file is a .c file" true
-            (Filename.check_suffix info.Dwarf.file ".c");
+            (match info.Dwarf.file with
+            | Some f -> Filename.check_suffix f ".c"
+            | None -> false);
           check bool "line > 0" true (info.Dwarf.line > 0);
           check bool "row address matches the query" true
             (Unsigned.UInt64.equal info.Dwarf.address addr))

@@ -6741,7 +6741,12 @@ let resolve_address_index dwarf index addr_base =
    [DW_AT_low_pc, DW_AT_high_pc) ranges; non-contiguous DW_AT_ranges code is not
    resolved yet. *)
 
-type line_info = { file : string; line : int; column : int; address : u64 }
+type line_info = {
+  file : string option;
+  line : int;
+  column : int;
+  address : u64;
+}
 
 (* The addr_base (DW_AT_addr_base) of a DIE, needed to resolve DW_FORM_addrx
    addresses against [.debug_addr]. *)
@@ -7003,9 +7008,10 @@ let line_info_for_address t addr =
     let file =
       if file_index < Array.length files then
         let entry = files.(file_index) in
-        if entry.directory = "" then entry.name
-        else entry.directory ^ "/" ^ entry.name
-      else "??"
+        Some
+          (if entry.directory = "" then entry.name
+           else entry.directory ^ "/" ^ entry.name)
+      else None
     in
     {
       file;

@@ -3693,10 +3693,15 @@ val line_table : t -> CompileUnit.t -> DebugLine.line_table option
     [\[DW_AT_low_pc, DW_AT_high_pc)] ranges; non-contiguous [DW_AT_ranges] code
     is not resolved yet. *)
 
-type line_info = { file : string; line : int; column : int; address : u64 }
-(** Source location for an address: the directory-qualified source [file], its
-    [line] and [column], and the [address] of the line-table row it resolved to.
-*)
+type line_info = {
+  file : string option;
+  line : int;
+  column : int;
+  address : u64;
+}
+(** Source location for an address: the directory-qualified source [file]
+    ([None] if the row's file index is out of range), its [line] and [column],
+    and the [address] of the line-table row it resolved to. *)
 
 val unit_for_address : t -> u64 -> CompileUnit.t option
 (** The compilation unit whose root DIE's contiguous code range contains the
