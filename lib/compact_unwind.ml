@@ -81,10 +81,10 @@ module Encoding = struct
            (logand (Unsigned.UInt32.to_int32 encoding) personality_index_mask)
            personality_index_shift))
 
-  let has_lsda (encoding : compact_unwind_encoding) =
+  let has_lsda encoding =
     Int32.logand (Unsigned.UInt32.to_int32 encoding) has_lsda_mask <> 0l
 
-  let is_function_start (encoding : compact_unwind_encoding) =
+  let is_function_start encoding =
     Int32.logand (Unsigned.UInt32.to_int32 encoding) start_flag_mask <> 0l
 
   module X86_64 = struct
@@ -93,7 +93,7 @@ module Encoding = struct
     let stack_immd_mode = 0x02000000l
     let stack_ind_mode = 0x03000000l
 
-    let get_mode (encoding : compact_unwind_encoding) =
+    let get_mode encoding =
       let mode_bits =
         Int32.logand (Unsigned.UInt32.to_int32 encoding) mode_mask
       in
@@ -108,7 +108,7 @@ module Encoding = struct
     let frame_mode = 0x02000000l
     let frameless_mode = 0x03000000l
 
-    let get_mode (encoding : compact_unwind_encoding) =
+    let get_mode encoding =
       let mode_bits =
         Int32.logand (Unsigned.UInt32.to_int32 encoding) mode_mask
       in
@@ -137,14 +137,14 @@ let parse_unwind_info_header cur =
     index_count;
   }
 
-let parse_second_level_header (cur : Object.Buffer.cursor) =
+let parse_second_level_header cur =
   let open Object.Buffer in
   let kind = Read.u32 cur in
   let entry_page_offset = Read.u32 cur in
   let entry_count = Read.u32 cur in
   { kind; entry_page_offset; entry_count }
 
-let parse_compressed_second_level_header (cur : Object.Buffer.cursor) =
+let parse_compressed_second_level_header cur =
   let open Object.Buffer in
   let kind = Read.u32 cur in
   let entry_page_offset = Read.u16 cur in
@@ -159,13 +159,13 @@ let parse_compressed_second_level_header (cur : Object.Buffer.cursor) =
     encodings_count;
   }
 
-let parse_common_encodings (cursor : Object.Buffer.cursor) count =
+let parse_common_encodings cursor count =
   Array.init count (fun _ -> Object.Buffer.Read.u32 cursor)
 
-let parse_personalities (cursor : Object.Buffer.cursor) count =
+let parse_personalities cursor count =
   Array.init count (fun _ -> Object.Buffer.Read.u32 cursor)
 
-let parse_index_entry (cur : Object.Buffer.cursor) =
+let parse_index_entry cur =
   let open Object.Buffer in
   let function_offset = Read.u32 cur in
   let second_level_page_section_offset = Read.u32 cur in
@@ -176,16 +176,16 @@ let parse_index_entry (cur : Object.Buffer.cursor) =
     lsda_index_array_section_offset;
   }
 
-let parse_index_entries (cursor : Object.Buffer.cursor) count =
+let parse_index_entries cursor count =
   Array.init count (fun _ -> parse_index_entry cursor)
 
-let parse_regular_entry (cur : Object.Buffer.cursor) =
+let parse_regular_entry cur =
   let open Object.Buffer in
   let function_offset = Read.u32 cur in
   let encoding = Read.u32 cur in
   { function_offset; encoding }
 
-let parse_compressed_entry (cur : Object.Buffer.cursor) =
+let parse_compressed_entry cur =
   let open Object.Buffer in
   (* Read 3-byte function offset *)
   let byte0 = Read.u8 cur in
@@ -206,15 +206,14 @@ let parse_compressed_entry (cur : Object.Buffer.cursor) =
   in
   { function_offset; encoding_index }
 
-let parse_regular_page (cursor : Object.Buffer.cursor)
-    (header : unwind_info_section_header) =
+let parse_regular_page cursor (header : unwind_info_section_header) =
   let entries =
     Array.init (Unsigned.UInt32.to_int header.entry_count) (fun _ ->
         parse_regular_entry cursor)
   in
   Regular { header; entries }
 
-let parse_compressed_page (buffer : Object.Buffer.t) page_start_offset =
+let parse_compressed_page buffer page_start_offset =
   let open Object.Buffer in
   let cur = cursor buffer in
   seek cur page_start_offset;
@@ -237,8 +236,7 @@ let parse_compressed_page (buffer : Object.Buffer.t) page_start_offset =
 
   Compressed { header; encoding_array; entries }
 
-let parse_second_level_page (buffer : Object.Buffer.t)
-    (base_section_offset : int) (page_offset : u32) =
+let parse_second_level_page buffer base_section_offset page_offset =
   let open Object.Buffer in
   let page_start_offset =
     base_section_offset + Unsigned.UInt32.to_int page_offset
@@ -258,7 +256,7 @@ let parse_second_level_page (buffer : Object.Buffer.t)
         (Invalid_compact_unwind_format
            ("Unknown page kind: " ^ Unsigned.UInt32.to_string kind))
 
-let parse_unwind_info (buffer : Object.Buffer.t) section_offset =
+let parse_unwind_info buffer section_offset =
   let open Object.Buffer in
   let cursor = Object.Buffer.cursor buffer in
   seek cursor section_offset;
@@ -352,7 +350,7 @@ let parse_unwind_info (buffer : Object.Buffer.t) section_offset =
     pages;
   }
 
-let detect_architecture (buffer : Object.Buffer.t) =
+let detect_architecture buffer =
   let open Object.Buffer in
   let cursor = cursor buffer in
   let magic = Read.u32 cursor in
@@ -374,7 +372,7 @@ let detect_architecture (buffer : Object.Buffer.t) =
     else raise (Invalid_compact_unwind_format "Unsupported 64-bit architecture")
   else raise (Invalid_compact_unwind_format "Not a valid MachO file")
 
-let get_unwind_mode (encoding : compact_unwind_encoding) (arch : architecture) =
+let get_unwind_mode encoding arch =
   match arch with
   | X86_64 -> Encoding.X86_64.get_mode encoding
   | ARM64 -> Encoding.ARM64.get_mode encoding

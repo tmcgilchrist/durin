@@ -72,7 +72,7 @@ let string_of_elf_machine = function
   | _ -> "unknown"
 
 (** Detect file format and architecture from buffer *)
-let detect_format_and_arch (buf : Object.Buffer.t) =
+let detect_format_and_arch buf =
   let format = Object_format.detect_format buf in
   match format with
   | ELF -> (
@@ -154,7 +154,7 @@ type encoding = {
 (** Encoding parameters that affect how DWARF data is parsed. T his bundles
     format with related context needed for parsing DIE attributes. *)
 
-let parse_initial_length (cur : Object.Buffer.cursor) : dwarf_format * u64 =
+let parse_initial_length cur =
   let open Object.Buffer in
   let first_four = Read.u32 cur in
   let first_val = Unsigned.UInt32.to_int first_four in
@@ -175,14 +175,13 @@ let dwarf_format = function
   | 8 -> DWARF64
   | n -> fail (Printf.sprintf "Unknown DWARF offset size: %d" n)
 
-let read_offset_for_format (format : dwarf_format) (cur : Object.Buffer.cursor)
-    =
+let read_offset_for_format format cur =
   let open Object.Buffer in
   match format with
   | DWARF32 -> Read.u32 cur |> Unsigned.UInt64.of_uint32
   | DWARF64 -> Read.u64 cur
 
-let object_format_to_section_name (format : Object_format.format) section =
+let object_format_to_section_name format section =
   match format with
   | Object_format.MACHO -> (
       match section with
@@ -471,7 +470,7 @@ module DebugMacro = struct
   type macro_unit = { header : header; entries : entry list }
   type section = { units : macro_unit list }
 
-  let parse_header (cur : Object.Buffer.cursor) =
+  let parse_header cur =
     let open Object.Buffer in
     let version = Read.u16 cur in
     let flags = Read.u8 cur in
@@ -487,7 +486,7 @@ module DebugMacro = struct
     in
     { format; version; flags; debug_line_offset; debug_str_offsets_offset }
 
-  let parse_entry (cur : Object.Buffer.cursor) (format : dwarf_format) =
+  let parse_entry cur format =
     let open Object.Buffer in
     let entry_type_code = Read.u8 cur in
     if Unsigned.UInt8.to_int entry_type_code = 0 then None
@@ -523,7 +522,7 @@ module DebugMacro = struct
       in
       Some { entry_type; line_number; string_offset; string_value; file_index }
 
-  let parse_unit (cur : Object.Buffer.cursor) =
+  let parse_unit cur =
     let header = parse_header cur in
     (* Entries are a cursor-driven stream with no length prefix, so this is an
        unfold (read until the terminator), not a fold over a collection. *)
@@ -579,7 +578,7 @@ module DebugMacinfo = struct
   (* TODO DWARF 4 (and earlier) macro format, revisit when filling
      out macro support. *)
 
-  let parse_entry (cur : Object.Buffer.cursor) =
+  let parse_entry cur =
     let open Object.Buffer in
     let type_code = Read.u8 cur |> Unsigned.UInt8.to_int in
     if type_code = 0 then None
@@ -766,7 +765,7 @@ type dwarf_expression_operation = {
   operand_string : string option;
 }
 
-let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) =
+let parse_dwarf_expression ?encoding expr_bytes =
   (* DW_OP_addr operands are target-address sized; DW_OP_call_ref operands are
      DWARF-offset sized (4 in 32-bit DWARF, 8 in 64-bit). Without an encoding we
      fall back to 8 bytes, the historical default. *)
@@ -1094,7 +1093,7 @@ let parse_dwarf_expression ?(encoding : encoding option) (expr_bytes : string) =
   in
   parse_ops 0 []
 
-let string_of_dwarf_operation (op : dwarf_expression_operation) =
+let string_of_dwarf_operation op =
   let opcode_name = string_of_operation_encoding op.opcode in
   match (op.operands, op.operand_string) with
   | [], None -> opcode_name
@@ -1106,7 +1105,7 @@ let string_of_dwarf_operation (op : dwarf_expression_operation) =
       let operand_strs = List.map string_of_int operands in
       Printf.sprintf "%s(%s,%s)" opcode_name (String.concat "," operand_strs) s
 
-let string_of_dwarf_expression (ops : dwarf_expression_operation list) =
+let string_of_dwarf_expression ops =
   String.concat " " (List.map string_of_dwarf_operation ops)
 
 (** DWARF Expression Evaluator *)
@@ -1168,7 +1167,7 @@ module Expression = struct
     else sub (shift_left one (8 * address_size)) one
 
   (** Start a new expression evaluation *)
-  let start_evaluation ~(bytecode : string) ~(encoding : encoding) =
+  let start_evaluation ~bytecode ~encoding =
     let address_size = Unsigned.UInt8.to_int encoding.address_size in
     {
       bytecode;
@@ -1914,8 +1913,7 @@ let parse_abbrev_table_from_cursor cur =
   parse_abbrevs ();
   table
 
-let parse_abbrev_table (buffer : Object.Buffer.t) (offset : u32) :
-    (u64, abbrev) Hashtbl.t =
+let parse_abbrev_table buffer offset =
   let open Object.Buffer in
   let section_offset =
     match find_debug_section_by_type buffer Debug_abbrev with
@@ -1929,16 +1927,14 @@ let parse_abbrev_table (buffer : Object.Buffer.t) (offset : u32) :
 
 (* String table helper functions *)
 
-let read_string_from_section buffer offset section_offset : string option =
+let read_string_from_section buffer offset section_offset =
   try
     let actual_offset = section_offset + offset in
     let cursor = Object.Buffer.cursor buffer ~at:actual_offset in
     Object.Buffer.Read.zero_string cursor ()
   with Invalid_argument _ -> None
 
-let resolve_string_index_in ~(str_offs_section : (u64 * u64) option)
-    ~(str_section : (u64 * u64) option) (buffer : Object.Buffer.t)
-    (format : dwarf_format) (index : int) : string =
+let resolve_string_index_in ~str_offs_section ~str_section buffer format index =
   (* Try to resolve string index using debug_str_offs and debug_str sections *)
   match (str_offs_section, str_section) with
   | Some (str_offs_offset, _), Some (str_offset, _) -> (
@@ -1988,8 +1984,7 @@ let resolve_string_index_in ~(str_offs_section : (u64 * u64) option)
   | None, Some (_, _) -> Printf.sprintf "<strx_no_offs:%d>" index
   | None, None -> Printf.sprintf "<strx_no_sections:%d>" index
 
-let resolve_string_index (buffer : Object.Buffer.t) (format : dwarf_format)
-    (index : int) : string =
+let resolve_string_index buffer format index =
   resolve_string_index_in
     ~str_offs_section:(find_debug_section_by_type buffer Debug_str_offs)
     ~str_section:(find_debug_section_by_type buffer Debug_str)
@@ -2007,7 +2002,7 @@ type str_resolver = {
       (* .debug_line_str offset -> string (DW_FORM_line_strp) *)
 }
 
-let buffer_str_resolver (buffer : Object.Buffer.t) : str_resolver =
+let buffer_str_resolver buffer =
   let read_at section offset fallback =
     match find_debug_section_by_type buffer section with
     | Some (sec_off, _) -> (
@@ -2028,8 +2023,7 @@ let buffer_str_resolver (buffer : Object.Buffer.t) : str_resolver =
         read_at Debug_line_str offset (Printf.sprintf "<line_strp_offset:%d>"));
   }
 
-let rec skip_attribute_value (cur : Object.Buffer.cursor) form
-    (encoding : encoding) =
+let rec skip_attribute_value (cur : Object.Buffer.cursor) form encoding =
   match form with
   | DW_FORM_addr ->
       let sz = Unsigned.UInt8.to_int encoding.address_size in
@@ -2105,26 +2099,24 @@ let rec skip_attribute_value (cur : Object.Buffer.cursor) form
   | DW_FORM_GNU_strp_alt ->
       cur.position <- cur.position + offset_size_for_format encoding.format
 
-let rec skip_die (cur : Object.Buffer.cursor)
-    (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding) : unit =
+let rec skip_die cur abbrev_table encoding =
   let abbrev_code = Object.Buffer.Read.uleb128 cur in
   if abbrev_code <> 0 then (
     let abbrev =
       Hashtbl.find abbrev_table (Unsigned.UInt64.of_int abbrev_code)
     in
     List.iter
-      (fun (spec : attr_spec) -> skip_attribute_value cur spec.form encoding)
+      (fun spec -> skip_attribute_value cur spec.form encoding)
       abbrev.attr_specs;
     if abbrev.has_children then skip_children cur abbrev_table encoding)
 
-and skip_children (cur : Object.Buffer.cursor)
-    (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding) : unit =
+and skip_children cur abbrev_table encoding =
   let rec loop () =
     let code = Object.Buffer.Read.uleb128 cur in
     if code <> 0 then (
       let abbrev = Hashtbl.find abbrev_table (Unsigned.UInt64.of_int code) in
       List.iter
-        (fun (spec : attr_spec) -> skip_attribute_value cur spec.form encoding)
+        (fun spec -> skip_attribute_value cur spec.form encoding)
         abbrev.attr_specs;
       if abbrev.has_children then skip_children cur abbrev_table encoding;
       loop ())
@@ -2173,10 +2165,7 @@ module DIE = struct
       (fun attr -> if attr.attr = attr_name then Some attr.value else None)
       die.attributes
 
-  let rec parse_attribute_value (cur : Object.Buffer.cursor)
-      (form : attribute_form_encoding) (encoding : encoding)
-      (strings : str_resolver) ?(implicit_const : int64 option) () :
-      attribute_value =
+  let rec parse_attribute_value cur form encoding strings ?implicit_const () =
     match form with
     | DW_FORM_implicit_const -> (
         match implicit_const with
@@ -2364,9 +2353,7 @@ module DIE = struct
         String (strings.string_at (Unsigned.UInt64.to_int offset))
     | _ -> String "<unsupported_form>"
 
-  let process_constant_attribute (decode : int -> 'a)
-      (wrap : 'a -> attribute_value) (raw_value : attribute_value) :
-      attribute_value =
+  let process_constant_attribute decode wrap raw_value =
     match raw_value with
     | UData code -> (
         let code_int = Unsigned.UInt64.to_int code in
@@ -2409,18 +2396,15 @@ module DIE = struct
   let process_defaulted_attribute =
     process_constant_attribute defaulted_attribute (fun v -> Defaulted v)
 
-  let rec parse_children_seq (cur : Object.Buffer.cursor)
-      (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
-      (strings : str_resolver) : t Seq.t =
+  let rec parse_children_seq (cur : Object.Buffer.cursor) abbrev_table encoding
+      strings =
     (* Re-runnable child sequence. Capture the child-list start position and
        re-derive a fresh cursor on each traversal, advancing to the next sibling
        by skipping the current child's subtree. Memoised so each child is parsed
        at most once. *)
     children_from cur.buffer cur.position abbrev_table encoding strings
 
-  and children_from (buffer : Object.Buffer.t) (pos : int)
-      (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
-      (strings : str_resolver) : t Seq.t =
+  and children_from buffer pos abbrev_table encoding strings =
     Seq.memoize (fun () ->
         let cur = Object.Buffer.cursor buffer ~at:pos in
         match parse_die_ cur abbrev_table encoding strings with
@@ -2432,14 +2416,10 @@ module DIE = struct
                 children_from buffer cur.position abbrev_table encoding strings
               ))
 
-  and parse_die (cur : Object.Buffer.cursor)
-      (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
-      (strings : str_resolver) : t option =
+  and parse_die cur abbrev_table encoding strings =
     Option.map fst (parse_die_ cur abbrev_table encoding strings)
 
-  and parse_die_ (cur : Object.Buffer.cursor)
-      (abbrev_table : (u64, abbrev) Hashtbl.t) (encoding : encoding)
-      (strings : str_resolver) : (t * bool) option =
+  and parse_die_ cur abbrev_table encoding strings =
     try
       (* Capture the position at the start of this DIE *)
       let die_offset = cur.position in
@@ -2452,7 +2432,7 @@ module DIE = struct
         | Some abbrev ->
             let attributes =
               List.map
-                (fun (spec : attr_spec) ->
+                (fun spec ->
                   let raw_value =
                     parse_attribute_value cur spec.form encoding strings
                       ?implicit_const:spec.implicit_const ()
@@ -2491,13 +2471,9 @@ module DIE = struct
       (* A truncated DIE reads past the section end, so stop parsing. *)
     with Object.Buffer.Invalid_format _ | Invalid_argument _ -> None
 
-  let rec preorder (die : t) : t Seq.t =
-    Seq.cons die (Seq.concat_map preorder die.children)
-
-  let descendants (die : t) : t Seq.t = Seq.concat_map preorder die.children
-
-  let find_descendant (pred : t -> bool) (die : t) : t option =
-    Seq.find pred (descendants die)
+  let rec preorder die = Seq.cons die (Seq.concat_map preorder die.children)
+  let descendants die = Seq.concat_map preorder die.children
+  let find_descendant pred die = Seq.find pred (descendants die)
 end
 
 (* Represents a section of the binary that corresponds to an
@@ -2535,7 +2511,7 @@ module CompileUnit = struct
 
   (** Extract encoding parameters from the unit header. This provides the
       context needed for parsing DIE attributes. *)
-  let encoding t : encoding =
+  let encoding t =
     {
       format = t.header.format;
       address_size = t.header.address_size;
@@ -2580,7 +2556,7 @@ module DieCursor = struct
         | Some abbrev ->
             let attributes =
               List.map
-                (fun (spec : attr_spec) ->
+                (fun spec ->
                   let raw_value =
                     DIE.parse_attribute_value t.cursor spec.form t.encoding
                       t.strings ?implicit_const:spec.implicit_const ()
@@ -2621,7 +2597,7 @@ module DieZipper = struct
     strings : str_resolver;
   }
 
-  let of_die_cursor (dc : DieCursor.t) =
+  let of_die_cursor dc =
     match DieCursor.next dc with
     | None -> None
     | Some (die, has_children) ->
@@ -2749,7 +2725,7 @@ module DebugStrOffsets = struct
   type offset_entry = { offset : u64; resolved_string : string option }
   type t = { header : header; offsets : offset_entry array }
 
-  let parse_header (cursor : Object.Buffer.cursor) : header =
+  let parse_header (cursor : Object.Buffer.cursor) =
     let start_pos = cursor.position in
     let format, unit_length = parse_initial_length cursor in
     let version = Object.Buffer.Read.u16 cursor in
@@ -2772,9 +2748,7 @@ module DebugStrOffsets = struct
 
     { format; unit_length; version; padding; span }
 
-  let parse_offsets (cursor : Object.Buffer.cursor) (header : header)
-      (debug_str_section : (u32 * u64) option) (buffer : Object.Buffer.t) :
-      offset_entry array =
+  let parse_offsets cursor header debug_str_section buffer =
     let _header_size = Unsigned.UInt64.to_int header.span.size in
     let offset_size = offset_size_for_format header.format in
     let data_size = Unsigned.UInt64.to_int header.unit_length - 4 in
@@ -2799,7 +2773,7 @@ module DebugStrOffsets = struct
         in
         { offset; resolved_string })
 
-  let parse (buffer : Object.Buffer.t) (section_offset : u32) : t =
+  let parse buffer section_offset =
     let cursor =
       Object.Buffer.cursor buffer ~at:(Unsigned.UInt32.to_int section_offset)
     in
@@ -2831,7 +2805,7 @@ module DebugStr = struct
     total_size : int;  (** Total size of the section in bytes *)
   }
 
-  let parse buffer : t option =
+  let parse buffer =
     match find_debug_section_by_type buffer Debug_str with
     | None -> None
     | Some (section_offset, section_size) ->
@@ -2881,7 +2855,7 @@ module DebugLineStr = struct
     total_size : int;  (** Total size of the section in bytes *)
   }
 
-  let parse buffer : t option =
+  let parse buffer =
     match find_debug_section_by_type buffer Debug_line_str with
     | None -> None
     | Some (section_offset, section_size) ->
@@ -3206,7 +3180,7 @@ module DebugAranges = struct
     in
     read_ranges []
 
-  let parse (buffer : Object.Buffer.t) : aranges_set option =
+  let parse buffer =
     let open Object.Buffer in
     match find_debug_section_by_type buffer Debug_aranges with
     | None -> None
@@ -3300,7 +3274,7 @@ module DebugLoclists = struct
       offset_entry_count;
     }
 
-  let parse_offset_table cursor (header : header) =
+  let parse_offset_table cursor header =
     let count = Unsigned.UInt32.to_int header.offset_entry_count in
     Array.init count (fun _i -> read_offset_for_format header.format cursor)
 
@@ -3382,7 +3356,7 @@ module DebugLoclists = struct
           Some { header; offset_table; lists }
         with Parse_error _ | Invalid_argument _ -> None)
 
-  let resolve_location_list buffer (offset : u64) (address_size : u8) =
+  let resolve_location_list buffer offset address_size =
     match find_debug_section_by_type buffer Debug_loclists with
     | None -> None
     | Some (section_offset, _section_size) ->
@@ -3436,7 +3410,7 @@ module DebugRnglists = struct
       offset_entry_count;
     }
 
-  let parse_offset_table cursor (header : header) =
+  let parse_offset_table cursor header =
     let count = Unsigned.UInt32.to_int header.offset_entry_count in
     Array.init count (fun _i -> read_offset_for_format header.format cursor)
 
@@ -3504,7 +3478,7 @@ module DebugRnglists = struct
           Some { header; offset_table; lists }
         with Parse_error _ | Invalid_argument _ -> None)
 
-  let resolve_range_list buffer (offset : u64) (address_size : u8) =
+  let resolve_range_list buffer offset address_size =
     match find_debug_section_by_type buffer Debug_rnglists with
     | None -> None
     | Some (section_offset, _section_size) ->
@@ -3514,8 +3488,7 @@ module DebugRnglists = struct
         Some (parse_range_list cursor address_size)
 end
 
-let parse_compile_units_ (dwarf_object : Object.Buffer.t) : CompileUnit.t Seq.t
-    =
+let parse_compile_units_ dwarf_object =
   match find_debug_section_by_type dwarf_object Debug_info with
   | None -> Seq.empty
   | Some (section_offset, section_size) ->
@@ -3656,8 +3629,7 @@ module DebugLine = struct
       Supports all standard DWARF 5 content types and forms including
       DW_FORM_line_strp indirect string references and DW_FORM_data16 MD5
       checksums. *)
-  let parse_line_program_header (cur : Object.Buffer.cursor) buffer :
-      line_program_header =
+  let parse_line_program_header cur buffer =
     let format, unit_length = parse_initial_length cur in
     let version = Object.Buffer.Read.u16 cur in
     let version_int = Unsigned.UInt16.to_int version in
@@ -3988,8 +3960,7 @@ module DebugLine = struct
       This implements the DWARF 5 line number state machine as specified in
       section 6.2.2. The state machine processes opcodes and generates line
       table entries that map program addresses to source locations. *)
-  let parse_line_program (cur : Object.Buffer.cursor)
-      (header : line_program_header) : line_table_entry Seq.t =
+  let parse_line_program cur header =
     let offset_size = offset_size_for_format header.format in
     let version_int = Unsigned.UInt16.to_int header.version in
     let header_overhead =
@@ -4359,8 +4330,7 @@ module DebugLoc = struct
     | BaseAddress of u64
     | Location of { begin_addr : u64; end_addr : u64; expr : string }
 
-  let parse_list (cur : Object.Buffer.cursor) (address_size : int) : entry list
-      =
+  let parse_list cur address_size =
     let max_addr =
       if address_size = 4 then Unsigned.UInt64.of_int 0xFFFFFFFF
       else Unsigned.UInt64.max_int
@@ -4398,8 +4368,7 @@ module DebugRanges = struct
     | BaseAddress of u64
     | Range of { begin_addr : u64; end_addr : u64 }
 
-  let parse_list (cur : Object.Buffer.cursor) (address_size : int) : entry list
-      =
+  let parse_list cur address_size =
     let max_addr =
       if address_size = 4 then Unsigned.UInt64.of_int 0xFFFFFFFF
       else Unsigned.UInt64.max_int
@@ -4427,8 +4396,7 @@ module DebugRanges = struct
     List.rev !entries
 end
 
-let resolve_location_list (buffer : Object.Buffer.t) (offset : u64)
-    (address_size : int) : DebugLoc.entry list option =
+let resolve_location_list buffer offset address_size =
   match find_debug_section_by_type buffer Debug_loc with
   | None -> None
   | Some (section_offset, _section_size) ->
@@ -4438,8 +4406,7 @@ let resolve_location_list (buffer : Object.Buffer.t) (offset : u64)
       let cur = Object.Buffer.cursor buffer ~at:absolute_pos in
       Some (DebugLoc.parse_list cur address_size)
 
-let resolve_range_list (buffer : Object.Buffer.t) (offset : u64)
-    (address_size : int) : DebugRanges.entry list option =
+let resolve_range_list buffer offset address_size =
   match find_debug_section_by_type buffer Debug_ranges with
   | None -> None
   | Some (section_offset, _section_size) ->
@@ -4461,8 +4428,7 @@ module DebugTypes = struct
     span : span;
   }
 
-  let parse_type_unit_header (cur : Object.Buffer.cursor) :
-      span * type_unit_header =
+  let parse_type_unit_header (cur : Object.Buffer.cursor) =
     let start = cur.position in
     let format, unit_length = parse_initial_length cur in
     let version = Object.Buffer.Read.u16 cur in
@@ -4503,8 +4469,7 @@ module DebugTypes = struct
         span = hdr_span;
       } )
 
-  let parse_type_units (buffer : Object.Buffer.t) :
-      (span * type_unit_header) Seq.t =
+  let parse_type_units buffer =
     match find_debug_section_by_type buffer Debug_types with
     | None -> Seq.empty
     | Some (section_offset, section_size) ->
@@ -4544,7 +4509,7 @@ module DebugPubnames = struct
 
   type entry = { offset : u64; name : string }
 
-  let parse_header (cur : Object.Buffer.cursor) : header =
+  let parse_header (cur : Object.Buffer.cursor) =
     let start_pos = cur.position in
     let format, unit_length = parse_initial_length cur in
     let version = Object.Buffer.Read.u16 cur in
@@ -4559,8 +4524,7 @@ module DebugPubnames = struct
     in
     { format; unit_length; version; debug_info_offset; debug_info_length; span }
 
-  let parse_entries (cur : Object.Buffer.cursor) (header : header) : entry list
-      =
+  let parse_entries cur header =
     let entries = ref [] in
     let done_ = ref false in
     while not !done_ do
@@ -4592,7 +4556,7 @@ module DebugPubtypes = struct
 
   type entry = { offset : u64; name : string }
 
-  let parse_header (cur : Object.Buffer.cursor) : header =
+  let parse_header (cur : Object.Buffer.cursor) =
     let start_pos = cur.position in
     let format, unit_length = parse_initial_length cur in
     let version = Object.Buffer.Read.u16 cur in
@@ -4607,8 +4571,7 @@ module DebugPubtypes = struct
     in
     { format; unit_length; version; debug_info_offset; debug_info_length; span }
 
-  let parse_entries (cur : Object.Buffer.cursor) (header : header) : entry list
-      =
+  let parse_entries cur header =
     let entries = ref [] in
     let done_ = ref false in
     while not !done_ do
@@ -4890,12 +4853,11 @@ module CallFrame = struct
     }
 
   (* Parse a null-terminated augmentation string from a cursor *)
-  let parse_augmentation_string (cur : Object.Buffer.cursor) : string =
+  let parse_augmentation_string cur =
     match Object.Buffer.Read.zero_string cur () with Some s -> s | None -> ""
 
   (* Parse augmentation data if present based on augmentation string *)
-  let parse_augmentation_data (cur : Object.Buffer.cursor)
-      (augmentation : string) : (u64 * string) option =
+  let parse_augmentation_data cur augmentation =
     if String.length augmentation > 0 && augmentation.[0] = 'z' then (
       let length_int = Object.Buffer.Read.uleb128 cur in
       let length = Unsigned.UInt64.of_int length_int in
@@ -4908,7 +4870,7 @@ module CallFrame = struct
     else None
 
   (* Parse call frame instructions as raw bytes *)
-  let parse_instructions (cur : Object.Buffer.cursor) (length : int) : string =
+  let parse_instructions cur length =
     let data = Bytes.create length in
     for i = 0 to length - 1 do
       Bytes.set data i
@@ -4917,8 +4879,7 @@ module CallFrame = struct
     Bytes.to_string data
 
   (* Parse a Common Information Entry from the Debug_frame section *)
-  let parse_common_information_entry (cur : Object.Buffer.cursor) :
-      common_information_entry =
+  let parse_common_information_entry (cur : Object.Buffer.cursor) =
     let start_pos = cur.position in
     let format, length = parse_initial_length cur in
     let cie_id = read_offset_for_format format cur in
@@ -4987,8 +4948,7 @@ module CallFrame = struct
     }
 
   (* Parse a Frame Description Entry from the Debug_frame section *)
-  let parse_frame_description_entry (cur : Object.Buffer.cursor)
-      (start_pos : int) =
+  let parse_frame_description_entry cur start_pos =
     let open Object.Buffer in
     let format, length = parse_initial_length cur in
     let cie_pointer = read_offset_for_format format cur in
@@ -5097,8 +5057,7 @@ module CallFrame = struct
   (* Parse CIE initial instructions to establish proper initial CFI state. The
      [arch] supplies the default CFA when the CIE carries no initial
      instructions. *)
-  let parse_initial_state ?(arch = X86_64) (cie : common_information_entry) :
-      cfi_state =
+  let parse_initial_state ?(arch = X86_64) cie =
     if String.length cie.initial_instructions = 0 then
       (* No initial instructions, use architecture-aware defaults *)
       initial_cfi_state ~arch ()
@@ -5196,8 +5155,7 @@ module CallFrame = struct
     else ("", pos)
 
   (* Basic CFI instruction parser - extracts info from instruction bytes *)
-  let parse_cfi_instructions (instructions : string) (code_alignment : int64)
-      (_data_alignment : int64) : (int * string) list =
+  let parse_cfi_instructions instructions code_alignment _data_alignment =
     let rec parse_byte_stream bytes pos pc_offset acc =
       if pos >= String.length bytes then List.rev acc
       else
@@ -5539,8 +5497,7 @@ module DebugNames = struct
   }
 
   (** Parse augmentation string from debug_names header *)
-  let parse_augmentation_string (cur : Object.Buffer.cursor) (size : u32) :
-      string =
+  let parse_augmentation_string cur size =
     if Unsigned.UInt32.to_int size = 0 then ""
     else
       let data = Bytes.create (Unsigned.UInt32.to_int size) in
@@ -5551,7 +5508,7 @@ module DebugNames = struct
       Bytes.to_string data
 
   (** Parse name index header *)
-  let parse_name_index_header (cur : Object.Buffer.cursor) : name_index_header =
+  let parse_name_index_header (cur : Object.Buffer.cursor) =
     let start_pos = cur.position in
     let format, unit_length = parse_initial_length cur in
     let version = Object.Buffer.Read.u16 cur in
@@ -5586,7 +5543,7 @@ module DebugNames = struct
     }
 
   (** Parse array of 32-bit offsets *)
-  let parse_u32_array (cur : Object.Buffer.cursor) (count : u32) : u32 array =
+  let parse_u32_array cur count =
     let arr =
       Array.make (Unsigned.UInt32.to_int count) (Unsigned.UInt32.of_int 0)
     in
@@ -5596,7 +5553,7 @@ module DebugNames = struct
     arr
 
   (** Parse array of 64-bit signatures *)
-  let parse_u64_array (cur : Object.Buffer.cursor) (count : u32) : u64 array =
+  let parse_u64_array cur count =
     let arr =
       Array.make (Unsigned.UInt32.to_int count) (Unsigned.UInt64.of_int 0)
     in
@@ -5606,7 +5563,7 @@ module DebugNames = struct
     arr
 
   (** DJB2 hash function used by DWARF 5 debug_names sections *)
-  let djb2_hash (s : string) : u32 =
+  let djb2_hash s =
     let hash = ref 5381 in
     String.iter
       (fun c ->
@@ -5616,8 +5573,7 @@ module DebugNames = struct
     Unsigned.UInt32.of_int !hash
 
   (** Resolve debug_str offset to debug_str_entry with both offset and value *)
-  let resolve_debug_str_offset (buffer : Object.Buffer.t) (offset : u32) :
-      debug_str_entry =
+  let resolve_debug_str_offset buffer offset =
     match find_debug_section_by_type buffer Debug_str with
     | Some (str_section_offset, _) -> (
         match
@@ -5643,14 +5599,12 @@ module DebugNames = struct
 
   (** Calculate the absolute byte address of an entry in the debug_names section
   *)
-  let calculate_entry_address (section_base_offset : u32)
-      (relative_offset : int) : u32 =
+  let calculate_entry_address section_base_offset relative_offset =
     Unsigned.UInt32.add section_base_offset
       (Unsigned.UInt32.of_int relative_offset)
 
   (** Calculate addresses for all components of a debug_names section *)
-  let calculate_section_addresses (section_base_offset : u32)
-      (header : name_index_header) : (string * u32) list =
+  let calculate_section_addresses section_base_offset header =
     let addresses = ref [] in
     let current_offset = ref 0 in
 
@@ -5714,7 +5668,7 @@ module DebugNames = struct
 
   (* Parse debug_names abbreviation table *)
   let parse_debug_names_abbreviation_table (cur : Object.Buffer.cursor)
-      (abbrev_table_size : u32) : debug_names_abbrev list =
+      abbrev_table_size =
     let start_position = cur.position in
     let end_position =
       start_position + Unsigned.UInt32.to_int abbrev_table_size
@@ -5766,8 +5720,7 @@ module DebugNames = struct
     List.rev !abbreviations
 
   (* Parse a single entry from entry pool at a specific offset *)
-  let parse_single_entry (cur : Object.Buffer.cursor)
-      (abbrev_table : (u64, debug_names_abbrev) Hashtbl.t) : name_index_entry =
+  let parse_single_entry cur abbrev_table =
     let abbrev_code_int = Object.Buffer.Read.uleb128 cur in
     let abbrev_code = Unsigned.UInt64.of_int abbrev_code_int in
     match Hashtbl.find_opt abbrev_table abbrev_code with
@@ -5823,8 +5776,7 @@ module DebugNames = struct
              (String.concat "; " (List.map string_of_int available_codes)))
 
   (* Parse a complete debug_names section *)
-  let parse_debug_names_section (cur : Object.Buffer.cursor)
-      (buffer : Object.Buffer.t) : debug_names_section =
+  let parse_debug_names_section cur buffer =
     let header = parse_name_index_header cur in
 
     let comp_unit_offsets = parse_u32_array cur header.comp_unit_count in
@@ -5897,10 +5849,9 @@ module DebugNames = struct
     let entry_pool =
       (* DWARF 5 Figure 6.1: Each entry_offset points to a SERIES of entries for that name *)
       (* Each series is terminated by abbreviation code 0 *)
-      let parse_entry_series (start_offset : int) =
+      let parse_entry_series start_offset =
         (* Parse a series of entries starting at start_offset until we hit terminator (abbrev code 0) *)
-        let rec parse_series_rec (cur_offset : int)
-            (acc : name_index_entry list) =
+        let rec parse_series_rec cur_offset acc =
           try
             let cur = Object.Buffer.cursor buffer ~at:cur_offset in
             let abbrev_code_int = Object.Buffer.Read.uleb128 cur in
@@ -5972,10 +5923,8 @@ module DebugNames = struct
   (* Parse a single entry from the entry pool at the given buffer position.
      Returns None if terminator (abbrev code 0) is found, or Some with entry
      details. *)
-  let parse_single_entry_at_cursor (cursor : Object.Buffer.cursor)
-      (abbrev_table : debug_names_abbrev list) (current_offset_ref : int ref)
-      (entry_pool_relative_offset : int) (entry_offset : int)
-      (absolute_entry_offset : int) : entry_parse_result option =
+  let parse_single_entry_at_cursor cursor abbrev_table current_offset_ref
+      entry_pool_relative_offset entry_offset absolute_entry_offset =
     let entry_start_relative = !current_offset_ref - absolute_entry_offset in
 
     (* Read abbreviation code *)
@@ -6096,10 +6045,8 @@ module DebugNames = struct
 
   (* Parse all entries in a series until terminator (abbrev code 0) is found.
       Returns list of parsed entries. *)
-  let parse_entry_series (buffer : Object.Buffer.t)
-      (absolute_entry_offset : int) (abbrev_table : debug_names_abbrev list)
-      (entry_pool_relative_offset : int) (entry_offset : int) :
-      entry_parse_result list =
+  let parse_entry_series buffer absolute_entry_offset abbrev_table
+      entry_pool_relative_offset entry_offset =
     let current_offset_ref = ref absolute_entry_offset in
 
     let rec parse_series_rec acc =
@@ -6129,7 +6076,7 @@ module DebugNames = struct
       ]
 
   (* Calculate entry pool offset based on header information *)
-  let calculate_entry_pool_offset (header : name_index_header) : int =
+  let calculate_entry_pool_offset header =
     let header_size = header.span in
     let cu_offsets_size = Unsigned.UInt32.to_int header.comp_unit_count * 4 in
     let tu_offsets_size =
@@ -6150,9 +6097,7 @@ module DebugNames = struct
 
   (* Parse all entries for a given name index according to DWARF 5
       specification *)
-  let parse_all_entries_for_name (buffer : Object.Buffer.t)
-      (debug_names : debug_names_section) (section_offset : int)
-      (name_idx : int) : entry_parse_result list =
+  let parse_all_entries_for_name buffer debug_names section_offset name_idx =
     try
       if name_idx < Array.length debug_names.entry_offsets then
         let entry_offset =
@@ -6197,13 +6142,12 @@ module DebugNames = struct
       ]
 
   (* Find bucket index for a given name using DJB2 hash algorithm *)
-  let find_bucket_index (name : string) (bucket_count : int) : int =
+  let find_bucket_index name bucket_count =
     let hash = djb2_hash name in
     Unsigned.UInt32.to_int hash mod bucket_count
 
   (* Get all name indices for a given bucket *)
-  let get_name_indices_for_bucket (debug_names : debug_names_section)
-      (bucket_index : int) : int list =
+  let get_name_indices_for_bucket debug_names bucket_index =
     if bucket_index >= Array.length debug_names.buckets then []
     else
       let bucket_entry = debug_names.buckets.(bucket_index) in
@@ -6225,8 +6169,7 @@ module DebugNames = struct
         List.rev (collect_names [] 0)
 
   (* Find all name indices that match a given name exactly *)
-  let find_name_indices (debug_names : debug_names_section) (name : string) :
-      int list =
+  let find_name_indices debug_names name =
     let bucket_index =
       find_bucket_index name (Array.length debug_names.buckets)
     in
@@ -6240,9 +6183,7 @@ module DebugNames = struct
       name_indices
 
   (* Find all entries (DIEs) that match a given name *)
-  let find_entries_by_name (buffer : Object.Buffer.t)
-      (debug_names : debug_names_section) (section_offset : int) (name : string)
-      : entry_parse_result list =
+  let find_entries_by_name buffer debug_names section_offset name =
     let name_indices = find_name_indices debug_names name in
     List.fold_left
       (fun acc name_idx ->
@@ -6253,9 +6194,7 @@ module DebugNames = struct
       [] name_indices
 
   (* Find all symbols (any kind of DIE) matching a name *)
-  let lookup_symbols_by_name (buffer : Object.Buffer.t)
-      (debug_names : debug_names_section) (section_offset : int) (name : string)
-      : entry_parse_result list =
+  let lookup_symbols_by_name buffer debug_names section_offset name =
     find_entries_by_name buffer debug_names section_offset name
 
   (* Check if a string contains a substring *)
@@ -6266,9 +6205,7 @@ module DebugNames = struct
     with Not_found -> false
 
   (* Find specifically function DIEs by name *)
-  let find_functions_by_name (buffer : Object.Buffer.t)
-      (debug_names : debug_names_section) (section_offset : int) (name : string)
-      : entry_parse_result list =
+  let find_functions_by_name buffer debug_names section_offset name =
     let all_entries =
       find_entries_by_name buffer debug_names section_offset name
     in
@@ -6279,9 +6216,7 @@ module DebugNames = struct
       all_entries
 
   (* Find specifically type DIEs by name *)
-  let find_types_by_name (buffer : Object.Buffer.t)
-      (debug_names : debug_names_section) (section_offset : int) (name : string)
-      : entry_parse_result list =
+  let find_types_by_name buffer debug_names section_offset name =
     let all_entries =
       find_entries_by_name buffer debug_names section_offset name
     in
@@ -6296,12 +6231,11 @@ module DebugNames = struct
       all_entries
 
   (* Get all symbol names available in the debug_names section *)
-  let get_all_symbol_names (debug_names : debug_names_section) : string list =
+  let get_all_symbol_names debug_names =
     Array.to_list debug_names.name_table |> List.map (fun entry -> entry.value)
 
   (* Find names matching a prefix *)
-  let search_names_with_prefix (debug_names : debug_names_section)
-      (prefix : string) : string list =
+  let search_names_with_prefix debug_names prefix =
     Array.to_list debug_names.name_table
     |> List.map (fun entry -> entry.value)
     |> List.filter (fun name ->
@@ -6309,14 +6243,12 @@ module DebugNames = struct
         && String.sub name 0 (String.length prefix) = prefix)
 
   (* Filter entries by abbreviation tag *)
-  let filter_entries_by_tag (tag : abbreviation_tag)
-      (entries : entry_parse_result list) : entry_parse_result list =
+  let filter_entries_by_tag tag entries =
     let target_tag_str = string_of_abbreviation_tag tag in
     List.filter (fun entry -> entry.tag_name = target_tag_str) entries
 
   (* Filter entries by multiple tags *)
-  let filter_entries_by_tags (tags : abbreviation_tag list)
-      (entries : entry_parse_result list) : entry_parse_result list =
+  let filter_entries_by_tags tags entries =
     let target_tag_strs =
       List.map string_of_abbreviation_tag tags
       |> List.fold_left (fun acc tag -> tag :: acc) []
@@ -6324,9 +6256,7 @@ module DebugNames = struct
     List.filter (fun entry -> List.mem entry.tag_name target_tag_strs) entries
 
   (* Find variables by name (excludes functions and types) *)
-  let find_variables_by_name (buffer : Object.Buffer.t)
-      (debug_names : debug_names_section) (section_offset : int) (name : string)
-      : entry_parse_result list =
+  let find_variables_by_name buffer debug_names section_offset name =
     let all_entries =
       find_entries_by_name buffer debug_names section_offset name
     in
@@ -6338,9 +6268,7 @@ module DebugNames = struct
       all_entries
 
   (* Find namespaces or modules by name *)
-  let find_namespaces_by_name (buffer : Object.Buffer.t)
-      (debug_names : debug_names_section) (section_offset : int) (name : string)
-      : entry_parse_result list =
+  let find_namespaces_by_name buffer debug_names section_offset name =
     let all_entries =
       find_entries_by_name buffer debug_names section_offset name
     in
@@ -6351,9 +6279,7 @@ module DebugNames = struct
       all_entries
 
   (* Search entries with regex pattern matching on names *)
-  let search_entries_with_pattern (buffer : Object.Buffer.t)
-      (debug_names : debug_names_section) (section_offset : int)
-      (pattern : string) : entry_parse_result list =
+  let search_entries_with_pattern buffer debug_names section_offset pattern =
     let all_names = get_all_symbol_names debug_names in
     let regex = Str.regexp pattern in
     let matching_names =
@@ -6374,8 +6300,7 @@ module DebugNames = struct
       [] matching_names
 
   (* Find entries within a specific compilation unit *)
-  let find_entries_in_compilation_unit (entries : entry_parse_result list)
-      (cu_index : u32) : entry_parse_result list =
+  let find_entries_in_compilation_unit entries cu_index =
     List.filter
       (fun entry ->
         match entry.compile_unit_index with
@@ -6384,8 +6309,7 @@ module DebugNames = struct
       entries
 
   (* Find entries within a specific type unit *)
-  let find_entries_in_type_unit (entries : entry_parse_result list)
-      (tu_index : u32) : entry_parse_result list =
+  let find_entries_in_type_unit entries tu_index =
     List.filter
       (fun entry ->
         match entry.type_unit_index with
@@ -6394,8 +6318,7 @@ module DebugNames = struct
       entries
 
   (* Find entries with a specific type hash *)
-  let find_entries_with_type_hash (entries : entry_parse_result list)
-      (type_hash : u64) : entry_parse_result list =
+  let find_entries_with_type_hash entries type_hash =
     List.filter
       (fun entry ->
         match entry.type_hash with
@@ -6404,9 +6327,8 @@ module DebugNames = struct
       entries
 
   (* Find children of a given entry using parent offset relationships *)
-  let find_children_entries (buffer : Object.Buffer.t)
-      (debug_names : debug_names_section) (section_offset : int)
-      (parent_entry : entry_parse_result) : entry_parse_result list =
+  let find_children_entries buffer debug_names section_offset
+      (parent_entry : entry_parse_result) =
     let all_names = get_all_symbol_names debug_names in
     let all_entries =
       List.fold_left
@@ -6427,8 +6349,7 @@ module DebugNames = struct
 
   (* Find all entries that belong to the same compilation unit as a given entry
   *)
-  let find_sibling_entries (entries : entry_parse_result list)
-      (target_entry : entry_parse_result) : entry_parse_result list =
+  let find_sibling_entries entries target_entry =
     match target_entry.compile_unit_index with
     | Some cu_index ->
         List.filter
@@ -6441,8 +6362,7 @@ module DebugNames = struct
     | None -> []
 
   (* Group entries by their compilation unit *)
-  let group_entries_by_compilation_unit (entries : entry_parse_result list) :
-      (u32 * entry_parse_result list) list =
+  let group_entries_by_compilation_unit entries =
     let cu_groups = Hashtbl.create 16 in
     List.iter
       (fun entry ->
@@ -6459,8 +6379,7 @@ module DebugNames = struct
       cu_groups []
 
   (* Group entries by their type unit *)
-  let group_entries_by_type_unit (entries : entry_parse_result list) :
-      (u32 * entry_parse_result list) list =
+  let group_entries_by_type_unit entries =
     let tu_groups = Hashtbl.create 16 in
     List.iter
       (fun entry ->
@@ -6477,8 +6396,7 @@ module DebugNames = struct
       tu_groups []
 
   (* Find entries with the same type hash (for type deduplication) *)
-  let group_entries_by_type_hash (entries : entry_parse_result list) :
-      (u64 * entry_parse_result list) list =
+  let group_entries_by_type_hash entries =
     let hash_groups = Hashtbl.create 16 in
     List.iter
       (fun entry ->
@@ -6498,9 +6416,7 @@ module DebugNames = struct
   (* Build a hierarchical tree structure from entries using parent
       relationships *)
 
-  let build_entry_hierarchy (buffer : Object.Buffer.t)
-      (debug_names : debug_names_section) (section_offset : int)
-      (root_entries : entry_parse_result list) : entry_tree list =
+  let build_entry_hierarchy buffer debug_names section_offset root_entries =
     let rec build_tree entry =
       let children_entries =
         find_children_entries buffer debug_names section_offset entry
@@ -6511,8 +6427,7 @@ module DebugNames = struct
     List.map build_tree root_entries
 
   (* Find root entries (entries with no parent) in a compilation unit *)
-  let find_root_entries_in_compilation_unit (entries : entry_parse_result list)
-      (cu_index : u32) : entry_parse_result list =
+  let find_root_entries_in_compilation_unit entries cu_index =
     List.filter
       (fun entry ->
         match entry.compile_unit_index with
@@ -6522,8 +6437,7 @@ module DebugNames = struct
       entries
 
   (* Find the compilation unit index that contains a specific DIE offset *)
-  let find_compilation_unit_for_die (debug_names : debug_names_section)
-      (die_offset : u32) : u32 option =
+  let find_compilation_unit_for_die debug_names die_offset =
     let die_offset_int = Unsigned.UInt32.to_int die_offset in
     let rec search_cu_array index =
       if index >= Array.length debug_names.comp_unit_offsets then None
@@ -6547,16 +6461,14 @@ module DebugNames = struct
     search_cu_array 0
 
   (* Get the compilation unit offset for a given index *)
-  let get_compilation_unit_offset (debug_names : debug_names_section)
-      (cu_index : u32) : u32 option =
+  let get_compilation_unit_offset debug_names cu_index =
     let index = Unsigned.UInt32.to_int cu_index in
     if index >= 0 && index < Array.length debug_names.comp_unit_offsets then
       Some debug_names.comp_unit_offsets.(index)
     else None
 
   (* Get all compilation unit offsets from debug_names section *)
-  let get_all_compilation_unit_offsets (debug_names : debug_names_section) :
-      u32 array =
+  let get_all_compilation_unit_offsets debug_names =
     debug_names.comp_unit_offsets
 end
 
@@ -6579,7 +6491,7 @@ type t = {
   root_dies_ : (int, DIE.t option) Hashtbl.t;
 }
 
-let get_abbrev_table t (offset : size_t) =
+let get_abbrev_table t offset =
   memo_at t.abbrev_tables_ offset (fun () ->
       parse_abbrev_table t.object_
         (Unsigned.UInt32.of_int64 (Unsigned.UInt64.to_int64 offset)))
@@ -6657,7 +6569,7 @@ let resolve_indexed_string_cached t index =
    forms by reading directly from the string sections (so suffix-shared offsets
    resolve correctly), but looks the sections up through the context's section
    cache rather than re-scanning the object file on every attribute. *)
-let context_str_resolver t : str_resolver =
+let context_str_resolver t =
   memo t.str_resolver_ (fun () ->
       let read_at section offset fallback =
         match get_section t section with
@@ -6709,14 +6621,14 @@ let root_die u =
       CompileUnit.root_die u.ur_cu u.ur_abbrev u.ur_resolver)
 
 (* All DIEs of the unit in depth-first preorder, root first. *)
-let unit_entries u : DIE.t Seq.t =
+let unit_entries u =
   match root_die u with
   | None -> Seq.empty
   | Some root -> Seq.cons root (DIE.descendants root)
 
 (* A DieCursor / DieZipper over the unit, positioned at its root DIE. *)
 let die_cursor u =
-  let header : CompileUnit.header = CompileUnit.header u.ur_cu in
+  let header = CompileUnit.header u.ur_cu in
   let header_size = Unsigned.UInt64.to_int header.span.size in
   let offset = CompileUnit.offset u.ur_cu + header_size in
   DieCursor.create u.ur_ctx.object_ u.ur_resolver u.ur_abbrev
@@ -6731,7 +6643,7 @@ let die_zipper u = DieZipper.of_die_cursor (die_cursor u)
    header, runs the state machine, and caches the built table keyed by that
    offset. Returns [None] when the unit has no line program or the section is
    absent. *)
-let line_table t (cu : CompileUnit.t) : DebugLine.line_table option =
+let line_table t cu =
   match root_die (unit t cu) with
   | None -> None
   | Some root_die -> (
@@ -6804,7 +6716,7 @@ module DebugAbbrev = struct
         List.rev !tables
 end
 
-let lookup_address_in_debug_addr (dwarf : t) (_addr_base : u64) (index : int) =
+let lookup_address_in_debug_addr dwarf _addr_base index =
   (* [addr_base] is an offset into the section; the whole contribution is
      parsed (once, cached) and indexed. *)
   match get_section dwarf Debug_addr with
@@ -6817,7 +6729,7 @@ let lookup_address_in_debug_addr (dwarf : t) (_addr_base : u64) (index : int) =
         else None
       with Parse_error _ | Invalid_argument _ | Division_by_zero -> None)
 
-let resolve_address_index (dwarf : t) (index : int) (addr_base : u64) =
+let resolve_address_index dwarf index addr_base =
   match lookup_address_in_debug_addr dwarf addr_base index with
   | Some address -> address
   | None ->
@@ -7146,7 +7058,7 @@ module SplitDwarf = struct
     | Debug_macro -> Debug_macro_dwo
     | other -> other
 
-  let find_section (ctx : dwo_context) (section_type : dwarf_section) =
+  let find_section ctx section_type =
     match section_type with
     | Debug_addr -> find_debug_section_by_type ctx.parent_buffer Debug_addr
     | s -> (
@@ -7168,8 +7080,7 @@ module SplitDwarf = struct
             | Some _ as r -> r
             | None -> find_debug_section_by_type ctx.dwo_buffer s))
 
-  let resolve_string_index_dwo (dwo_buffer : Object.Buffer.t)
-      (format : dwarf_format) (index : int) =
+  let resolve_string_index_dwo dwo_buffer format index =
     let open Object.Buffer in
     match
       ( find_debug_section_by_type dwo_buffer Debug_str_offs_dwo,
@@ -7200,8 +7111,7 @@ module SplitDwarf = struct
         with Invalid_argument _ -> Printf.sprintf "<dwo_strx_error:%d>" index)
     | _ -> Printf.sprintf "<dwo_strx_no_sections:%d>" index
 
-  let parse_abbrev_table_from_section (buffer : Object.Buffer.t)
-      (section_type : dwarf_section) (offset : u64) : (u64, abbrev) Hashtbl.t =
+  let parse_abbrev_table_from_section buffer section_type offset =
     let open Object.Buffer in
     let section_offset =
       match find_debug_section_by_type buffer section_type with
