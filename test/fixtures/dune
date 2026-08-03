@@ -51,6 +51,17 @@
  (action
   (system "cc -gdwarf-5 -g3 test_macros.c -o test_macros")))
 
+(rule
+ (alias integration)
+ (deps noncontiguous.c)
+ (targets noncontiguous noncontiguous.dSYM)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (system "cc -gdwarf-5 -O2 -ffunction-sections %{deps} -o noncontiguous")))
+
 ; Linux Binary Compilation Rules
 
 (rule
@@ -74,6 +85,18 @@
    (= %{architecture} "amd64")))
  (action
   (system "gcc -gdwarf-5 -O2 %{deps} -o loclists_rnglists_linux")))
+
+(rule
+ (alias integration)
+ (deps noncontiguous.c)
+ (targets noncontiguous_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (system
+   "clang -gdwarf-5 -O2 -ffunction-sections %{deps} -o noncontiguous_linux")))
 
 (rule
  (alias integration)

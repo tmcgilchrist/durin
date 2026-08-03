@@ -3150,6 +3150,19 @@ val die_ranges : unit_ref -> DIE.t -> range list option
 (** A DIE's code ranges: its {!attr_ranges} if present, otherwise the contiguous
     [\[DW_AT_low_pc, DW_AT_high_pc)] pair. [None] if the DIE has neither. *)
 
+type location = { range : range option; expr : string }
+(** A DWARF location [expr] and the address [range] over which it applies.
+    [range = None] means it applies everywhere (e.g. a single [DW_FORM_exprloc],
+    or a location list's default entry). *)
+
+val attr_locations : unit_ref -> DIE.t -> location list option
+(** The locations named by a DIE's [DW_AT_location], resolved against the unit:
+    a single [DW_FORM_exprloc] becomes one range-less {!location}; a location
+    list (DWARF 4 [.debug_loc], or DWARF 5 [.debug_loclists] — including
+    [DW_FORM_loclistx] via the unit's [DW_AT_loclists_base]) becomes one
+    {!location} per entry, with base addresses and [.debug_addr] indices folded
+    into absolute ranges. [None] if the DIE has no [DW_AT_location]. *)
+
 (** Abbreviation table parsing for .debug_abbrev section.
 
     The .debug_abbrev section contains abbreviation declarations used by

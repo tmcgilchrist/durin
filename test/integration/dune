@@ -23,7 +23,8 @@
   test_debug_abbrev_integration
   test_debug_pubnames_integration
   test_debug_names_integration
-  test_line_table_integration)
+  test_line_table_integration
+  test_ranges_integration)
  (libraries durin object alcotest cmdliner test_helpers))
 
 (rule
@@ -259,6 +260,32 @@
    %{exe:test_line_table_integration.exe}
    --binary
    %{dep:../fixtures/hello_world})))
+
+(rule
+ (alias integration)
+ (deps ../fixtures/noncontiguous)
+ (enabled_if
+  (and
+   (= %{system} "macosx")
+   (= %{architecture} "arm64")))
+ (action
+  (run
+   %{exe:test_ranges_integration.exe}
+   --binary
+   %{dep:../fixtures/noncontiguous})))
+
+(rule
+ (alias integration)
+ (deps ../fixtures/noncontiguous_linux)
+ (enabled_if
+  (and
+   (= %{system} "linux")
+   (= %{architecture} "amd64")))
+ (action
+  (run
+   %{exe:test_ranges_integration.exe}
+   --binary
+   %{dep:../fixtures/noncontiguous_linux})))
 
 (rule
  (alias integration)

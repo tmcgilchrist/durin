@@ -6768,11 +6768,10 @@ let resolve_address_attribute t addr_base = function
 (* The unit's DW_AT_str_offsets_base / DW_AT_addr_base, read from its root DIE.
    These locate the unit's contribution when resolving indexed strings and
    addresses. *)
-let unit_str_offsets_base u =
-  match
-    Option.bind (root_die u) (fun d ->
-        DIE.find_attribute d DW_AT_str_offsets_base)
-  with
+(* A unit's DW_AT_*_base section offset (str_offsets, rnglists, loclists), read
+   from its root DIE. *)
+let unit_base_offset u attr =
+  match Option.bind (root_die u) (fun d -> DIE.find_attribute d attr) with
   | Some (DIE.UData base) -> Some (Unsigned.UInt64.to_int base)
   | None | Some _ -> None
 
@@ -6789,7 +6788,8 @@ let resolve_string u = function
            bytes before it, at absolute offset [section_start + base -
            header_size]. *)
         match
-          (unit_str_offsets_base u, get_section u.ur_ctx Debug_str_offs)
+          ( unit_base_offset u DW_AT_str_offsets_base,
+            get_section u.ur_ctx Debug_str_offs )
         with
         | Some base, Some (section_off, _) ->
             let header_size =
@@ -6874,14 +6874,8 @@ type range = { start : u64; stop : u64 }
 
 (* The unit's DW_AT_rnglists_base: the section-relative offset of its rnglists
    offset table. *)
-let unit_rnglists_base u =
-  match
-    Option.bind (root_die u) (fun d -> DIE.find_attribute d DW_AT_rnglists_base)
-  with
-  | Some (DIE.UData base) -> Some (Unsigned.UInt64.to_int base)
-  | None | Some _ -> None
-
-(* The unit's default base address for range lists: its DW_AT_low_pc, or zero. *)
+(* The unit's default base address for range/location lists: its DW_AT_low_pc,
+   or zero. *)
 let unit_default_base u =
   match root_die u with
   | Some root ->
@@ -6889,10 +6883,10 @@ let unit_default_base u =
         (attr_address u root DW_AT_low_pc)
   | None -> Unsigned.UInt64.zero
 
-(* Resolve a DW_FORM_rnglistx index to a section-relative [.debug_rnglists] list
-   offset, through the unit's DW_AT_rnglists_base and the offset table. *)
-let rnglistx_offset u index =
-  match (unit_rnglists_base u, get_section u.ur_ctx Debug_rnglists) with
+(* Resolve a DW_FORM_(rng|loc)listx index to a section-relative list offset in
+   [section], through [base] (the unit's DW_AT_*_base) and the offset table. *)
+let listx_offset u base section index =
+  match (base, get_section u.ur_ctx section) with
   | Some base, Some (section_off, _) -> (
       let format = (CompileUnit.header u.ur_cu).format in
       let offset_size = match format with DWARF32 -> 4 | DWARF64 -> 8 in
@@ -6974,7 +6968,12 @@ let attr_ranges u die =
         (resolve_range_list u.ur_ctx.object_ off
            (Unsigned.UInt8.to_int addr_size))
   | Some (DIE.UData off) -> of_v5 off
-  | Some (DIE.RnglistIndex index) -> Option.bind (rnglistx_offset u index) of_v5
+  | Some (DIE.RnglistIndex index) ->
+      Option.bind
+        (listx_offset u
+           (unit_base_offset u DW_AT_rnglists_base)
+           Debug_rnglists index)
+        of_v5
   | None | Some _ -> None
 
 let die_ranges u die =
@@ -6984,6 +6983,83 @@ let die_ranges u die =
       match pc_range u.ur_ctx (unit_addr_base u) die with
       | Some (low, high) -> Some [ { start = low; stop = high } ]
       | None -> None)
+
+type location = { range : range option; expr : string }
+
+(* Fold DWARF 4 [.debug_loc] entries into located expressions. *)
+let locations_of_v4 base entries =
+  let add = Unsigned.UInt64.add in
+  let rec go base acc = function
+    | [] | DebugLoc.EndOfList :: _ -> List.rev acc
+    | DebugLoc.BaseAddress a :: rest -> go a acc rest
+    | DebugLoc.Location { begin_addr; end_addr; expr } :: rest ->
+        let range =
+          Some { start = add base begin_addr; stop = add base end_addr }
+        in
+        go base ({ range; expr } :: acc) rest
+  in
+  go base [] entries
+
+(* Fold DWARF 5 [.debug_loclists] entries into located expressions, resolving
+   base addresses and .debug_addr indices. A default location applies with no
+   range restriction ([range = None]). *)
+let locations_of_v5 u base entries =
+  let add = Unsigned.UInt64.add in
+  let addr_base =
+    Option.value ~default:Unsigned.UInt64.zero (unit_addr_base u)
+  in
+  let resolve_idx i = resolve_address_index u.ur_ctx i addr_base in
+  let ranged start stop expr = { range = Some { start; stop }; expr } in
+  let rec go base acc = function
+    | [] | DebugLoclists.LLE_end_of_list :: _ -> List.rev acc
+    | DebugLoclists.LLE_base_address { address } :: rest -> go address acc rest
+    | DebugLoclists.LLE_base_addressx { index } :: rest ->
+        go (resolve_idx index) acc rest
+    | DebugLoclists.LLE_offset_pair { start_offset; end_offset; expr } :: rest
+      ->
+        go base
+          (ranged (add base start_offset) (add base end_offset) expr :: acc)
+          rest
+    | DebugLoclists.LLE_start_end { start_addr; end_addr; expr } :: rest ->
+        go base (ranged start_addr end_addr expr :: acc) rest
+    | DebugLoclists.LLE_start_length { start_addr; length; expr } :: rest ->
+        go base (ranged start_addr (add start_addr length) expr :: acc) rest
+    | DebugLoclists.LLE_startx_endx { start_index; end_index; expr } :: rest ->
+        go base
+          (ranged (resolve_idx start_index) (resolve_idx end_index) expr :: acc)
+          rest
+    | DebugLoclists.LLE_startx_length { start_index; length; expr } :: rest ->
+        let s = resolve_idx start_index in
+        go base (ranged s (add s length) expr :: acc) rest
+    | DebugLoclists.LLE_default_location { expr } :: rest ->
+        go base ({ range = None; expr } :: acc) rest
+  in
+  go base [] entries
+
+let attr_locations u die =
+  let header = CompileUnit.header u.ur_cu in
+  let version = Unsigned.UInt16.to_int header.version in
+  let addr_size = header.address_size in
+  let base0 = unit_default_base u in
+  let of_v5 off =
+    Option.map
+      (fun ll -> locations_of_v5 u base0 ll.DebugLoclists.entries)
+      (DebugLoclists.resolve_location_list u.ur_ctx.object_ off addr_size)
+  in
+  match DIE.find_attribute die DW_AT_location with
+  | Some (DIE.Block expr) -> Some [ { range = None; expr } ]
+  | Some (DIE.UData off) when version <= 4 ->
+      Option.map (locations_of_v4 base0)
+        (resolve_location_list u.ur_ctx.object_ off
+           (Unsigned.UInt8.to_int addr_size))
+  | Some (DIE.UData off) -> of_v5 off
+  | Some (DIE.LoclistIndex index) ->
+      Option.bind
+        (listx_offset u
+           (unit_base_offset u DW_AT_loclists_base)
+           Debug_loclists index)
+        of_v5
+  | None | Some _ -> None
 
 (* The root DIE of a unit, resolved through the context's cached abbrev table and
    string resolver. *)
