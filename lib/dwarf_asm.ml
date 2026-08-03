@@ -36,7 +36,7 @@ let emit_attribute_value fmt (value : Dwarf.DIE.attribute_value)
     (form : Dwarf.attribute_form_encoding) (enc : Dwarf.encoding) =
   match (form, value) with
   | DW_FORM_string, String s -> emit_asciz fmt s
-  | DW_FORM_strx, IndexedString (idx, _) ->
+  | DW_FORM_strx, IndexedString idx ->
       emit_uleb128 fmt (Unsigned.UInt64.of_int idx)
   | DW_FORM_udata, UData v -> emit_uleb128 fmt v
   | DW_FORM_udata, Language l ->
@@ -71,7 +71,7 @@ let emit_attribute_value fmt (value : Dwarf.DIE.attribute_value)
       | 4 -> emit_4byte fmt (Int64.to_int (Unsigned.UInt64.to_int64 a))
       | 8 -> emit_8byte fmt (Unsigned.UInt64.to_int64 a)
       | n -> fail (Printf.sprintf "Unsupported address size: %d" n))
-  | DW_FORM_addrx, IndexedAddress (idx, _) ->
+  | DW_FORM_addrx, IndexedAddress idx ->
       emit_uleb128 fmt (Unsigned.UInt64.of_int idx)
   | DW_FORM_flag_present, Flag _ -> ()
   | DW_FORM_flag, Flag b -> emit_byte fmt (if b then 1 else 0)
@@ -82,8 +82,7 @@ let emit_attribute_value fmt (value : Dwarf.DIE.attribute_value)
       String.iter (fun c -> emit_byte fmt (Char.code c)) b
   | _ -> fail "Unsupported form/value for asm"
 
-let rec emit_die fmt (die : Dwarf.DIE.t) (enc : Dwarf.encoding)
-    (lookup : int -> u64) =
+let rec emit_die fmt (die : Dwarf.DIE.t) enc lookup =
   let code = lookup die.offset in
   emit_uleb128 fmt code;
   List.iter
@@ -98,7 +97,7 @@ let rec emit_die fmt (die : Dwarf.DIE.t) (enc : Dwarf.encoding)
     Seq.iter (fun child -> emit_die fmt child enc lookup) die.children;
     emit_byte fmt 0)
 
-let emit_abbrev_table fmt (abbrevs : Dwarf.abbrev array) =
+let emit_abbrev_table fmt abbrevs =
   Array.iter
     (fun (a : Dwarf.abbrev) ->
       emit_uleb128 fmt a.code;
@@ -117,8 +116,8 @@ let emit_abbrev_table fmt (abbrevs : Dwarf.abbrev array) =
     abbrevs;
   emit_uleb128 fmt Unsigned.UInt64.zero
 
-let emit_compile_unit fmt (enc : Dwarf.encoding) (die : Dwarf.DIE.t)
-    (lookup : int -> u64) ~abbrev_label ~unit_id =
+let emit_compile_unit fmt (enc : Dwarf.encoding) die lookup ~abbrev_label
+    ~unit_id =
   let start_label = Printf.sprintf ".Ldebug_info%d_start" unit_id in
   let end_label = Printf.sprintf ".Ldebug_info%d_end" unit_id in
   emit_initial_length fmt enc.format ~start_label ~end_label;
@@ -130,13 +129,12 @@ let emit_compile_unit fmt (enc : Dwarf.encoding) (die : Dwarf.DIE.t)
   emit_die fmt die enc lookup;
   emit_label fmt end_label
 
-let emit_debug_abbrev fmt (abbrevs : Dwarf.abbrev array) =
+let emit_debug_abbrev fmt abbrevs =
   emit_section fmt ".debug_abbrev";
   emit_label fmt ".Ldebug_abbrev0";
   emit_abbrev_table fmt abbrevs
 
-let emit_debug_info fmt (enc : Dwarf.encoding) (dies : Dwarf.DIE.t list)
-    (lookup : int -> u64) =
+let emit_debug_info fmt enc dies lookup =
   emit_section fmt ".debug_info";
   List.iteri
     (fun i die ->
@@ -144,8 +142,7 @@ let emit_debug_info fmt (enc : Dwarf.encoding) (dies : Dwarf.DIE.t list)
         ~unit_id:i)
     dies
 
-let emit_string_table_section fmt section_name
-    (table : Dwarf_write.string_table) =
+let emit_string_table_section fmt section_name table =
   emit_section fmt section_name;
   let buf = Buffer.create 64 in
   Dwarf_write.write_string_table buf table;
@@ -167,7 +164,7 @@ let emit_debug_str fmt table = emit_string_table_section fmt ".debug_str" table
 let emit_debug_line_str fmt table =
   emit_string_table_section fmt ".debug_line_str" table
 
-let emit_all fmt (enc : Dwarf.encoding) (dies : Dwarf.DIE.t list) =
+let emit_all fmt enc dies =
   let abbrevs, lookup = Dwarf_write.assign_abbreviations dies in
   emit_debug_abbrev fmt abbrevs;
   emit_debug_info fmt enc dies lookup

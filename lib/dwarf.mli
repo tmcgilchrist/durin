@@ -1491,14 +1491,13 @@ type str_resolver = {
       (** [.debug_str] offset to string (DW_FORM_strp, DW_FORM_GNU_strp_alt). *)
   line_string_at : int -> string;
       (** [.debug_line_str] offset to string (DW_FORM_line_strp). *)
-  indexed_string : dwarf_format -> int -> string;
-      (** [.debug_str_offsets] index to string (DW_FORM_strx,
-          DW_FORM_GNU_str_index). *)
 }
-(** How the DIE parser resolves the string forms. The low-level parser is
-    injected with one of these; the high-level context supplies a caching
-    implementation built from its section caches, while {!buffer_str_resolver}
-    is the uncached version that re-reads the sections on each call. *)
+(** How the DIE parser resolves the direct string-offset forms ([DW_FORM_strp],
+    [DW_FORM_line_strp]) during parsing. The indexed form [DW_FORM_strx] is not
+    resolved here — it is deferred and resolved through a {!unit_ref} (see
+    {!resolve_string}). The high-level context supplies a caching
+    implementation; {!buffer_str_resolver} is the uncached version that re-reads
+    the sections on each call. *)
 
 val buffer_str_resolver : Object.Buffer.t -> str_resolver
 (** The uncached {!str_resolver} that reads the string sections directly from a
@@ -1518,16 +1517,23 @@ module DIE : sig
       DWARF 5 specification, section 7.5.5 "Classes and Forms". *)
   type attribute_value =
     | String of string  (** String value from DW_FORM_string or DW_FORM_strp *)
-    | IndexedString of int * string
-        (** Indexed string from DW_FORM_strx* with index and resolved value *)
+    | IndexedString of int
+        (** Unresolved [.debug_str_offsets] index from DW_FORM_strx*. Resolve
+            with {!resolve_string} or read via {!attr_string}. *)
     | UData of u64  (** Unsigned integer from DW_FORM_udata, DW_FORM_data* *)
     | SData of i64  (** Signed integer from DW_FORM_sdata *)
     | Address of u64  (** Address from DW_FORM_addr *)
-    | IndexedAddress of int * u64
-        (** Indexed address from DW_FORM_addrx* with index and resolved address
-        *)
+    | IndexedAddress of int
+        (** Unresolved [.debug_addr] index from DW_FORM_addrx*. Resolve with
+            {!resolve_address} or read via {!attr_address}. *)
     | Flag of bool  (** Boolean from DW_FORM_flag or DW_FORM_flag_present *)
     | Reference of u64  (** Reference from DW_FORM_ref* *)
+    | RnglistIndex of int
+        (** Unresolved [.debug_rnglists] offset-table index from
+            [DW_FORM_rnglistx]. Resolve with {!attr_ranges}. *)
+    | LoclistIndex of int
+        (** Unresolved [.debug_loclists] offset-table index from
+            [DW_FORM_loclistx]. Resolve with {!attr_locations}. *)
     | Block of string  (** Block of data from DW_FORM_block* *)
     | Language of dwarf_language  (** Language from DW_AT_language attribute *)
     | Encoding of base_type
@@ -1586,6 +1592,14 @@ module DIE : sig
 
   val find_attribute : t -> attribute_encoding -> attribute_value option
   (** Find an attribute by name in a DIE *)
+
+  val descendants : t -> t Seq.t
+  (** The DIEs of a DIE's subtree in depth-first preorder, excluding the DIE
+      itself. The sequence is re-traversable. *)
+
+  val find_descendant : (t -> bool) -> t -> t option
+  (** The first descendant (see {!descendants}) satisfying the predicate, or
+      [None]. *)
 end
 
 (** Compilation units represent individual source files and their debugging
@@ -1726,8 +1740,7 @@ end
 
     Typical usage:
     {@ocaml skip[
-      let dc = DieCursor.create buffer abbrev_table encoding offset in
-      match DieZipper.of_die_cursor dc with
+      match die_zipper unit with
       | None -> ()
       | Some z ->
           DieZipper.children z
@@ -3023,16 +3036,11 @@ val create : Object.Buffer.t -> t
 (** Create a DWARF context over an object buffer. The context holds no parsed
     data initially; sections are parsed and cached on first access. *)
 
-val parse_compile_units : t -> CompileUnit.t Seq.t
-(** Parse all compile units from the [Debug_info] section lazily. Each traversal
-    re-parses the section; for repeated iteration prefer the cached
-    {!compile_units}. *)
-
 val compile_units : t -> CompileUnit.t Seq.t
-(** Compile units from the [Debug_info] section, materialised once and cached in
-    the context. The cached, high-level counterpart of {!parse_compile_units}:
-    the first call forces and stores the full list, later calls iterate the
-    cached list without re-parsing. *)
+(** The compile units of the [Debug_info] section, parsed lazily and cached in
+    the context. Each unit is parsed on demand as the sequence is consumed and
+    remembered, so taking a prefix parses only that prefix and repeated
+    traversals reuse the cache rather than re-reading the section. *)
 
 val get_abbrev_table : t -> size_t -> (u64, abbrev) Hashtbl.t
 (** Return the abbreviation table at the given [.debug_abbrev] offset, parsing
@@ -3041,6 +3049,119 @@ val get_abbrev_table : t -> size_t -> (u64, abbrev) Hashtbl.t
     {!DebugAbbrev.parse}.
 
     @raise Parse_error if the abbreviation table is malformed. *)
+
+(** {2 Unit handles}
+
+    A {!unit_ref} bundles a compilation unit with its context, abbrev table and
+    string resolver, captured once so its DIEs can be read without re-fetching
+    them on each access. *)
+
+type unit_ref
+(** A compilation unit resolved against its context. *)
+
+val unit : t -> CompileUnit.t -> unit_ref
+(** Resolve a compilation unit into a {!unit_ref}, fetching its (cached) abbrev
+    table and the context's string resolver once. *)
+
+val cu : unit_ref -> CompileUnit.t
+(** The underlying compilation unit, for functions that still take a
+    {!CompileUnit.t} (such as {!line_table}). *)
+
+val root_die : unit_ref -> DIE.t option
+(** The root DIE of the unit (its [DW_TAG_compile_unit]), or [None] if the unit
+    has no DIEs. Unlike {!CompileUnit.root_die} this needs no abbrev table or
+    resolver arguments. *)
+
+val unit_name : unit_ref -> string option
+(** The unit's [DW_AT_name] (typically the primary source file), or [None] if
+    absent. *)
+
+val comp_dir : unit_ref -> string option
+(** The unit's [DW_AT_comp_dir] (the compilation directory), or [None] if
+    absent. *)
+
+val unit_entries : unit_ref -> DIE.t Seq.t
+(** All DIEs of the unit in depth-first preorder, the root DIE first. Empty if
+    the unit has no DIEs. The sequence is re-traversable. *)
+
+val die_cursor : unit_ref -> DieCursor.t
+(** A {!DieCursor} over the unit, positioned at its root DIE. Built from the
+    {!unit_ref} rather than the buffer, abbrev table, encoding and resolver that
+    {!DieCursor.create} takes. *)
+
+val die_zipper : unit_ref -> DieZipper.t option
+(** A {!DieZipper} focused on the unit's root DIE, or [None] if the unit has no
+    DIEs. Built from the {!unit_ref}, unlike {!DieZipper.of_die_cursor}. *)
+
+(** {3 Typed attribute accessors}
+
+    Read one attribute of a DIE as a value of its natural type. Each returns
+    [None] when the attribute is absent or belongs to a different value class.
+    For the low-level view, {!DIE.find_attribute} returns the raw
+    {!DIE.attribute_value} with every form and class distinction preserved. *)
+
+val attr_string : unit_ref -> DIE.t -> attribute_encoding -> string option
+(** The attribute's string value. The direct ([DW_FORM_string], [DW_FORM_strp])
+    and indexed ([DW_FORM_strx*]) string forms all resolve to a [string]. *)
+
+val attr_int : unit_ref -> DIE.t -> attribute_encoding -> i64 option
+(** The attribute's value as a signed 64-bit integer, taken from the constant
+    forms ([DW_FORM_data*], [DW_FORM_udata], [DW_FORM_sdata]). *)
+
+val attr_flag : unit_ref -> DIE.t -> attribute_encoding -> bool option
+(** The attribute's boolean value ([DW_FORM_flag], [DW_FORM_flag_present]). *)
+
+val attr_address : unit_ref -> DIE.t -> attribute_encoding -> u64 option
+(** The attribute's target address, given directly ([DW_FORM_addr]) or as an
+    index into [.debug_addr] ([DW_FORM_addrx*], resolved through the unit's
+    [DW_AT_addr_base]). *)
+
+val attr_die : unit_ref -> DIE.t -> attribute_encoding -> DIE.t option
+(** The DIE named by a reference attribute, for walking the type graph or
+    following [DW_AT_specification] and [DW_AT_abstract_origin] links.
+    Within-unit references ([DW_FORM_ref1..8], [DW_FORM_ref_udata]) resolve;
+    references beyond the unit ([DW_FORM_ref_addr], [DW_FORM_ref_sig8]) yield
+    [None]. *)
+
+val resolve_string : unit_ref -> DIE.attribute_value -> string option
+(** Resolve a string-class {!DIE.attribute_value} against the unit: a direct
+    {!DIE.String}, or a {!DIE.IndexedString} looked up through the unit's
+    [DW_AT_str_offsets_base] and [.debug_str_offsets]. [None] for other classes.
+    This is the resolution behind {!attr_string} for callers that already hold a
+    raw value (e.g. from {!DIE.find_attribute}). *)
+
+val resolve_address : unit_ref -> DIE.attribute_value -> u64 option
+(** Resolve an address-class {!DIE.attribute_value} against the unit: a direct
+    {!DIE.Address}, or a {!DIE.IndexedAddress} looked up through the unit's
+    [DW_AT_addr_base] and [.debug_addr]. [None] for other classes. The
+    counterpart of {!resolve_string} for addresses. *)
+
+type range = { start : u64; stop : u64 }
+(** A resolved, absolute code range [\[start, stop)]. *)
+
+val attr_ranges : unit_ref -> DIE.t -> range list option
+(** The address ranges named by a DIE's [DW_AT_ranges], resolved to absolute
+    {!range}s. Handles DWARF 4 ([.debug_ranges]) and DWARF 5 ([.debug_rnglists],
+    including [DW_FORM_rnglistx] via the unit's [DW_AT_rnglists_base]), folding
+    base addresses and [.debug_addr] indices. [None] if the DIE has no
+    [DW_AT_ranges]. *)
+
+val die_ranges : unit_ref -> DIE.t -> range list option
+(** A DIE's code ranges: its {!attr_ranges} if present, otherwise the contiguous
+    [\[DW_AT_low_pc, DW_AT_high_pc)] pair. [None] if the DIE has neither. *)
+
+type location = { range : range option; expr : string }
+(** A DWARF location [expr] and the address [range] over which it applies.
+    [range = None] means it applies everywhere (e.g. a single [DW_FORM_exprloc],
+    or a location list's default entry). *)
+
+val attr_locations : unit_ref -> DIE.t -> location list option
+(** The locations named by a DIE's [DW_AT_location], resolved against the unit:
+    a single [DW_FORM_exprloc] becomes one range-less {!location}; a location
+    list (DWARF 4 [.debug_loc], or DWARF 5 [.debug_loclists] — including
+    [DW_FORM_loclistx] via the unit's [DW_AT_loclists_base]) becomes one
+    {!location} per entry, with base addresses and [.debug_addr] indices folded
+    into absolute ranges. [None] if the DIE has no [DW_AT_location]. *)
 
 (** Abbreviation table parsing for .debug_abbrev section.
 
@@ -3541,7 +3662,7 @@ end
 
     Context-level accessors that parse a section on first request and cache the
     result for reuse. Each is the memoizing, high-level counterpart of the
-    matching stateless {!DebugStr.parse} / {!DebugStrOffsets.parse} / … — see
+    matching stateless {!DebugStr.parse} / {!DebugStrOffsets.parse}. See
     {!get_abbrev_table}. *)
 
 val get_str_offsets : t -> u32 -> DebugStrOffsets.t
@@ -3577,6 +3698,37 @@ val line_table : t -> CompileUnit.t -> DebugLine.line_table option
     cached. Query it with {!DebugLine.entries}, {!DebugLine.find_by_address} and
     {!DebugLine.find_by_line}. [None] if the unit has no line program or the
     [.debug_line] section is absent. *)
+
+(** {2 Address-oriented queries}
+
+    Map a program counter to the unit, source location, or subprogram covering
+    it. Containment is tested against contiguous
+    [\[DW_AT_low_pc, DW_AT_high_pc)] ranges; non-contiguous [DW_AT_ranges] code
+    is not resolved yet. *)
+
+type line_info = {
+  file : string option;
+  line : int;
+  column : int;
+  address : u64;
+}
+(** Source location for an address: the directory-qualified source [file]
+    ([None] if the row's file index is out of range), its [line] and [column],
+    and the [address] of the line-table row it resolved to. *)
+
+val unit_for_address : t -> u64 -> CompileUnit.t option
+(** The compilation unit whose root DIE's contiguous code range contains the
+    address, or [None] if no unit covers it. *)
+
+val line_info_for_address : t -> u64 -> line_info option
+(** Resolve an address to its source {!line_info} through the units' line tables
+    (see {!line_table} and {!DebugLine.find_by_address}), or [None] if no line
+    table covers it. *)
+
+val subprogram_for_address : t -> u64 -> DIE.t option
+(** The [DW_TAG_subprogram] DIE whose contiguous code range contains the
+    address, or [None]. Extract its name with {!DIE.find_attribute} on
+    [DW_AT_name]. *)
 
 val get_section : t -> dwarf_section -> (u64 * u64) option
 (** Locate a debug section, returning its [(offset, size)] within the object

@@ -580,9 +580,8 @@ let test_write_attr_encoding () =
 
 let test_write_attr_indexed_string () =
   let buf = Buffer.create 64 in
-  Dwarf_write.write_attribute_value buf
-    (IndexedString (7, "ignored"))
-    Dwarf.DW_FORM_strx default_encoding;
+  Dwarf_write.write_attribute_value buf (IndexedString 7) Dwarf.DW_FORM_strx
+    default_encoding;
   let obj_buf = object_buffer_of_buffer buf in
   let cur = Object.Buffer.cursor obj_buf ~at:0 in
   let idx = Object.Buffer.Read.uleb128 cur in
@@ -590,12 +589,10 @@ let test_write_attr_indexed_string () =
 
 let test_write_attr_indexed_address () =
   let result =
-    roundtrip_attr_value
-      (IndexedAddress (3, u64 0))
-      Dwarf.DW_FORM_addrx default_encoding
+    roundtrip_attr_value (IndexedAddress 3) Dwarf.DW_FORM_addrx default_encoding
   in
   match result with
-  | IndexedAddress (idx, _) -> check int "addrx index roundtrip" 3 idx
+  | IndexedAddress idx -> check int "addrx index roundtrip" 3 idx
   | _ -> fail "expected IndexedAddress"
 
 let test_attribute_value_size () =
@@ -636,7 +633,7 @@ let test_parse_gnu_addr_index () =
       default_encoding
   in
   match result with
-  | IndexedAddress (idx, _) -> check int "GNU_addr_index" 5 idx
+  | IndexedAddress idx -> check int "GNU_addr_index" 5 idx
   | _ -> fail "expected IndexedAddress"
 
 let test_parse_gnu_str_index () =
@@ -647,7 +644,7 @@ let test_parse_gnu_str_index () =
       default_encoding
   in
   match result with
-  | IndexedString (idx, _) -> check int "GNU_str_index" 3 idx
+  | IndexedString idx -> check int "GNU_str_index" 3 idx
   | _ -> fail "expected IndexedString"
 
 let test_parse_gnu_ref_alt () =

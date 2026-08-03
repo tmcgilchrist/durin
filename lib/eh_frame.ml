@@ -195,7 +195,7 @@ let parse_eh_fde cursor fde_encoding fde_offset =
           (* Not valid augmentation data, reset position *)
           cursor.position <- saved_pos;
           (None, None, saved_pos))
-      with _ ->
+      with Invalid_argument _ ->
         (* Error reading, reset position *)
         cursor.position <- saved_pos;
         (None, None, saved_pos))
@@ -230,8 +230,7 @@ let parse_eh_fde cursor fde_encoding fde_offset =
   }
 
 (* Find the CIE corresponding to an FDE using the cie_pointer field. *)
-let find_cie_for_fde (section : section) (cie_pointer : u32)
-    (fde_file_offset : int) : CallFrame.common_information_entry option =
+let find_cie_for_fde section cie_pointer fde_file_offset =
   (* In .eh_frame the cie_pointer is subtracted from the section offset of the
      cie_pointer field itself to give the CIE's section offset (LSB Core
      Specification, section 10.6). The cie_pointer field sits 4 bytes into the

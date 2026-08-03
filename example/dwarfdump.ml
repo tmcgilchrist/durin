@@ -312,44 +312,20 @@ let resolve_address_attribute dwarf die attr_name addr_value cu_addr_base =
       | Some (Dwarf.DIE.Address low_pc) ->
           (* DW_FORM_addr: low_pc is already the direct address *)
           Unsigned.UInt64.add low_pc addr_value
-      | Some (Dwarf.DIE.IndexedAddress (_, low_pc_idx)) -> (
+      | Some (Dwarf.DIE.IndexedAddress low_pc_idx) -> (
           (* DW_FORM_addrx*: resolve index to get actual low_pc *)
           match cu_addr_base with
           | Some addr_base ->
               let resolved_low_pc =
-                Dwarf.resolve_address_index dwarf
-                  (Unsigned.UInt64.to_int low_pc_idx)
-                  addr_base
+                Dwarf.resolve_address_index dwarf low_pc_idx addr_base
               in
               Unsigned.UInt64.add resolved_low_pc addr_value
           | None -> addr_value)
       | _ -> addr_value)
   | _ -> addr_value
 
-let resolve_type_reference buffer abbrev_table encoding debug_info_offset
-    die_offset =
-  (* Try to parse DIE at the given offset and extract its name *)
-  try
-    (* The die_offset is relative to debug_info section start *)
-    let absolute_offset =
-      debug_info_offset + Unsigned.UInt64.to_int die_offset
-    in
-    let cursor = Object.Buffer.cursor buffer ~at:absolute_offset in
-    match
-      Dwarf.DIE.parse_die cursor abbrev_table encoding
-        (Dwarf.buffer_str_resolver buffer)
-    with
-    | Some die -> (
-        (* Look for DW_AT_name attribute in the referenced DIE *)
-        match Dwarf.DIE.find_attribute die Dwarf.DW_AT_name with
-        | Some (Dwarf.DIE.String name) -> Some name
-        | Some (Dwarf.DIE.IndexedString (_, name)) -> Some name
-        | Some _ | None -> None)
-    | None -> None
-  with _ -> None
-
 let rec print_die die depth dwarf buffer stmt_list_offset cu_addr_base
-    debug_info_offset abbrev_table encoding =
+    debug_info_offset abbrev_table encoding u =
   (* Indentation pattern from test expectations:
      - All DIEs: no leading spaces before offset
      - Root DIE: 1 space after colon, 14 spaces for attributes
@@ -370,7 +346,12 @@ let rec print_die die depth dwarf buffer stmt_list_offset cu_addr_base
       let attr_value =
         match attr.Dwarf.DIE.value with
         | Dwarf.DIE.String s -> Printf.sprintf "(\"%s\")" s
-        | Dwarf.DIE.IndexedString (_, s) -> Printf.sprintf "(\"%s\")" s
+        | Dwarf.DIE.IndexedString _ ->
+            let s =
+              Option.value ~default:""
+                (Dwarf.resolve_string u attr.Dwarf.DIE.value)
+            in
+            Printf.sprintf "(\"%s\")" s
         | Dwarf.DIE.UData u ->
             (* Special handling for DW_AT_high_pc which might be an offset from DW_AT_low_pc *)
             if attr.Dwarf.DIE.attr = Dwarf.DW_AT_high_pc then
@@ -404,9 +385,10 @@ let rec print_die die depth dwarf buffer stmt_list_offset cu_addr_base
                 cu_addr_base
             in
             Printf.sprintf "(0x%016Lx)" (Unsigned.UInt64.to_int64 resolved_addr)
-        | Dwarf.DIE.IndexedAddress (_, a) ->
+        | Dwarf.DIE.IndexedAddress index ->
             let resolved_addr =
-              resolve_address_attribute dwarf die attr.Dwarf.DIE.attr a
+              resolve_address_attribute dwarf die attr.Dwarf.DIE.attr
+                (Unsigned.UInt64.of_int index)
                 cu_addr_base
             in
             Printf.sprintf "(0x%016Lx)" (Unsigned.UInt64.to_int64 resolved_addr)
@@ -417,10 +399,10 @@ let rec print_die die depth dwarf buffer stmt_list_offset cu_addr_base
                 (Unsigned.UInt64.to_int64 r |> Int64.to_int)
             in
             if attr.Dwarf.DIE.attr = Dwarf.DW_AT_type then
-              (* Resolve type reference and get name *)
+              (* Follow the reference and resolve the referenced DIE's name. *)
               match
-                resolve_type_reference buffer abbrev_table encoding
-                  debug_info_offset r
+                Option.bind (Dwarf.attr_die u die Dwarf.DW_AT_type)
+                  (fun target -> Dwarf.attr_string u target Dwarf.DW_AT_name)
               with
               | Some type_name ->
                   Printf.sprintf "(%s \"%s\")" offset_hex type_name
@@ -433,6 +415,10 @@ let rec print_die die depth dwarf buffer stmt_list_offset cu_addr_base
               | Some decoded -> Printf.sprintf "(%s)" decoded
               | None -> Printf.sprintf "(<%d bytes>)" (String.length block_data)
             else Printf.sprintf "(<%d bytes>)" (String.length block_data)
+        | Dwarf.DIE.RnglistIndex index ->
+            Printf.sprintf "(indexed rnglist 0x%x)" index
+        | Dwarf.DIE.LoclistIndex index ->
+            Printf.sprintf "(indexed loclist 0x%x)" index
         | Dwarf.DIE.Language lang ->
             Printf.sprintf "(%s)" (Dwarf.string_of_dwarf_language lang)
         | Dwarf.DIE.Encoding enc ->
@@ -465,7 +451,7 @@ let rec print_die die depth dwarf buffer stmt_list_offset cu_addr_base
   Seq.iter
     (fun child ->
       print_die child (depth + 1) dwarf buffer stmt_list_offset cu_addr_base
-        debug_info_offset abbrev_table encoding)
+        debug_info_offset abbrev_table encoding u)
     die.Dwarf.DIE.children
 
 let dump_debug_info filename =
@@ -482,7 +468,7 @@ let dump_debug_info filename =
       | Some (debug_info_offset, _size) ->
           (* Create DWARF context and parse compile units *)
           let dwarf = Dwarf.create buffer in
-          let compile_units = Dwarf.parse_compile_units dwarf in
+          let compile_units = Dwarf.compile_units dwarf in
 
           (* Process each compile unit *)
           Seq.iter
@@ -551,7 +537,7 @@ let dump_debug_info filename =
                   print_die root_die 0 dwarf buffer stmt_list_offset
                     cu_addr_base
                     (Unsigned.UInt64.to_int debug_info_offset)
-                    abbrev_table encoding;
+                    abbrev_table encoding (Dwarf.unit dwarf unit);
                   (* Add NULL entry at the end of the compilation unit *)
                   Printf.printf "\n0x%08x:   NULL\n" (next_unit_offset - 1))
             compile_units)

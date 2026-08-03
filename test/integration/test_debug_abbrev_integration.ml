@@ -53,7 +53,7 @@ let test_parse_all binary_path =
 let test_matches_get_abbrev_table binary_path =
   let buffer = Object.Buffer.parse binary_path in
   let ctx = Dwarf.create buffer in
-  let cus = Dwarf.parse_compile_units ctx in
+  let cus = Dwarf.compile_units ctx in
   match Seq.uncons cus with
   | None -> fail "expected at least one compile unit"
   | Some (cu, _) -> (

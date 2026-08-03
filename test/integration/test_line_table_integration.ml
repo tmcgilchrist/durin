@@ -23,6 +23,16 @@ let first_line_table ctx =
       | None -> Option.map (fun lt -> (cu, lt)) (Dwarf.line_table ctx cu))
     None (Dwarf.compile_units ctx)
 
+(* A real (non-terminal) code address taken from the first line table. *)
+let first_code_address ctx =
+  match first_line_table ctx with
+  | None -> None
+  | Some (_cu, lt) ->
+      Dwarf.DebugLine.entries lt |> List.of_seq
+      |> List.find_opt (fun (e : Dwarf.DebugLine.line_table_entry) ->
+          (not e.end_sequence) && Unsigned.UInt64.to_int e.address > 0)
+      |> Option.map (fun (e : Dwarf.DebugLine.line_table_entry) -> e.address)
+
 let test_line_table_present binary_path =
   let ctx = context binary_path in
   match first_line_table ctx with
@@ -69,6 +79,48 @@ let test_line_table_cached binary_path =
       | Some lt2 ->
           check bool "second call returns the cached table" true (lt1 == lt2))
 
+let test_line_info_for_address binary_path =
+  let ctx = context binary_path in
+  match first_code_address ctx with
+  | None -> fail "expected a code address"
+  | Some addr -> (
+      match Dwarf.line_info_for_address ctx addr with
+      | None -> fail "expected line info for a real code address"
+      | Some info ->
+          check bool "source file is a .c file" true
+            (match info.Dwarf.file with
+            | Some f -> Filename.check_suffix f ".c"
+            | None -> false);
+          check bool "line > 0" true (info.Dwarf.line > 0);
+          check bool "row address matches the query" true
+            (Unsigned.UInt64.equal info.Dwarf.address addr))
+
+let test_unit_for_address binary_path =
+  let ctx = context binary_path in
+  match first_code_address ctx with
+  | None -> fail "expected a code address"
+  | Some addr ->
+      check bool "unit found for code address" true
+        (Option.is_some (Dwarf.unit_for_address ctx addr));
+      check bool "no unit for out-of-range address" true
+        (Option.is_none (Dwarf.unit_for_address ctx Unsigned.UInt64.max_int))
+
+let test_subprogram_for_address binary_path =
+  let ctx = context binary_path in
+  match first_code_address ctx with
+  | None -> fail "expected a code address"
+  | Some addr -> (
+      match Dwarf.subprogram_for_address ctx addr with
+      | None -> fail "expected a subprogram for a real code address"
+      | Some die ->
+          check bool "DIE is a subprogram" true
+            (die.Dwarf.DIE.tag = Dwarf.DW_TAG_subprogram);
+          check bool "subprogram has a name" true
+            (Option.is_some (Dwarf.DIE.find_attribute die Dwarf.DW_AT_name));
+          check bool "no subprogram for out-of-range address" true
+            (Option.is_none
+               (Dwarf.subprogram_for_address ctx Unsigned.UInt64.max_int)))
+
 let binary_path = Test_helpers.binary_path ~doc:"Path to a DWARF 5 test binary"
 
 let () =
@@ -79,5 +131,11 @@ let () =
           ("present and non-empty", `Quick, test_line_table_present);
           ("find_by_address round-trip", `Quick, test_find_by_address_roundtrip);
           ("cached", `Quick, test_line_table_cached);
+        ] );
+      ( "address_queries",
+        [
+          ("line_info_for_address", `Quick, test_line_info_for_address);
+          ("unit_for_address", `Quick, test_unit_for_address);
+          ("subprogram_for_address", `Quick, test_subprogram_for_address);
         ] );
     ]

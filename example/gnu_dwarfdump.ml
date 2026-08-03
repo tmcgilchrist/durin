@@ -255,8 +255,10 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
       let attr_value =
         match attr.Dwarf.DIE.value with
         | Dwarf.DIE.String s -> s
-        | Dwarf.DIE.IndexedString (index, resolved) ->
-            Printf.sprintf "(indexed string: 0x%08x)%s" index resolved
+        | Dwarf.DIE.IndexedString index ->
+            (* Raw .debug_str_offsets index; resolving to the string needs a
+               unit_ref (Dwarf.resolve_string). *)
+            Printf.sprintf "(indexed string: 0x%08x)" index
         | Dwarf.DIE.UData u ->
             (* Special formatting for different attributes *)
             if attr.Dwarf.DIE.attr = Dwarf.DW_AT_high_pc then
@@ -275,8 +277,9 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
                       Printf.sprintf "<offset-from-lowpc> %d <highpc: 0x%08x>"
                         offset
                         (Unsigned.UInt64.to_int high_pc)
-                  | Dwarf.DIE.IndexedAddress (index, placeholder_addr) ->
+                  | Dwarf.DIE.IndexedAddress index ->
                       (* Resolve the indexed address *)
+                      let placeholder_addr = Unsigned.UInt64.of_int index in
                       let resolved_addr =
                         try
                           let addr_base_offset = Unsigned.UInt64.of_int 0x10 in
@@ -318,10 +321,11 @@ let rec print_die_system_format die depth buffer dwarf unit_start_offset
             else Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int u)
         | Dwarf.DIE.Address addr ->
             Printf.sprintf "0x%08x" (Unsigned.UInt64.to_int addr)
-        | Dwarf.DIE.IndexedAddress (index, placeholder_addr) ->
+        | Dwarf.DIE.IndexedAddress index ->
             (* Try to resolve the address using addr_base = 0x10.
                In a full implementation, we'd get addr_base from the
                compilation unit's DW_AT_addr_base attribute. *)
+            let placeholder_addr = Unsigned.UInt64.of_int index in
             let resolved_addr =
               try
                 let addr_base_offset = Unsigned.UInt64.of_int 0x10 in
@@ -451,7 +455,7 @@ let collect_die_names die debug_info_offset =
     let rel_offset = d.Dwarf.DIE.offset - debug_info_offset in
     (match Dwarf.DIE.find_attribute d Dwarf.DW_AT_name with
     | Some (String s) -> Hashtbl.replace tbl rel_offset s
-    | Some (IndexedString (_, s)) -> Hashtbl.replace tbl rel_offset s
+    (* Indexed names need a unit_ref to resolve; omitted from this table. *)
     | _ -> ());
     Seq.iter walk d.Dwarf.DIE.children
   in
@@ -481,7 +485,7 @@ let dump_debug_info filename =
     | Some (debug_info_offset, _section_size) ->
         (* Create DWARF context and parse compile units *)
         let dwarf = Dwarf.create buffer in
-        let compile_units = Dwarf.parse_compile_units dwarf in
+        let compile_units = Dwarf.compile_units dwarf in
 
         (* Process each compile unit *)
         Seq.iter
@@ -741,7 +745,7 @@ let dump_debug_aranges filename =
 
         (* Create DWARF object and get compilation units for additional info *)
         let dwarf = Dwarf.create buffer in
-        let compile_units = Dwarf.parse_compile_units dwarf in
+        let compile_units = Dwarf.compile_units dwarf in
 
         (* Find the compilation unit that matches the debug_info_offset from aranges *)
         let cu_die_offset =
