@@ -1726,14 +1726,14 @@ end
 
     Typical usage:
     {@ocaml skip[
-      let dc = DieCursor.create buffer abbrev_table encoding offset in
-      match DieZipper.of_die_cursor dc with
-      | None -> ()
-      | Some z ->
-          DieZipper.children z
-          |> Seq.iter (fun child ->
-              let _die = DieZipper.current child in
-              ())
+    let dc = DieCursor.create buffer abbrev_table encoding offset in
+    match DieZipper.of_die_cursor dc with
+    | None -> ()
+    | Some z ->
+        DieZipper.children z
+        |> Seq.iter (fun child ->
+            let _die = DieZipper.current child in
+            ())
     ]} *)
 module DieZipper : sig
   type t
