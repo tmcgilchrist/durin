@@ -362,8 +362,8 @@ let detect_architecture (buffer : Object.Buffer.t) =
   let magic_64 = Unsigned.UInt32.of_int 0xfeedfacf in
   if Unsigned.UInt32.equal magic magic_32 then
     (* MH_MAGIC - 32-bit *)
-    if Unsigned.UInt32.equal cpu_type (Unsigned.UInt32.of_int 7) then X86
-      (* CPU_TYPE_X86 *)
+    if Unsigned.UInt32.equal cpu_type (Unsigned.UInt32.of_int 7) then
+      X86 (* CPU_TYPE_X86 *)
     else raise (Invalid_compact_unwind_format "Unsupported 32-bit architecture")
   else if Unsigned.UInt32.equal magic magic_64 then
     (* MH_MAGIC_64 - 64-bit *)
